@@ -1,7 +1,7 @@
 // ============================================================
 // 隐藏章条件引擎 + 今日隐藏章（Daily Secret）
 // ============================================================
-import { HIDDEN, stampById } from './data.js';
+import { HIDDEN, stampById, isGlyph } from './data.js';
 import { store, dateKey } from './store.js';
 
 // 计算一个隐藏章条件是否满足（基于当日记录 / 全局状态）
@@ -25,7 +25,8 @@ function satisfied(h, todayRecs) {
     return n >= c.n;
   }
   if (c.type === 'discovered') {
-    return Object.keys(store.discovered).length >= c.n;
+    // 🔴 字形章（数字/字母/星期/标点）是工具不是发现，不算进解锁条件
+    return Object.keys(store.discovered).filter(id => !isGlyph(id)).length >= c.n;
   }
   return false;
 }

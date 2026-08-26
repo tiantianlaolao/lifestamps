@@ -59,10 +59,12 @@ export const store = {
     this.persist();
   },
 
-  addRecord(rec) {
+  // markDiscovered=false：字形章（数字/字母/星期/标点）是工具不是发现，别写进收集记录。
+  // 策略放在调用方（main.js 判 isGlyph），store 不认识业务分类。
+  addRecord(rec, markDiscovered = true) {
     this.records.push(rec);
     let isNew = false;
-    if (!this.discovered[rec.stampId]) { this.discovered[rec.stampId] = rec.ts; isNew = true; }
+    if (markDiscovered && !this.discovered[rec.stampId]) { this.discovered[rec.stampId] = rec.ts; isNew = true; }
     this.persist();
     return isNew;
   },
@@ -115,7 +117,9 @@ export const store = {
   // 传入当月该出现的 id 列表：还在的保持原位，走了的删掉，新来的排进空格子。
   coverStickers(month, ids, freeCell) {
     const cur = this.stickers[month] || [];
-    const keep = cur.filter(s2 => ids.includes(s2.id));
+    // 🔴 manual = 用户自己拖上去的，不受"当月最常盖"那套规则管。
+    //    不加这条的话，你亲手贴的那张只要不在 top-N 里，下次渲染就被自动清掉了。
+    const keep = cur.filter(s2 => s2.manual || ids.includes(s2.id));
     const used = new Set(keep.map(s2 => s2.cell));
     const add = ids.filter(id => !keep.some(s2 => s2.id === id))
       .map((id, i) => freeCell(id, i, used));
@@ -125,6 +129,20 @@ export const store = {
       this.persist();
     }
     return next;
+  },
+
+  // 用户自己贴/挪的那张：写进当月贴纸表（manual 标记让它不被自动布局清掉）
+  putSticker(month, entry) {
+    const list = this.stickers[month] || [];
+    const i = list.findIndex(s2 => s2.id === entry.id);
+    if (i >= 0) list[i] = { ...list[i], ...entry, manual: true };
+    else list.push({ ...entry, manual: true });
+    this.stickers[month] = list;
+    this.persist();
+  },
+  dropSticker(month, id) {
+    this.stickers[month] = (this.stickers[month] || []).filter(s2 => s2.id !== id);
+    this.persist();
   },
 
   exportJSON() {

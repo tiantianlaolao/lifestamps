@@ -8,6 +8,35 @@ import { store, dateKey } from './store.js';
 const PAPER = '#F7F3EB', INK_C = '#3A362F', SUB = '#969084', FAINT = '#C9C3B7', RED = '#C94B3C';
 const FONT = `MiSans,'HarmonyOS Sans SC','PingFang SC','Microsoft YaHei',sans-serif`;
 const HAND = `'Segoe Print','Comic Sans MS',cursive`;
+// ⚠️ 用户写的字要塞进 SVG 文本节点：不转义的话，一个 & 或 < 就让整张卡生成失败
+//    （8-26 实测：note 里带 & 和 < 时分享弹层直接显示"生成失败了"）。
+const xesc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// 用户自己写的那句话用手写体（文楷已随 App 本地打包）
+const HAND_CN = `'LXGW WenKai','Xiaolai',KaiTi,'PingFang SC',serif`;
+
+// 日期改成盖在纸上的日付印——跟 App 里那张纸一致。
+// 🔴 卡上原来是 `08 / 26` 的大号数字，而 App 页面早就换成日付印了；
+//    「盖了么」#9「0826 太板正、跟当前页面画风不太一致」说的正是这张卡（我一开始看错成页面，判成已解决）。
+//    角度按日期定死，跟 App 里 dateStampRot 同一套算法，同一天卡和页面歪得一样。
+function dateStamp(d) {
+  const dk2 = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  let h = 0; for (const c of dk2) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
+  const rot = -1 - (h % 4);
+  const W = 300, H = 96, X = 66, Y = 128;
+  return `<g transform="rotate(${rot} ${X + W / 2} ${Y + H / 2})" opacity=".86">
+    <rect x="${X}" y="${Y}" width="${W}" height="${H}" rx="6" fill="none" stroke="${RED}" stroke-width="5" filter="url(#ls-w1)"/>
+    <text x="${X + 26}" y="${Y + 66}" font-size="54" letter-spacing="4" fill="${RED}" font-family="${FONT}">${d.getMonth() + 1} · ${d.getDate()}</text>
+    <text x="${X + 208}" y="${Y + 66}" font-size="24" letter-spacing="2" fill="${RED}" font-family="${FONT}">星期${'日一二三四五六'[d.getDay()]}</text>
+  </g>`;
+}
+
+// 落款：规格 §7.2 只允许「右下角 6px 高的极小印」。
+// 原来是居中一整行 14px 带 6 字距的「生活图鉴 · LIFE STAMPS」——那读起来是水印，
+// 而分享卡是获客的唯一主路径，它上面不该有像水印的东西（8-26 用户「盖了么」#8）。
+const cornerMark = () =>
+  `<text x="1012" y="1398" text-anchor="end" font-size="17" letter-spacing="3"
+     fill="${SUB}" opacity=".45" font-family="${FONT}">生活图鉴</text>`;
 
 // 把一枚章渲染为放进大卡的 <g>（含定位/旋转）
 function placedStamp(def, { x, y, size, ink, rot = 0, opacity = 0.92, mat }) {
@@ -125,7 +154,7 @@ export function buildMonthCard(y, m) {
   </g>
   ${cal}${stats}${seal}${inks}
   <text x="540" y="1368" text-anchor="middle" font-size="24" letter-spacing="4" fill="${INK_C}" font-family="${FONT}">这个月也辛苦了。</text>
-  <text x="540" y="1402" text-anchor="middle" font-size="14" letter-spacing="6" fill="${SUB}" font-family="${FONT}">${recs.length} LIFE STAMPS · 生活图鉴</text>
+  ${cornerMark()}
 </svg>`;
   return svg;
 }
@@ -182,6 +211,8 @@ const WEEK_CN = ['星期日','星期一','星期二','星期三','星期四','�
 export function buildDayCard(dk, weather) {
   const recs = store.recordsOf(dk);
   const d = new Date(dk + 'T12:00:00');
+  // 这天的一句话（本子里「给这天补一句」写的那句）。有就印在卡上，没有才回落到统计句。
+  const note = (store.dayNoteOf(dk) || '').slice(0, 24);
 
   // 画布区：把 px/py 百分比映射进 940x920 的纸框
   const FX = 70, FY = 320, FW = 940, FH = 920;
@@ -209,15 +240,22 @@ export function buildDayCard(dk, weather) {
   <g transform="rotate(-2.5 540 8)" opacity=".82">
     <rect x="445" y="-12" width="190" height="40" fill="#F3D9DD"/>
   </g>
-  <text x="70" y="120" font-size="17" letter-spacing="9" fill="${SUB}" font-family="${FONT}">TODAY · LIFE STAMPS</text>
-  <text x="66" y="204" font-size="64" letter-spacing="8" font-weight="500" fill="${INK_C}" font-family="${FONT}">${String(d.getMonth() + 1).padStart(2, '0')} / ${String(d.getDate()).padStart(2, '0')}</text>
-  <text x="70" y="248" font-size="20" letter-spacing="8" fill="${SUB}" font-family="${FONT}">${WEEK_CN[d.getDay()]}${weather ? ' · ' + (WEATHER[weather]?.name || '') : ''}</text>
+  ${dateStamp(d)}
   ${wSvg}
-  <rect x="${FX}" y="${FY}" width="${FW}" height="${FH}" rx="10" fill="none" stroke="rgba(58,54,47,.18)" stroke-width="2" stroke-dasharray="7 7"/>
+  <defs>
+    <pattern id="ls-dots" width="44" height="44" patternUnits="userSpaceOnUse" x="${FX}" y="${FY}">
+      <circle cx="4" cy="4" r="3.4" fill="#D3CDBE"/>
+    </pattern>
+  </defs>
+  <rect x="${FX}" y="${FY}" width="${FW}" height="${FH}" rx="10" fill="#FBF8F1"/>
+  <rect x="${FX}" y="${FY}" width="${FW}" height="${FH}" rx="10" fill="url(#ls-dots)"/>
+  <rect x="${FX}" y="${FY}" width="${FW}" height="${FH}" rx="10" fill="none" stroke="rgba(58,54,47,.12)" stroke-width="2"/>
+  ${[0,1,2,3,4,5,6,7,8,9,10,11].map(i => `<circle cx="${FX + 26}" cy="${FY + 58 + i * 74}" r="7" fill="rgba(37,36,33,.13)"/>`).join('')}
   ${art}
   ${recs.length ? '' : `<text x="540" y="${FY + FH / 2}" text-anchor="middle" font-size="22" fill="${FAINT}" font-family="${FONT}">今天是空白的一页，也很好。</text>`}
-  <text x="540" y="1330" text-anchor="middle" font-size="24" letter-spacing="4" fill="${INK_C}" font-family="${FONT}">今天收集了 ${recs.length} 个小生活。</text>
-  <text x="540" y="1368" text-anchor="middle" font-size="14" letter-spacing="6" fill="${SUB}" font-family="${FONT}">生活图鉴 · LIFE STAMPS</text>
+  <text x="540" y="1338" text-anchor="middle" font-size="${note ? 30 : 24}" letter-spacing="${note ? 2 : 4}"
+        fill="${INK_C}" font-family="${note ? HAND_CN : FONT}">${note ? xesc(note) : `今天收集了 ${recs.length} 个小生活。`}</text>
+  ${cornerMark()}
 </svg>`;
 }
 
@@ -235,6 +273,10 @@ export async function openShareDay(dk) {
     ov.innerHTML = `
       <img src="${dataUrl}" alt="今日手账卡">
       <div class="weather-row"><span style="font-size:11px;color:var(--sub);letter-spacing:.1em">今天的天气</span>${wRow}</div>
+      <div class="share-note">
+        <input id="sh-note" maxlength="24" value="${xesc(store.dayNoteOf(dk) || '')}"
+               placeholder="想在卡上写一句话？">
+      </div>
       <button class="ov-btn" id="sh-save" style="margin-top:8px">保存图片</button>
       <button class="ov-btn ghost" id="sh-close">关闭</button>`;
     ov.querySelectorAll('.wbtn').forEach(b => b.onclick = () => {
@@ -242,6 +284,14 @@ export async function openShareDay(dk) {
       store.setWeather(dk, weather);
       draw();
     });
+    const noteEl = document.getElementById('sh-note');
+    // 写完失焦就重画卡；没改就别白重渲染一次（光栅化不便宜）
+    noteEl.onchange = () => {
+      const v = noteEl.value.trim();
+      if (v === (store.dayNoteOf(dk) || '')) return;
+      store.setDayNote(dk, v);
+      draw();
+    };
     document.getElementById('sh-save').onclick = () => {
       // 浏览器：下载；Capacitor/小工具打包时换原生桥（TODO）
       const a = document.createElement('a');

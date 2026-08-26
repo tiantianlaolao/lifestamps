@@ -1478,3 +1478,46 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 }
 .day-cell.arm{background:rgba(201,75,60,.12); box-shadow:inset 0 0 0 1px rgba(201,75,60,.45)}
 .day-cell.arm .del{color:var(--accent)}
+
+/* ---- 分享弹层：就地写这天的一句话（「盖了么」#8「自己输入当天的感受」）---- */
+.share-note{margin:10px 0 2px; width:100%}
+.share-note input{
+  width:100%; box-sizing:border-box; padding:9px 12px;
+  border:1px solid var(--line); border-radius:var(--r3); background:rgba(255,253,248,.8);
+  font-family:var(--f-hand); font-size:14px; color:var(--ink); outline:none;
+}
+.share-note input::placeholder{color:var(--faint); font-family:var(--f-ui); font-size:12.5px}
+
+/* ---- 刚盖下的那枚旁边的「写一句」提示（「盖了么」#1 是可发现性问题）---- */
+.note-hint{
+  position:absolute; z-index:4; transform:translate(-50%,48px);   /* 48 而不是 26：印记下面还有时间戳，26 会压住它 */
+  border:1px solid rgba(133,79,11,.22); background:var(--note); color:var(--note-text);
+  border-radius:var(--r-pill,999px); padding:3px 10px; cursor:pointer;
+  font-family:var(--f-ui); font-size:11px; letter-spacing:.04em; white-space:nowrap;
+  box-shadow:0 1px 2px rgba(63,53,48,.14);
+  animation:nh-in 220ms var(--ease-pop) both, nh-out 500ms 3700ms both;
+}
+@keyframes nh-in{from{opacity:0; transform:translate(-50%,40px) scale(.9)}
+                 to{opacity:1; transform:translate(-50%,48px) scale(1)}}
+@keyframes nh-out{to{opacity:0}}
+
+/* 「字」这一类跟生活章不是一回事，给一点点区分（虚线边），但别抢戏 */
+.deck-cats .glyph-chip{border:1px dashed rgba(120,105,85,.45)}
+
+/* ---- 日付印的框改成手绘（「盖了么」#4：这个框的画风跟其他不一样）----
+   ⛔ 试过给整个日付印套章用的 feTurbulence 抖动滤镜（甲案）：1.8px 的细边被打断成一截截、
+      「星期四」也被啃掉，读起来像渲染出错不像手绘。细线 + 小字扛不住那个滤镜。
+   ✅ 改成把框画成一条手绘路径当背景，文字保持清晰。 */
+.datestamp{
+  border:none;
+  padding:4px 9px 5px;
+  background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='44' viewBox='0 0 120 44' preserveAspectRatio='none'><path d='M3,5 Q30,2 60,4 Q92,6 117,3 Q119,20 117,40 Q90,43 60,41 Q28,38 3,41 Q1,22 3,5 Z' fill='none' stroke='%23C0453F' stroke-width='2.2' stroke-linejoin='round'/></svg>") no-repeat center/100% 100%;
+}
+
+/* ---- 贴纸拖放（3.1）---- */
+.loose-sticker,.op-sticker{cursor:grab; touch-action:none}
+.sticker-dragging{
+  cursor:grabbing; z-index:99; pointer-events:none;
+  transform:scale(1.12) rotate(-4deg)!important;
+  filter:drop-shadow(0 4px 6px rgba(63,53,48,.3));
+}

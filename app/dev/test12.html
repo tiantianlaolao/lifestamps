@@ -240,6 +240,106 @@ function clickAt(el, fx=0.5, fy=0.5){
        panel ? Math.round(panel.getBoundingClientRect().height) + 'px' : '');
   }
 
+  // 8.「写一句话」的可发现性（「盖了么」#1：功能一直有，但没人知道它在那儿）
+  //   规矩：刚盖下的那枚旁边浮个小提示；写过一次之后不再提示（知道了就不用再教）。
+  {
+    localStorage.clear();
+    localStorage.setItem('lifestamps_settings', JSON.stringify({ sound: false, haptic: true, onboarded: true, cover: 'rose' }));
+    localStorage.setItem('lifestamps_bookClosed', 'false');
+    f.src = '../index.html?skipob=1&noopen=1&band=day&sel=milktea';
+    await new Promise(r => f.onload = r); await sleep(500);
+    clickAt(D().querySelector('#today-canvas'), .4, .4); await sleep(1000);
+    const hint = D().querySelector('.note-hint');
+    ok('第一次盖章会提示「写一句」', !!hint, hint ? hint.textContent : '没提示');
+    hint?.click(); await sleep(250);
+    const inp = D().querySelector('.note-pop .np-in');
+    ok('点提示能就地打开写字气泡', !!inp);
+    if (inp) { inp.value = '和小周去的'; inp.dispatchEvent(new Event('blur')); await sleep(400); }
+    ok('写的话存进了那枚印记', (LS('records') || []).some(r => r.note === '和小周去的'));
+    clickAt(D().querySelector('#today-canvas'), .7, .6); await sleep(1100);
+    ok('写过之后不再提示', !D().querySelector('.note-hint'));
+  }
+
+  // 9. 字形章（「盖了么」#3）：能盖，但绝不进"收集"统计
+  {
+    localStorage.clear();
+    localStorage.setItem('lifestamps_settings', JSON.stringify({ sound: false, haptic: true, onboarded: true, cover: 'rose' }));
+    localStorage.setItem('lifestamps_bookClosed', 'false');
+    f.src = '../index.html?skipob=1&noopen=1&band=day&deck=open&cat=glyph';
+    await new Promise(r => f.onload = r); await sleep(500);
+    const W = f.contentWindow;
+    const two = [...D().querySelectorAll('#deck-strip .dk-stamp')].find(e => e.dataset.sid === 'g2');
+    ok('托盘「字」这一类里有数字 2', !!two);
+    // ⚠️ 选章发生在 pointerup 里，合成 .click() 不走那条路（踩过）
+    const rr = two.getBoundingClientRect();
+    const pv = t => two.dispatchEvent(new W.PointerEvent(t,
+      { bubbles: true, cancelable: true, pointerId: 3, pointerType: 'touch', clientX: rr.left + 10, clientY: rr.top + 10 }));
+    pv('pointerdown'); pv('pointerup'); await sleep(400);
+    clickAt(D().querySelector('#today-canvas'), .6, .5); await sleep(900);
+    ok('数字章能盖到纸上', (LS('records') || []).some(r => r.stampId === 'g2'));
+    const disc = LS('discovered') || {};
+    ok('字形章不进 discovered（不算发现）', !disc.g2, '实际 ' + JSON.stringify(Object.keys(disc)));
+    D().querySelector('#tabbar [data-tab="collection"]').click(); await sleep(400);
+    const sub = D().querySelector('#page-collection .col-sub').textContent;
+    ok('抽屉统计没被 49 枚字撑爆', /还有 4[0-2] 枚/.test(sub), sub.trim());
+    // 「字」要跟托盘的分类栏一致地出现在抽屉上方（8-27 用户直接问了"为什么不在上方"）
+    const gchip = D().querySelector('#drawer-cats [data-dcat="glyph"]');
+    ok('抽屉分类栏里有「字」', !!gchip);
+    gchip?.click(); await sleep(350);
+    ok('点「字」主区就是 49 枚字形章', D().querySelectorAll('#page-collection .dk-cell').length === 49,
+       '实际 ' + D().querySelectorAll('#page-collection .dk-cell').length + ' 枚');
+    ok('选「字」时两折藏起来（那两折说的是生活章）', !D().querySelector('[data-fold="raw"]'));
+  }
+
+  // 10. 贴纸拖到封面上（3.1）：贴住 → 刷新还在 → 拖出去揭下来
+  {
+    localStorage.clear();
+    localStorage.setItem('lifestamps_settings', JSON.stringify({ sound: false, haptic: true, onboarded: true, cover: 'rose' }));
+    localStorage.setItem('lifestamps_bookClosed', 'true');
+    const n2 = new Date(), mk = n2.getFullYear() + '-' + String(n2.getMonth() + 1).padStart(2, '0');
+    localStorage.setItem('lifestamps_records', JSON.stringify([{ id: 'a', stampId: 'milktea', ink: 'zhu', mat: 'r', ts: n2.getTime(), rot: -3, sc: 1, op: .9, seed: 3, px: 25, py: 30 }]));
+    localStorage.setItem('lifestamps_discovered', JSON.stringify({ milktea: n2.getTime(), coffee: n2.getTime(), water: n2.getTime() }));
+    f.src = '../index.html?skipob=1&noopen=1&band=day&opening=1';
+    await new Promise(r => f.onload = r); await sleep(800);
+    const W2 = f.contentWindow;
+    const loose = D().querySelectorAll('.loose-sticker');
+    ok('桌上摆着还没贴的贴纸', loose.length > 0, loose.length + ' 张');
+    const el = loose[0], sid = el.dataset.sid;
+    const before = D().querySelectorAll('.op-cover .op-sticker').length;
+    const r0 = el.getBoundingClientRect(), cr = D().querySelector('.op-cover').getBoundingClientRect();
+    const pv2 = (t, x, y) => el.dispatchEvent(new W2.PointerEvent(t,
+      { bubbles: true, cancelable: true, pointerId: 4, pointerType: 'touch', clientX: x, clientY: y }));
+    pv2('pointerdown', r0.left + 10, r0.top + 10);
+    pv2('pointermove', r0.left + 40, r0.top - 40); await sleep(50);
+    pv2('pointermove', cr.left + cr.width * .6, cr.top + cr.height * .7); await sleep(50);
+    pv2('pointerup', cr.left + cr.width * .6, cr.top + cr.height * .7); await sleep(250);
+    ok('拖到封面上就贴住了', D().querySelectorAll('.op-cover .op-sticker').length === before + 1);
+    // 🔴 在贴纸上"点一下不拖"也不许翻开本子——只靠"刚拖完不算"的时间护栏挡不住这种
+    //    （位移<6px 时那个护栏根本不触发，8-27 用户实测"贴来贴去偶尔会直接翻页"）
+    {
+      const l2 = D().querySelector('.loose-sticker');
+      if (l2) {
+        const rl = l2.getBoundingClientRect();
+        const pv3 = (t, x, y) => l2.dispatchEvent(new W2.PointerEvent(t,
+          { bubbles: true, cancelable: true, pointerId: 8, pointerType: 'touch', clientX: x, clientY: y }));
+        pv3('pointerdown', rl.left + 8, rl.top + 8);
+        pv3('pointermove', rl.left + 10, rl.top + 9); await sleep(30);
+        pv3('pointerup', rl.left + 10, rl.top + 9);
+        l2.dispatchEvent(new W2.MouseEvent('click', { bubbles: true }));
+        await sleep(400);
+        ok('在贴纸上点一下不会把本子翻开', !!D().querySelector('#opening'));
+      }
+    }
+    ok('拖贴纸不会误把本子翻开', !!D().querySelector('#opening'));
+    const st = JSON.parse(localStorage.getItem('lifestamps_stickers') || '{}');
+    ok('位置存下来且标了 manual', (st[mk] || []).some(x => x.id === sid && x.manual));
+    // 🔴 它不在「当月最常盖」里，全靠 manual 标记才不被自动布局清掉
+    f.src = '../index.html?skipob=1&noopen=1&band=day&opening=1';
+    await new Promise(r => f.onload = r); await sleep(800);
+    ok('刷新之后那张还贴在封面上',
+       [...D().querySelectorAll('.op-cover .op-sticker')].some(x => x.dataset.sid === sid));
+  }
+
   O.innerHTML = out.join('') + `<div style="margin-top:8px">${out.filter(x=>x.includes('FAIL')).length ? 'HAS FAIL' : 'ALL PASS'}</div>`;
 })().catch(e => { O.innerHTML = out.join('') + `<div class="f">CRASH: ${e.message}</div>`; });
 </script>

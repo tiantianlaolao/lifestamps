@@ -1,7 +1,7 @@
 // ============================================================
 // 生活图鉴 · 主逻辑（V1.2：手账翻书 / 印泥消耗 / 2.5D 盖章）
 // ============================================================
-import { STAMPS, HIDDEN, CATEGORIES, INKS, COPY, stampById, hiddenById, monthPersona, lockedMaterial, seriesById } from './data.js';
+import { STAMPS, GLYPHS, isGlyph, HIDDEN, CATEGORIES, INKS, COPY, stampById, hiddenById, monthPersona, lockedMaterial, seriesById } from './data.js';
 import { defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint, inkMainColor, inkCSS, darken, seedOf, weatherSVG } from './stamp.js';
 import { store, dateKey, fmtTime } from './store.js';
 import { checkHidden, dailySecret } from './hidden.js';
@@ -35,10 +35,10 @@ let deckCat = 'all';
 let deckOpen = false;             // 托盘展开态（收起态只有一行常用章）
 let undoRec = null;              // {id, at} 刚盖下的那一枚，10 秒内可以撤
 let undoTimer = null;
-let drawerSeg = 'stamps';
-let drawerCat = 'all';            // 抽屉里的分类过滤
+let drawerSeg = 'stamps';         // 抽屉页分段：我的章 / 印泥盒（文具店等内购做了再加第三段）
+let drawerCat = 'all';            // 抽屉里的分类过滤（含「字」）
 let drawerRawOpen = false;        // 「还没遇到的」展开了吗
-let drawerHidOpen = false;        // 「隐藏章」展开了吗        // 抽屉页分段：我的章 / 印泥盒（文具店等内购做了再加第三段）
+let drawerHidOpen = false;        // 「隐藏章」展开了吗
 let pressSlow = 1;               // dev ?slowpress=1 → 按压动画放慢 4 倍便于观察
 let slowOpen = 1;                // dev ?slowopen=N → 开场整场慢放 N 倍
 let noOpening = false;           // dev ?noopen=1 → 一律不出封面，方便截图
@@ -139,8 +139,10 @@ function init() {
   if (params.get('slowpress') === '1') pressSlow = 4;    // dev：按压动画慢放
   if (params.get('pressfreeze') === '1') pressFreeze = true; // dev：按压定格
   if (params.get('band')) bandForced = params.get('band');   // dev：钉住时段，不用改系统时间
+  if (params.get('book') === 'open') { store.bookClosed = false; store.persist(); }  // dev：跳过封面直接摊开
   if (params.get('day')) pageDk = params.get('day');       // dev：今日页直接停在某一天（含未来）
   if (params.get('deck') === 'open') deckOpen = true;      // dev：直接开到托盘展开态
+  if (params.get('cat')) deckCat = params.get('cat');       // dev：托盘直接停在某个分类
   if (params.get('slowopen')) slowOpen = Math.min(20, +params.get('slowopen') || 1);  // dev：开场慢放
 
   applyBand(false);
@@ -379,11 +381,97 @@ function playOpening(force = false, closing = false) {
     haptic();
   }
 
-  layer.addEventListener('click', openBook);
+  bindStickerDrag(layer, cover);              // 桌上的贴纸能拖到封面上（3.1）
+  layer.addEventListener('click', e => {
+    // 刚拖完贴纸的那一下不算"碰封面"，否则贴完就把本子翻开了
+    if (Date.now() - (window.__lastSticker || 0) < 320) return;
+    openBook();
+  });
   // 往左划也能翻开——手账就是这么开的，比点一下更像那么回事
   let sx = 0;
   layer.addEventListener('pointerdown', e => { sx = e.clientX; });
   layer.addEventListener('pointerup', e => { if (sx - e.clientX > 40) openBook(); });
+}
+
+// 贴纸拖放（3.1）：桌上还没贴的 → 拖到封面上贴住；已经贴上的 → 挪位置，或拖出封面拿下来。
+// 位置写进 store.stickers[当月]，带 manual 标记，不受"当月最常盖"那套自动布局管。
+function bindStickerDrag(layer, cover) {
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  let drag = null;
+
+  const onDown = e => {
+    const el = e.target.closest('.loose-sticker, .op-sticker');
+    if (!el) return;
+    e.stopPropagation();                       // 别让这一下变成"碰封面翻开"
+    const r = el.getBoundingClientRect();
+    drag = {
+      el, sid: el.dataset.sid, moved: false,
+      onCover: el.classList.contains('op-sticker'),
+      x0: e.clientX, y0: e.clientY,
+      dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height,
+      home: { parent: el.parentElement, next: el.nextSibling, style: el.getAttribute('style') },
+    };
+  };
+
+  const onMove = e => {
+    if (!drag) return;
+    if (!drag.moved) {
+      // 先走够 6px 才算拖——不然轻轻一碰就把贴纸抓起来了
+      if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 6) return;
+      drag.moved = true;
+      drag.el.classList.add('sticker-dragging');
+      layer.appendChild(drag.el);               // 提到最上层，跨越封面边界也不会被裁
+    }
+    drag.el.style.position = 'fixed';
+    drag.el.style.left = (e.clientX - drag.dx) + 'px';
+    drag.el.style.top = (e.clientY - drag.dy) + 'px';
+    e.preventDefault();
+  };
+
+  const onUp = e => {
+    if (!drag) return;
+    const d = drag; drag = null;
+    d.el.classList.remove('sticker-dragging');
+    if (!d.moved) return;
+    window.__lastSticker = Date.now();
+
+    const cr = cover.getBoundingClientRect();
+    const cx = e.clientX - d.dx + d.w / 2, cy = e.clientY - d.dy + d.h / 2;
+    const inside = cx > cr.left && cx < cr.right && cy > cr.top && cy < cr.bottom;
+
+    if (inside) {
+      // 贴到封面上：位置存成百分比，换屏幕尺寸也不会跑偏
+      const x = +(((cx - cr.left) / cr.width) * 100).toFixed(2);
+      const y = +(((cy - cr.top) / cr.height) * 100).toFixed(2);
+      const rot = (hashOf(d.sid) % 24) - 12;
+      store.putSticker(month, { id: d.sid, x, y, rot, cell: -1 });
+      d.el.removeAttribute('style');
+      d.el.className = `op-sticker ${hashOf(d.sid + 'k') % 2 ? 'die' : 'cut'}`;
+      d.el.style.left = x + '%'; d.el.style.top = y + '%';
+      d.el.style.transform = `translate(-50%,-50%) rotate(${rot}deg)`;
+      cover.appendChild(d.el);
+      haptic();
+    } else if (d.onCover) {
+      store.dropSticker(month, d.sid);          // 拖出封面 = 揭下来
+      d.el.remove();
+      haptic();
+    } else {
+      d.el.setAttribute('style', d.home.style || '');   // 没贴上：回桌上原位
+      d.home.parent.insertBefore(d.el, d.home.next);
+    }
+  };
+
+  // 🔴 落在贴纸上的 click 一律不许冒泡到封面层。
+  //    只靠"刚拖完 320ms 内不算"是不够的：在贴纸上点一下没拖动（位移<6px）时那个护栏根本不触发，
+  //    click 照样翻开本子（8-27 用户实测："贴来贴去偶尔会直接翻页"）。
+  layer.addEventListener('click', e => {
+    if (e.target.closest('.loose-sticker, .op-sticker')) e.stopPropagation();
+  }, true);
+  layer.addEventListener('pointerdown', onDown);
+  layer.addEventListener('pointermove', onMove, { passive: false });
+  layer.addEventListener('pointerup', onUp);
+  layer.addEventListener('pointercancel', () => { if (drag) { drag.el.classList.remove('sticker-dragging'); drag = null; } });
 }
 
 // 合上本子：下次打开就回到封面（8-26 用户加的）。不合上就一直摊在桌上。
@@ -434,7 +522,11 @@ function coverStickers() {
   const now = new Date();
   const pre = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-`;
   const cnt = {};
-  store.records.forEach(r => { if (dateKey(r.ts).startsWith(pre)) cnt[r.stampId] = (cnt[r.stampId] || 0) + 1; });
+  // ⚠️ 只统计生活章：封面贴的是"这个月我在过什么日子"。
+  //    字形章是工具，一个被用了 20 次的「2」会挤掉一枚真正的生活章。
+  store.records.forEach(r => {
+    if (!isGlyph(r.stampId) && dateKey(r.ts).startsWith(pre)) cnt[r.stampId] = (cnt[r.stampId] || 0) + 1;
+  });
   const ids = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, COVER_MAX).map(e => e[0]);
   if (!ids.length) return '';
 
@@ -463,8 +555,10 @@ function coverStickers() {
     // 两种贴纸混着（8-26 用户拍板）：模切 = 白边贴着笔画走；手裁 = 剪下来的小纸片。
     // ⚠️ 用 id 的哈希决定，不用 :nth-child——按位置分的话，删掉一张会让后面所有贴纸集体换形。
     const kind = hashOf(st.id + 'k') % 2 ? 'die' : 'cut';
+    // ⚠️ 定位口径必须跟拖放后写的一致（都按中心）：一个按左上角、一个按中心的话，
+    //    你拖完看着好好的，一刷新就整体偏半张贴纸。
     return `<span class="op-sticker ${kind} ${isNew ? 'new' : ''}" data-sid="${st.id}"
-      style="left:${st.x}%; top:${st.y}%; transform:rotate(${st.rot}deg)">
+      style="left:${st.x}%; top:${st.y}%; transform:translate(-50%,-50%) rotate(${st.rot}deg)">
       ${stampSVG(def, { size: 26, ink: null, mat: 'r' })}</span>`;
   }).join('');
 }
@@ -540,7 +634,10 @@ function renderDeck() {
   const isPhoto = selMat === 'p';
 
   // 分类
+  // 字形章单独一类，不混进「全部」——49 枚字挤进生活章里会把它们淹掉。
+  // ⚠️ 放在「全部」后面而不是队尾：分类行是横滚的，排最后要滑一下才看得见（实测被挤出屏幕）。
   const cats = `<button data-cat="all" class="${deckCat === 'all' ? 'sel' : ''}">全部</button>`
+    + `<button data-cat="glyph" class="glyph-chip ${deckCat === 'glyph' ? 'sel' : ''}">${COPY.catGlyph}</button>`
     + CATEGORIES.map(c => `<button data-cat="${c.id}" class="${deckCat === c.id ? 'sel' : ''}">${c.name}</button>`).join('');
 
   // 印泥铁盒：盒里那坨墨的直径 = 这盒还剩多少（12px 空 → 26px 满），全 App 不写次数
@@ -556,7 +653,8 @@ function renderDeck() {
     }).join('');
 
   // 章：立在托盘里（木柄 + 章面）
-  let list = STAMPS.filter(s => deckCat === 'all' || s.cat === deckCat);
+  let list = deckCat === 'glyph' ? GLYPHS
+    : STAMPS.filter(s => deckCat === 'all' || s.cat === deckCat);
   if (!deckOpen) {
     // 收起态只摆得下几枚，就摆今天已经用过的——那多半也是接下来要用的
     const usedToday = new Set(store.recordsOf(dateKey(Date.now())).map(r => r.stampId));
@@ -567,7 +665,7 @@ function renderDeck() {
           style="color:${inkMainColor(isPhoto ? 'zhu' : (selInk || s.ink))}">
       <i class="handle"></i>
       <span class="face">${stampSVG(s, { size: 30, ink: selInk, mat: selMat })}</span>
-      <span class="nm">${s.name}</span></div>`).join('');
+      <span class="nm">${s.kind === 'glyph' ? (s.label || '') : s.name}</span></div>`).join('');
 
   // 材质 + 状态一句话（没墨了 / 还剩多少，都用话说，不用数字和进度条）
   const mats = lockMat
@@ -881,7 +979,7 @@ function placeStamp(clientX, clientY, cv) {
   };
 
   setTimeout(() => {                             // 触纸瞬间（约 300ms）
-    store.addRecord(rec);
+    store.addRecord(rec, !isGlyph(sid));      // 字形章不算「发现」
     haptic(); thump();
     const n = store.recordsOf(pageDk).filter(r => r.stampId === sid).length;
     toast(isBackfill ? COPY.backfilled : (n > 1 ? COPY.repeatStamp : COPY.firstStamp), 900);
@@ -907,6 +1005,7 @@ function placeStamp(clientX, clientY, cv) {
     clearTimeout(undoTimer);
     undoTimer = setTimeout(() => { undoRec = null; if (curTab === 'today') renderToday(); }, UNDO_MS + 50);
     if (curTab === 'today') renderToday();
+    if (curTab === 'today') noteHint(rec.id);   // 「写一句话」这个功能得让人看见
     if (!isBackfill) {          // 补盖不参与隐藏章判定（那是"今天做了什么"的奖励）
       const newly = checkHidden();
       if (newly.length) showHiddenQueue(newly);
@@ -916,6 +1015,26 @@ function placeStamp(clientX, clientY, cv) {
 
 function esc(t) {
   return String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// 刚盖下的那枚旁边浮一个小提示，几秒后自己淡出。
+// 「写一句话」这个功能一直都有（点印记冒气泡），但没人知道它在那儿——
+// 「盖了么」#1 提的"想写盖章时的感受"，其实是可发现性问题，不是功能缺失。
+// ⚠️ 不做成"盖完就弹输入框"：那会打断「戳一下」的节奏，核心动作必须快。
+// 写过一次就不再提示——知道了就不用再教。
+function noteHint(rid) {
+  if (store.records.some(r => r.note)) return;      // 已经写过，不用再教
+  document.querySelectorAll('.note-hint').forEach(n => n.remove());
+  const chip = document.querySelector(`#today-canvas .chip[data-rid="${rid}"]`);
+  if (!chip) return;
+  const tip = document.createElement('button');
+  tip.className = 'note-hint';
+  tip.textContent = COPY.noteHint;
+  tip.style.left = chip.style.left;
+  tip.style.top = chip.style.top;
+  tip.addEventListener('click', e => { e.stopPropagation(); tip.remove(); openNote(rid); });
+  chip.parentElement.appendChild(tip);
+  setTimeout(() => tip.remove(), 4200);
 }
 
 // 一句话：点一枚印痕，就地冒一个小气泡写字（≤30 字），失焦即存
@@ -1088,7 +1207,8 @@ function showHiddenQueue(list) {
 // 图鉴
 // ============================================================
 function renderCollection() {
-  const used = Object.keys(store.discovered).length;
+  // 🔴 字形章是工具不是发现，不进这个计数（不然「还有 N 枚没盖过」会被 49 枚字撑爆）
+  const used = Object.keys(store.discovered).filter(id => !isGlyph(id)).length;
   const cnt = {};
   for (const r of store.records) cnt[r.stampId] = (cnt[r.stampId] || 0) + 1;
 
@@ -1156,7 +1276,10 @@ function drawerStamps(used, cnt) {
   const rest = STAMPS.filter(s2 => !store.discovered[s2.id] && inCat(s2));
   const hidGot = HIDDEN.filter(h => store.hidden[h.id]).length;
 
+  // 「字」跟托盘的分类栏保持一致——之前只有托盘有，抽屉里它只能待在最底下那一折，
+  // 用户直接问了"为什么不在上方"（8-27）。两边不一致就是不一致，没有别的理由。
   const cats = `<button data-dcat="all" class="${drawerCat === 'all' ? 'sel' : ''}">全部</button>`
+    + `<button data-dcat="glyph" class="glyph-chip ${drawerCat === 'glyph' ? 'sel' : ''}">${COPY.catGlyph}</button>`
     + CATEGORIES.map(c => `<button data-dcat="${c.id}" class="${drawerCat === c.id ? 'sel' : ''}">${c.name}</button>`).join('');
 
   // 已拥有的：分类是"全部"时按类分段，选了某类就直接铺开
@@ -1176,6 +1299,25 @@ function drawerStamps(used, cnt) {
       </button>
       ${open ? `<div class="fold-b">${inner}</div>` : ''}
     </div>`;
+
+  const glyphGrid = `<div class="dk-grid">${GLYPHS.map(g => `
+    <div class="dk-cell" data-sid="${g.id}" style="color:${inkMainColor(g.ink)}">
+      <span class="face inked">${stampSVG(g, { size: 34 })}</span>
+      <span class="nm">${g.label || ''}</span>
+      <!-- 没用过就不显示次数：字形章是工具不是收藏品，40 个「×0」排在那儿
+           读起来还是「你还没用过这些」，跟一直都有的定位不符（8-27 用户确认） -->
+      <span class="ct">${cnt[g.id] ? '×' + cnt[g.id] : ''}</span>
+    </div>`).join('')}</div>`;
+
+  // 选了「字」：主区就是字形章，下面那两折（还没遇到的 / 隐藏章）说的是生活章，这时候藏起来
+  if (drawerCat === 'glyph') {
+    return `<div class="col-sub">${COPY.glyphSub}</div>
+      <div class="drawer-cats" id="drawer-cats">${cats}</div>
+      <div class="box box-paper">
+        <div class="box-t"><span class="bx-n">${COPY.glyphBox}</span><span class="bx-s">${GLYPHS.length} 枚</span></div>
+        ${glyphGrid}
+      </div>`;
+  }
 
   return `<div class="col-sub">${COPY.stampsSummary
       .replace('{used}', used).replace('{rest}', STAMPS.length - used)}</div>
@@ -1613,7 +1755,7 @@ function renderMe() {
       <div class="me-item"><span class="k">导出数据</span><button id="btn-export">JSON ›</button></div>
       <div class="me-item"><span class="k">清空所有记录</span><button id="btn-wipe" class="danger">清空</button></div>
     </div>
-    <div class="me-foot">生活图鉴 · LIFE STAMPS · V1.7</div>`;
+    <div class="me-foot">生活图鉴 · LIFE STAMPS · V1.8</div>`;
 
   document.querySelectorAll('.cover-pick .cv').forEach(b2 =>
     b2.addEventListener('click', () => {

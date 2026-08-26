@@ -465,6 +465,10 @@ export const COPY = {
   drawerSegInks: '印泥盒',
   stampUnused: '还没盖过',
   notePlaceholder: '写一句…',
+  noteHint: '✎ 写一句',
+  catGlyph: '字',
+  glyphBox: '数字和字母',
+  glyphSub: '数字、字母、星期、标点——这些是工具，不算收集',
   undo: '撤销',
   undone: '撕掉了。',
   meSummary: '盖了 {a} 枚章，解开了 {b} 枚隐藏章，有 {c} 天留下了痕迹。',
@@ -510,6 +514,33 @@ export const COPY = {
 };
 
 // ---------- 工具 ----------
-export const stampById = Object.fromEntries(STAMPS.map(s => [s.id, s]));
+// ---------- 字形章（数字 / 字母 / 星期 / 标点）----------
+// 来源：「盖了么」#3 ——「奶茶 ×2」「Aug.26」「Mon」这种真手账玩法。
+// 🔴 它们是**工具**，不是"发现"：
+//    绝不进 STAMPS、不进 discovered 统计、不参与隐藏章判定。
+//    不然抽屉会从「还有 26 枚没盖过」变成「还有 75 枚没盖过」，收集感当场变成任务感。
+// 渲染走现有管线：d 里放 <text fill="CC">，CC 照样被换成印泥、滤镜照样生效，不用改 stamp.js。
+// ⚠️ 分享卡是把 SVG 当图片光栅化的，那个上下文加载不到 @font-face，
+//    所以卡上的字形章会回落到系统字体——App 里是快乐体，卡上可能不是。
+const GF = `'ZCOOL KuaiLe','PingFang SC','Microsoft YaHei',sans-serif`;
+// label：格子底下那行小字。数字/字母/星期本身就是字，再标一遍是纯噪音（0 底下写「0」），
+// 所以只有标点这类"看不出念什么"的才给标。
+const glyph = (id, ch, name, fs = 78, dy = 74) => ({
+  id, name: name || ch, label: name && name !== ch ? name : '', cat: 'glyph', kind: 'glyph', ink: 'zhu',
+  d: `<text x="50" y="${dy}" text-anchor="middle" font-size="${fs}" font-family="${GF}" fill="CC">${ch}</text>`,
+});
+
+export const GLYPHS = [
+  ...'0123456789'.split('').map(c => glyph('g' + c, c)),
+  glyph('gmul', '×', '乘号'),
+  ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(c => glyph('gu' + c, c)),
+  ...['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(w => glyph('gw' + w, w, w, 30, 62)),
+  ...[['gdot', '.', '句号'], ['gcomma', ',', '逗号'], ['gbang', '!', '叹号'],
+      ['gask', '?', '问号'], ['gwave', '~', '波浪']].map(([id, c, n]) => glyph(id, c, n)),
+];
+
+// 记录里可能引用字形章，所以查表要把它们算上（但统计口径不算，见上面红字）
+export const stampById = Object.fromEntries([...STAMPS, ...GLYPHS].map(s => [s.id, s]));
+export const isGlyph = id => stampById[id]?.kind === 'glyph';
 export const hiddenById = Object.fromEntries(HIDDEN.map(h => [h.id, h]));
 export const TOTAL_COLLECTIBLE = STAMPS.length + HIDDEN.length;

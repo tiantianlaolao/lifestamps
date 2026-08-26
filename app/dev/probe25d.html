@@ -1,0 +1,17 @@
+<!doctype html><meta charset="utf-8">
+<body>
+<div id="g" style="position:fixed;left:200px;top:400px"></div>
+<pre id="out" style="font-size:18px;font-family:Consolas"></pre>
+<script type="module">
+import { defsMarkup, stampBodySVG } from '../js/stamp.js';
+import { stampById } from '../js/data.js';
+document.body.insertAdjacentHTML('afterbegin', `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+const g = document.getElementById('g');
+g.innerHTML = stampBodySVG(stampById.milktea, { size: 88, ink: 'zhu', charge: 3 });
+const r = g.getBoundingClientRect();
+const svgs = [...g.querySelectorAll('svg')].map(s => { const b = s.getBoundingClientRect(); return `${Math.round(b.width)}x${Math.round(b.height)}@${Math.round(b.top)}`; });
+document.getElementById('out').textContent =
+  `div: ${Math.round(r.width)} x ${Math.round(r.height)} top=${Math.round(r.top)}\n` +
+  `inner svgs (${svgs.length}): ${svgs.join(' | ')}\n` +
+  `children: ${[...g.children].map(c => c.tagName).join(',')}`;
+</script>

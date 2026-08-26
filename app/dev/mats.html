@@ -1,0 +1,14 @@
+<!doctype html><meta charset="utf-8">
+<style>body{background:#F6F2EA;font-family:"Microsoft YaHei";padding:40px;width:900px}
+.g{display:flex;gap:40px}.c{text-align:center}.c p{font-size:13px;color:#8C8880}</style>
+<div id="root"></div>
+<script type="module">
+import { stampById } from '../js/data.js';
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+const ids=['milktea','cat','sunset'];
+document.getElementById('root').innerHTML =
+ `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`
+ + ['r','w','p'].map(m=>`<h3 style="margin:18px 0 8px;font-size:14px;color:#555">${{r:'橡皮（默认）',w:'木质（斑驳）',p:'光敏（无斑驳·自带朱红）'}[m]}</h3><div class="g">`
+   + ids.map(id=>`<div class="c">${stampSVG(stampById[id],{size:150,mat:m})}<p>${stampById[id].name}</p></div>`).join('')
+   + `</div>`).join('');
+</script>

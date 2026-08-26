@@ -1,0 +1,96 @@
+<!doctype html><meta charset="utf-8">
+<title>掀角卷起 · 断言</title>
+<!-- 验的是「真手势通路」，不是几何——curl.html?x=&y= 那条路走的是 _pose()，
+     绕开了 pointerdown/move/up，所以手势本身有没有接通它证明不了。
+     模型（8-26 用户纠正）：纸订在左边。往左拖 = 掀右下角翻到下一页；往右划 = 上一页转回来。
+     ⚠️ 无头不发 rAF 帧，收尾靠 curl.js 里的 setTimeout 兜底完成（这条也顺带被验到了）。 -->
+<style>
+ body{font:13px/1.7 Consolas,monospace; padding:16px; background:#fff}
+ /* ⚠️ 这个 iframe 绝对不能 display:none——没有布局的文档里 getBoundingClientRect() 全是 0，
+    curl.js 会拿 0×0 去算折线，clip-path 变成 polygon(0px 0px,…) 四个零点（踩过一次）。 */
+ iframe{width:440px;height:520px;border:1px solid #ccc}
+ .p{color:#177245}.f{color:#C00;font-weight:700}
+</style>
+<div id="out">running…</div>
+<iframe id="f" src="curl.html"></iframe>
+<script>
+const out = [], O = document.getElementById('out'), f = document.getElementById('f');
+const ok = (n, c, extra = '') => out.push(`<div class="${c ? 'p' : 'f'}">${c ? 'PASS' : 'FAIL'} ${n} ${extra}</div>`);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const pe = (el, type, x, y) => el.dispatchEvent(new PointerEvent(type, {
+  bubbles: true, cancelable: true, pointerId: 1, pointerType: 'touch', clientX: x, clientY: y,
+}));
+const dayNum = t => +t.match(/\d+/g)[1];
+
+(async () => {
+  await new Promise(r => f.onload = r);
+  await sleep(200);
+  const d = f.contentDocument;
+  const book = d.getElementById('book'), paper = d.getElementById('paper');
+  const r = paper.getBoundingClientRect();
+  const midY = r.top + r.height * 0.6;
+  const day = () => d.querySelector('.ds').textContent;
+
+  ok('起手前没有卷曲层', !d.querySelector('.curl-flap'));
+
+  // ① 纵向拖：让给页面滚动
+  pe(paper, 'pointerdown', r.left + 260, midY);
+  pe(book, 'pointermove', r.left + 256, midY + 40);
+  await sleep(30);
+  ok('纵向拖不触发卷曲', !d.querySelector('.curl-flap'));
+  pe(book, 'pointerup', r.left + 256, midY + 40);
+
+  // ② 往左拖 = 掀右下角，翻到下一天
+  const d0 = day();
+  pe(paper, 'pointerdown', r.left + 300, midY);
+  pe(book, 'pointermove', r.left + 250, midY - 8);
+  await sleep(30);
+  const flap = d.querySelector('.curl-flap');
+  ok('往左拖起手，三层就位', !!flap && !!d.querySelector('.curl-static') && !!d.querySelector('.curl-under'));
+  const clip1 = flap && flap.style.clipPath;
+  pe(book, 'pointermove', r.left + 120, midY - 60);
+  await sleep(30);
+  ok('折线跟着手走', !!clip1 && flap.style.clipPath !== clip1);
+  // 🔴 被掀的角必须跟手指起手同高：右下/右侧/右上 三个起手点靠这个成立，
+  //    也是"折线永远穿过装订线、撕不下来"的前提（8-26 用户实测打回过撕书）。
+  {
+    const pr2 = paper.getBoundingClientRect();
+    const st = d.querySelector('.curl-static').style.clipPath;
+    const pts = [...st.matchAll(/(-?[\d.]+)px (-?[\d.]+)px/g)].map(m2 => [+m2[1], +m2[2]]);
+    const onSpine = pts.some(p2 => Math.abs(p2[0]) < 1.5);
+    ok('折线穿过装订线（撕不下来）', onSpine, '静止层顶点 ' + JSON.stringify(pts));
+  }
+  ok('真纸被让位', paper.style.visibility === 'hidden');
+  pe(book, 'pointermove', r.left + 10, midY - 120);
+  await sleep(30);
+  pe(book, 'pointerup', r.left + 10, midY - 120);
+  await sleep(800);
+  ok('翻完清干净', !d.querySelector('.curl-flap') && !d.querySelector('.curl-under'));
+  ok('往左翻 = 去下一天', dayNum(day()) === dayNum(d0) + 1, `${d0} → ${day()}`);
+
+  // ③ 往左只拖一点点 → 弹回
+  const d1 = day();
+  pe(paper, 'pointerdown', r.left + 300, midY);
+  pe(book, 'pointermove', r.left + 265, midY - 4);
+  await sleep(30);
+  pe(book, 'pointerup', r.left + 265, midY - 4);
+  await sleep(800);
+  ok('拖一点点会弹回，不翻页', day() === d1, `${d1} → ${day()}`);
+
+  // ④ 往右划 = 上一页转回来；过程中绝不掀角（装订边捏不得）
+  const d2 = day();
+  pe(paper, 'pointerdown', r.left + 80, midY);
+  pe(book, 'pointermove', r.left + 130, midY - 4);
+  await sleep(30);
+  ok('往右划的过程中不掀角', !d.querySelector('.curl-flap'));
+  pe(book, 'pointermove', r.left + 200, midY - 6);
+  await sleep(30);
+  pe(book, 'pointerup', r.left + 200, midY - 6);
+  await sleep(1000);
+  ok('往右划 = 回上一天', dayNum(day()) === dayNum(d2) - 1, `${d2} → ${day()}`);
+  ok('转回来之后也清干净', !d.querySelector('.curl-flap') && !d.querySelector('.curl-under'));
+  ok('真纸恢复可见', paper.style.visibility === '');
+
+  O.innerHTML = out.join('') + `<div style="margin-top:8px">${out.some(x => x.includes('FAIL')) ? 'HAS FAIL' : 'ALL PASS'}</div>`;
+})().catch(e => { O.innerHTML = out.join('') + `<div class="f">CRASH: ${e.message}</div>`; });
+</script>

@@ -1,0 +1,89 @@
+<!doctype html><meta charset="utf-8">
+<title>掀角卷起 · demo</title>
+<!-- 独立调试 js/curl.js 的几何，不依赖 App 的渲染。
+     纸订在左边：往左拖 = 掀右下角翻到下一页（跟手）；往右划 = 上一页绕装订线转回来。
+     无头截图用 ?x=&y=（摆掀角的姿势）、?rev=1&x=&y=（摆转回来的中间态）。 -->
+<link rel="stylesheet" href="../css/app.css">
+<style>
+  /* ⚠️ 样张的类名不能叫 .sheet：那是 App 里底部弹层的类，会把纸按弹层收起来（踩过） */
+  body{margin:0; background:#E4DCC9; font-family:var(--f-ui)}
+  .wrap{width:390px; margin:0 auto; padding:20px 22px}
+  .book{position:relative; perspective:1300px}
+  .dpg{
+    position:relative; height:340px; border-radius:6px; border:1px solid var(--line);
+    background:
+      radial-gradient(circle at 1.2px 1.2px, var(--paper-dot) 1.1px, transparent 1.6px) 6px 6px/14px 14px,
+      var(--paper-page);
+    box-shadow:inset 14px 0 20px -16px rgba(37,36,33,.22);
+    overflow:hidden;
+  }
+  .dpg::before{
+    content:""; position:absolute; left:14px; top:0; bottom:0; width:8px;
+    background:radial-gradient(circle at 4px 4px, var(--paper-hole) 3px, transparent 3.7px) 0 46px/8px 64px;
+  }
+  .ds{
+    position:absolute; left:30px; top:12px; color:var(--datestamp);
+    border:1.8px solid var(--datestamp); border-radius:2px; padding:2px 7px 3px;
+    font-family:var(--f-title); font-size:17px; opacity:.84;
+  }
+  .blob{position:absolute; font-size:34px}
+  .tip{text-align:center; color:var(--tray-text); font-size:12px; margin-top:14px; letter-spacing:.1em}
+</style>
+<div class="wrap">
+  <div class="book" id="book">
+    <div class="dpg" id="paper">
+      <div class="ds">8 · 23 星期六</div>
+      <div class="blob" style="left:14%;top:52%">🍜</div>
+      <div class="blob" style="left:44%;top:44%">☕</div>
+      <div class="blob" style="left:70%;top:60%">🛏️</div>
+    </div>
+  </div>
+  <div class="tip" id="tip">往左拖 = 掀右下角翻到明天　·　往右划 = 回到昨天</div>
+</div>
+<script type="module">
+import { attachCurl } from '../js/curl.js';
+
+const book = document.getElementById('book');
+const paper = document.getElementById('paper');
+let day = 23;      // 摆在中间，两个方向都能试
+
+const makeSheet = d => {
+  const el = document.createElement('div');
+  el.className = 'dpg';
+  el.innerHTML = `<div class="ds">8 · ${d} 星期${'日一二三四五六'[d % 7]}</div>`
+    + (d % 2 ? `<div class="blob" style="left:22%;top:40%">🌧️</div>
+                <div class="blob" style="left:58%;top:62%">📖</div>`
+             : `<div class="blob" style="left:30%;top:56%">🍰</div>`);
+  return el;
+};
+
+const api = attachCurl(book, {
+  paper: () => paper,
+  canTurn: dir => (dir < 0 ? day > 1 : day < 26),
+  pageEl: dir => makeSheet(day + (dir < 0 ? -1 : 1)),
+  commit: dir => {
+    day += dir < 0 ? -1 : 1;
+    paper.querySelector('.ds').textContent = `8 · ${day} 星期${'日一二三四五六'[day % 7]}`;
+    document.getElementById('tip').textContent = `翻到了 8 月 ${day} 日`;
+  },
+});
+
+// 无头截图：直接摆姿势
+const q = new URLSearchParams(location.search);
+if (q.get('deg')) {                 // 定格「上一页转回来」的某一帧
+  requestAnimationFrame(() => {
+    api._back(+q.get('deg'));
+    document.getElementById('tip').textContent = `上一页转回来 · 定格 ${q.get('deg')}°`;
+  });
+} else if (q.get('x')) {
+  const rev = q.get('rev') === '1';
+  requestAnimationFrame(() => {
+    if (rev) { api._back(); }        // 转回来是一段动画，没有可摆的中间态
+    else api._pose(+q.get('x'), +q.get('y'), rev);
+    document.getElementById('tip').textContent = rev
+      ? `上一页转回来的中间态 (${q.get('x')}, ${q.get('y')})`
+      : `角被拖到 (${q.get('x')}, ${q.get('y')})  进度 ${(api._progress() * 100).toFixed(0)}%`;
+  });
+}
+window.__curl = api;
+</script>

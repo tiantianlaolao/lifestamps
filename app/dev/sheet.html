@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>章库全家福</title>
+<style>
+  body{background:#F6F2EA;font-family:"MiSans","Microsoft YaHei",sans-serif;color:#252421;padding:40px;width:1240px}
+  h2{font-size:14px;letter-spacing:.2em;color:#8C8880;margin:30px 0 14px}
+  .g{display:grid;grid-template-columns:repeat(8,1fr);gap:26px 8px}
+  .c{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .n{font-size:12px}.k{font-size:10px;color:#8C8880}
+</style>
+<div id="root"></div>
+<script type="module">
+import { STAMPS, HIDDEN, CATEGORIES } from '../js/data.js';
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+const root = document.getElementById('root');
+root.innerHTML = `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`
+ + CATEGORIES.map(cat => `<h2>${cat.name}</h2><div class="g">`
+   + STAMPS.filter(s => s.cat === cat.id).map((s, i) =>
+     `<div class="c">${stampSVG(s, { size: 110, rot: (i % 2 ? 2.5 : -2.5) })}<span class="n">${s.name}</span><span class="k">${s.id}</span></div>`).join('')
+   + `</div>`).join('')
+ + `<h2>隐藏章</h2><div class="g">`
+ + HIDDEN.map((h, i) => `<div class="c">${stampSVG(h, { size: 110, rot: (i % 2 ? -2 : 2) })}<span class="n">${h.name}</span><span class="k">${h.id}</span></div>`).join('')
+ + `</div>`;
+</script>

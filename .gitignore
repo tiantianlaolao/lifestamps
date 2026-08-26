@@ -1,0 +1,17 @@
+# 🔴 部署脚本里有服务器明文密码（HOST/USER/PWD），绝不进仓——私有仓也不行
+_deploy_lifestamps.py
+_deploy_*.py
+
+# 字体源文件（48MB，子集化用的原始 ttf/otf），仓里只留 app/fonts 下已子集化的 woff2
+_fonts_src/
+
+# 录屏、样张、比稿图、PRD —— 都是二进制过程物料，不是代码
+*.mp4
+*.docx
+*.png
+生活图鉴样张/
+xhs-package/
+
+# 本地杂项
+.DS_Store
+Thumbs.db

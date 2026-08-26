@@ -1,0 +1,22 @@
+<!doctype html><meta charset="utf-8">
+<iframe id="f" src="../index.html?demo=1&skipob=1&noopen=1" style="width:390px;height:760px;border:0"></iframe>
+<pre id="out">...</pre>
+<script>
+const f=document.getElementById('f');
+f.onload=()=>setTimeout(()=>{
+ const d=f.contentDocument;
+ const edge=d.querySelector('#pageedge'), cv=d.querySelector('#today-canvas');
+ const ec=edge&&edge.querySelector('.canvas');
+ const a=ec&&ec.getBoundingClientRect(), b=cv&&cv.getBoundingClientRect();
+ const recs=JSON.parse(f.contentWindow.localStorage.getItem('lifestamps_records')||'[]');
+ const y=new Date(Date.now()-864e5);
+ const ydk=y.getFullYear()+'-'+String(y.getMonth()+1).padStart(2,'0')+'-'+String(y.getDate()).padStart(2,'0');
+ const ycount=recs.filter(r=>{const t=new Date(r.ts);return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')===ydk}).length;
+ document.getElementById('out').textContent=
+  'pageedge 存在: '+!!edge+'\n'+
+  (a?('页边纸 left='+a.left.toFixed(1)+' bottom='+a.bottom.toFixed(1)+'\n'+
+      '今日纸 left='+b.left.toFixed(1)+' bottom='+b.bottom.toFixed(1)+'\n'+
+      '→ 左边露出 '+(b.left-a.left).toFixed(1)+'px，下边露出 '+(a.bottom-b.bottom).toFixed(1)+'px\n'):'')+
+  '昨天('+ydk+')有 '+ycount+' 枚章'+(ycount?'':' ← 空白页，露出来的就是一条白边，几乎看不出');
+},600);
+</script>

@@ -1,0 +1,42 @@
+<!doctype html><meta charset="utf-8">
+<!-- C 版碎花「浅一点」比稿。?tab=memories|me|today 切页；三档淡度并排。
+     淡法 = 给整组花套 <g opacity>，底下就是纸色，所以是往纸里退，不是往灰里退。 -->
+<style>
+ body{margin:0;background:#CFC9BC;display:flex;gap:10px;padding:10px;font:12px sans-serif}
+ .col{display:flex;flex-direction:column;align-items:center;gap:6px}
+ .lb{color:#3F3530;font-weight:700;letter-spacing:.1em}
+ iframe{width:390px;height:820px;border:none;display:block;background:#F6F2EA}
+</style>
+<div class="col"><span class="lb" id="l0"></span><iframe id="f0"></iframe></div>
+<div class="col"><span class="lb" id="l1"></span><iframe id="f1"></iframe></div>
+<div class="col"><span class="lb" id="l2"></span><iframe id="f2"></iframe></div>
+<script>
+const PINK='%23E6C9C9', GRN='%23CCD6C0', CRM='%23EADFC4', DOT='%23E3DAC6';
+const flower = (cx,cy,r,c,heart) =>
+  [0,1,2,3,4].map(i=>{const a=-Math.PI/2+i*2*Math.PI/5;
+    return `<circle cx='${(cx+Math.cos(a)*r).toFixed(1)}' cy='${(cy+Math.sin(a)*r).toFixed(1)}' r='${(r*0.78).toFixed(1)}' fill='${c}'/>`}).join('')
+  + `<circle cx='${cx}' cy='${cy}' r='${(r*0.62).toFixed(1)}' fill='${heart}'/>`;
+
+const inner = flower(20,22,4.6,PINK,CRM) + flower(64,64,4.6,GRN,CRM)
+  + flower(68,16,3.6,CRM,PINK) + flower(18,66,3.4,CRM,GRN)
+  + `<circle cx='44' cy='42' r='2.2' fill='${DOT}'/>`;
+
+const tile = op => `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='88' height='88' viewBox='0 0 88 88'><g opacity='${op}'>${inner}</g></svg>")`;
+
+const tab = new URLSearchParams(location.search).get('tab') || 'memories';
+const LEVELS = [
+  ['现在（100%）', 1],
+  ['浅一档（55%）', .55],
+  ['最浅（35%）', .35],
+];
+LEVELS.forEach(([label, op], i) => {
+  document.getElementById('l' + i).textContent = label;
+  const f = document.getElementById('f' + i);
+  f.src = `../index.html?demo=1&skipob=1&tab=${tab}`;
+  f.onload = () => {
+    const st = f.contentDocument.createElement('style');
+    st.textContent = `#app{background-image:${tile(op)}}`;
+    f.contentDocument.head.appendChild(st);
+  };
+});
+</script>

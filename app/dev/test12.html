@@ -1,0 +1,245 @@
+<!doctype html><meta charset="utf-8">
+<title>V1.2 自动断言</title>
+<style>body{font-family:Consolas,monospace;font-size:13px;padding:16px;background:#fff}
+.p{color:#177245}.f{color:#C00;font-weight:bold}
+/* ⚠️ 这个 iframe 不能 display:none——没有布局的文档里 getBoundingClientRect()/scrollHeight 全是 0，
+   任何量尺寸的断言都会变成 0 比 0 的假 PASS（8-26 踩到：托盘格子宽度那条）。 */
+iframe{width:390px;height:700px;border:1px solid #ccc}</style>
+<div id="out">running...</div>
+<iframe id="f"></iframe>
+<script>
+const out = [], O = document.getElementById('out');
+const ok = (name, cond, extra='') => out.push(`<div class="${cond?'p':'f'}">${cond?'PASS':'FAIL'} ${name} ${extra}</div>`);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const f = document.getElementById('f');
+
+function LS(k){ try{return JSON.parse(localStorage.getItem('lifestamps_'+k))}catch{return null} }
+function clickAt(el, fx=0.5, fy=0.5){
+  const r = el.getBoundingClientRect();
+  el.dispatchEvent(new MouseEvent('click', {bubbles:true, clientX:r.left+r.width*fx, clientY:r.top+r.height*fy}));
+}
+
+(async () => {
+  localStorage.clear();
+  f.src = '../index.html?skipob=1&sel=milktea&noopen=1';   // 开场层会挡在最上面，测交互时关掉
+  await new Promise(r => f.onload = r);
+  // ⚠️ 页面里抛的异常必须单独收——盖章的后半程在 setTimeout 里跑，
+  //    那里抛错不会让任何断言失败（8-26 就是这么漏掉一个 ReferenceError 的，用户先撞上的）。
+  const errs = [];
+  f.contentWindow.addEventListener('error', e => errs.push(e.message + ' @' + (e.lineno || '?')));
+  f.contentWindow.addEventListener('unhandledrejection', e => errs.push('Promise: ' + (e.reason && e.reason.message)));
+  await sleep(250);
+  const D = () => f.contentDocument;
+
+  // 1. 初始：印泥盒默认满（pads 空对象 = 满）
+  ok('初始 pads 为空(=默认满盒)', !LS('pads') || Object.keys(LS('pads')).length === 0);
+
+  // 2. 蘸朱红 → 扣一格
+  D().querySelector('#deck-inks .dk-ink[data-ink="zhu"]').click();
+  await sleep(120);
+  ok('蘸一次朱红后 pads.zhu=11', LS('pads')?.zhu === 11, 'got '+LS('pads')?.zhu);
+
+  // 3. 连盖三下 → 浓度递减，第4下被挡（落章在按压接触瞬间 ~300ms 后入账）
+  clickAt(D().querySelector('#today-canvas'), .3, .3); await sleep(550);
+  clickAt(D().querySelector('#today-canvas'), .6, .4); await sleep(550);
+  clickAt(D().querySelector('#today-canvas'), .4, .7); await sleep(550);
+  let recs = LS('records') || [];
+  ok('盖了 3 枚', recs.length === 3, 'got '+recs.length);
+  const ops = recs.map(r => r.op);
+  ok('三下由浓到淡 '+ops.join(' > '), ops[0] > ops[1] && ops[1] > ops[2]);
+  ok('第3下几乎看不见(op<0.2)', ops[2] < 0.2, 'got '+ops[2]);
+  clickAt(D().querySelector('#today-canvas'), .7, .6); await sleep(550);
+  ok('没墨后第4下被挡', (LS('records')||[]).length === 3);
+
+  // 4. 印泥盒：领今日补给 → 补满 + 记领取日；同日不能再领
+  D().querySelector('#tray-supply').click(); await sleep(150);   // 入口从纸外卡片挪进了托盘那行小字
+  D().querySelector('[data-refill="zhu"]').click(); await sleep(120);
+  ok('补满后 pads.zhu=12', LS('pads')?.zhu === 12, 'got '+LS('pads')?.zhu);
+  const today = new Date(), dk = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  ok('supplyDay=今天', LS('supplyDay') === dk, 'got '+LS('supplyDay'));
+  D().querySelector('#deck-inks .dk-ink[data-ink="song"]').click(); await sleep(100); // 松绿用掉一格
+  const anyEnabled = [...D().querySelectorAll('#supply-list [data-refill]')].some(b => !b.disabled);
+  ok('已领过：所有补满按钮禁用', !anyEnabled);
+
+  // 4b. 托盘两态
+  const bd0 = D().querySelector('#backdrop'); if (bd0) bd0.click(); await sleep(150);
+  ok('默认收起态', !D().querySelector('#deck').classList.contains('open'));
+  ok('收起态有「更多」和当前铁盒', !!D().querySelector('#deck-more') && !!D().querySelector('#deck-cur-ink'));
+  D().querySelector('#deck-more').click(); await sleep(320);
+  ok('点更多展开', D().querySelector('#deck').classList.contains('open'));
+  ok('展开态才有分类和材质', !!D().querySelector('#deck-cats') &&
+     getComputedStyle(D().querySelector('.mat-chip')).display !== 'none');
+  // 展开态的三条实测坑（8-26 用户撞到的）：格子排满、能纵向滚、有得收
+  const cell = D().querySelector('#deck-strip .dk-stamp');
+  const strip = D().querySelector('#deck-strip');
+  // ⚠️ 只比「格子 vs 列宽」是不够的：条带自己没铺满托盘时这条照样过（踩过）。
+  const trayW = D().querySelector('#deck').clientWidth;
+  const stripW = strip.getBoundingClientRect().width;
+  ok('章条带铺满托盘', stripW > trayW - 30, `条带 ${stripW.toFixed(0)} vs 托盘 ${trayW}`);
+  const cols = f.contentWindow.getComputedStyle(strip).gridTemplateColumns.split(' ').length;
+  ok('一排正好 6 个', cols === 6, `实际 ${cols} 列`);
+  ok('展开态章格子能纵向滚', strip.scrollHeight > strip.clientHeight + 10,
+     `内容 ${strip.scrollHeight} vs 可视 ${strip.clientHeight}`);
+  ok('展开态「收起」键还在', !!D().querySelector('#deck-more') &&
+     f.contentWindow.getComputedStyle(D().querySelector('#deck-more')).display !== 'none');
+  D().querySelector('#deck-more').click(); await sleep(320);
+  ok('点「收起」能合上', !D().querySelector('#deck').classList.contains('open'));
+  // 🔴 展开态的网格必须能纵向滚：纵向手势要留给滚动，不能被判成「拎起一枚章」
+  //    （8-26 用户手机实测：上滑找章，每次都拿起一枚，滚不动）
+  D().querySelector('#deck-more').click(); await sleep(320);
+  {
+    const cell0 = D().querySelector('#deck-strip .dk-stamp');
+    ok('展开态格子把纵向让给滚动', f.contentWindow.getComputedStyle(cell0).touchAction === 'pan-y',
+       'touch-action = ' + f.contentWindow.getComputedStyle(cell0).touchAction);
+    // 纵向拖一下，不该冒出拖拽幽灵
+    const rc = cell0.getBoundingClientRect();
+    const pv = (t, x, y) => cell0.dispatchEvent(new f.contentWindow.PointerEvent(t,
+      { bubbles: true, cancelable: true, pointerId: 7, pointerType: 'touch', clientX: x, clientY: y }));
+    pv('pointerdown', rc.left + 20, rc.top + 20);
+    pv('pointermove', rc.left + 22, rc.top - 60); await sleep(40);
+    const ghostShown = f.contentWindow.getComputedStyle(D().querySelector('#drag-ghost')).display !== 'none';
+    ok('展开态纵向拖不会拎起章', !ghostShown);
+    pv('pointerup', rc.left + 22, rc.top - 60); await sleep(60);
+  }
+  // 🔴 展开态选一枚章，托盘必须自己收回去——而且判定不能用 .click()：
+  //    真机是 pointerdown/up，而 pointerup 里就重建了 DOM，click 落不到原格子上。
+  //    用 .click() 测会得到假 PASS（8-26 踩过：探针补了个 click，真机却收不起来）。
+  {
+    const c9 = D().querySelectorAll('#deck-strip .dk-stamp')[8];
+    const r9 = c9.getBoundingClientRect();
+    const pv9 = (t, x, y) => c9.dispatchEvent(new f.contentWindow.PointerEvent(t,
+      { bubbles: true, cancelable: true, pointerId: 9, pointerType: 'touch', clientX: x, clientY: y }));
+    pv9('pointerdown', r9.left + 20, r9.top + 20);
+    pv9('pointerup', r9.left + 20, r9.top + 20);
+    await sleep(500);
+    ok('展开态选完章托盘自己收起', !D().querySelector('#deck').classList.contains('open'));
+    ok('选完之后纸进入待盖状态', !!D().querySelector('#today-canvas.armed'));
+  }
+  if (D().querySelector('#deck').classList.contains('open')) { D().querySelector('#deck-grab').click(); await sleep(320); }
+  {
+    const cell1 = D().querySelector('#deck-strip .dk-stamp');
+    ok('收起态仍然是手势自判（touch-action:none）',
+       f.contentWindow.getComputedStyle(cell1).touchAction === 'none',
+       'touch-action = ' + f.contentWindow.getComputedStyle(cell1).touchAction);
+  }
+
+  // 🔴 选章/蘸墨会整页重建，托盘的滚动位置必须留住
+  //    （8-26 用户实测：展开态选第四排的章，选完弹回顶部；点印泥排最后一个，滑回最左）
+  D().querySelector('#deck-more').click(); await sleep(320);
+  const strip2 = D().querySelector('#deck-strip');
+  strip2.scrollTop = 120; await sleep(30);
+  const cells = D().querySelectorAll('#deck-strip .dk-stamp');
+  cells[cells.length - 1].click(); await sleep(500);
+  // ⚠️ 判据不是「滚动位置不变」——展开态选完会自动收起，纵向位置那时候没意义了。
+  //    真正该保证的是：你刚选的那枚，选完之后还看得见。
+  {
+    const st3 = D().querySelector('#deck-strip');
+    const sel3 = st3.querySelector('.dk-stamp.sel');
+    const a3 = sel3.getBoundingClientRect(), b3 = st3.getBoundingClientRect();
+    const visible = sel3 && a3.right > b3.left && a3.left < b3.right
+      && a3.bottom > b3.top && a3.top < b3.bottom;
+    ok('选完之后那枚章还看得见', !!visible,
+       sel3 ? `章 ${a3.left.toFixed(0)}~${a3.right.toFixed(0)} / 条带 ${b3.left.toFixed(0)}~${b3.right.toFixed(0)}` : '没有选中的章');
+  }
+  D().querySelector('#deck-more')?.click(); await sleep(320);
+  const inks2 = D().querySelector('#deck-inks');
+  inks2.scrollLeft = 90; await sleep(30);
+  const tins = D().querySelectorAll('#deck-inks .dk-ink');
+  tins[tins.length - 1].click(); await sleep(400);
+  ok('点印泥后横排没滑回最左', D().querySelector('#deck-inks').scrollLeft > 40,
+     'scrollLeft ' + D().querySelector('#deck-inks').scrollLeft);
+  if (D().querySelector('#deck').classList.contains('open')) { D().querySelector('#deck-grab').click(); await sleep(320); }
+  ok('点拉手也能收起', !D().querySelector('#deck').classList.contains('open'));
+
+  // 5. 今日页往回翻 + 补盖（8-26 用户拍板：翻页回到书里，补盖不加条件）
+  const bd = D().querySelector('#backdrop'); if (bd) bd.click(); await sleep(150);
+  const edge = D().querySelector('#pageedge');
+  ok('今日纸底下垫着昨日页边', !!edge);
+  const y = new Date(Date.now() - 864e5);
+  const ydk = `${y.getFullYear()}-${String(y.getMonth()+1).padStart(2,'0')}-${String(y.getDate()).padStart(2,'0')}`;
+  ok('页边指向昨天', edge && edge.dataset.dk === ydk, `got ${edge && edge.dataset.dk}`);
+  // 装订在左：底下那页只能从右下的自由边露出来，而且不许转（转了整本书看着是歪的）
+  const em = f.contentWindow.getComputedStyle(edge).transform.match(/matrix\(([^)]+)\)/);
+  const ev = em ? em[1].split(',').map(Number) : [1, 0, 0, 1, 0, 0];
+  ok('页边不歪（无旋转）', Math.abs(ev[1]) < 0.001 && Math.abs(ev[2]) < 0.001, `matrix ${ev.join(',')}`);
+  // 昨天是空的时候走的是纸边叠层（.pagestack，靠 box-shadow 叠，没有 transform）
+  if (edge.classList.contains('pageedge')) {
+    ok('页边从右下露出来', ev[4] > 0 && ev[5] > 0, `位移 ${ev[4]},${ev[5]}`);
+  } else {
+    const sh = f.contentWindow.getComputedStyle(edge).boxShadow;
+    ok('纸边叠层往右下叠', /(^|\s)\d+(\.\d+)?px \d+(\.\d+)?px/.test(sh), sh.slice(0, 50));
+  }
+  edge.click(); await sleep(900);          // 点页边 = 就地翻回昨天（转回来是一段动画）
+  ok('点页边留在今日页，不跳本子', D().querySelector('#page-today').classList.contains('active'));
+  ok('翻到昨天后出现「回到今天」', !!D().querySelector('#pg-today'));
+  ok('纸上的日付印是昨天', D().querySelector('#today-canvas .datestamp .d').textContent.trim()
+     === `${+ydk.slice(5,7)} · ${+ydk.slice(8,10)}`,
+     'got ' + D().querySelector('#today-canvas .datestamp .d').textContent);
+
+  // 在昨天那页补盖一枚：记录要归属昨天
+  D().querySelector('#deck-inks .dk-ink[data-ink="zhu"]').click(); await sleep(100);
+  clickAt(D().querySelector('#today-canvas'), .5, .5); await sleep(900);
+  recs = LS('records') || [];
+  const last = recs[recs.length - 1];
+  const ldk = (t => `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`)(new Date(last.ts));
+  ok('补盖的记录归属昨天', ldk === ydk, `got ${ldk} want ${ydk}`);
+  ok('补盖后共 4 枚', recs.length === 4, 'got ' + recs.length);
+  D().querySelector('#pg-today').click(); await sleep(200);
+  ok('回到今天后没有「回到今天」钮了', !D().querySelector('#pg-today'));
+
+  // 5a. 翻页时不能把页面撑出横向滚动（8-26 用户录屏：掀到一半整个界面横着错位）
+  {
+    const W2 = f.contentWindow, D2 = D();
+    const main = D2.querySelector('main');
+    const pp = D2.querySelector('#today-canvas'), bk = D2.querySelector('#page-today .book');
+    const rr = pp.getBoundingClientRect(), yy = rr.top + rr.height * 0.6;
+    const pv = (el, t, x, y) => el.dispatchEvent(new W2.PointerEvent(t,
+      { bubbles: true, cancelable: true, pointerId: 9, pointerType: 'touch', clientX: x, clientY: y }));
+    pv(pp, 'pointerdown', rr.left + rr.width - 40, yy);
+    pv(bk, 'pointermove', rr.left + rr.width * 0.3, yy - 60); await sleep(40);
+    pv(bk, 'pointermove', rr.left - 120, yy - 150); await sleep(40);
+    ok('翻页中不产生横向溢出', main.scrollWidth <= main.clientWidth,
+       `scrollW ${main.scrollWidth} vs clientW ${main.clientWidth}`);
+    pv(bk, 'pointerup', rr.left - 120, yy - 150); await sleep(900);
+  }
+  // 5b. Tab 切换：查的是「到底显不显示」，不是 .active 这个类名——
+  //     类名对了但页面没隐藏的情况真发生过（#page-today 的 display 被 ID 权重压住）。
+  for (const t of ['memories', 'collection', 'me', 'today']) {
+    D().querySelector(`#tabbar [data-tab="${t}"]`).click(); await sleep(220);
+    const vis = [...D().querySelectorAll('.page')]
+      .filter(p => f.contentWindow.getComputedStyle(p).display !== 'none').map(p => p.id);
+    ok(`点「${t}」只显示这一页`, vis.length === 1 && vis[0] === 'page-' + t, 'got [' + vis.join(',') + ']');
+  }
+
+  // 6. 「默」薄墨不耗盒
+  const padsBefore = JSON.stringify(LS('pads'));
+  D().querySelector('#deck-inks .dk-ink[data-ink=""]').click(); await sleep(100);
+  ok('蘸「默」不扣任何盒', JSON.stringify(LS('pads')) === padsBefore);
+
+  ok('全程页面没抛异常', errs.length === 0, errs.join(' | '));
+  // 7. 本子页底部「这一天」不能被章的数量撑长
+  //    （8-26 用户："如果这一天盖了很多章，就又是很长"。改之前 20 枚 ≈ 1080px）
+  {
+    const many = JSON.parse(localStorage.getItem('lifestamps_records') || '[]');
+    const base = new Date();
+    for (let i = 0; i < 20; i++) {
+      const d2 = new Date(base); d2.setHours(8 + (i % 12), (i * 3) % 60, 0, 0);
+      many.push({ id: 'bulk' + i, stampId: 'milktea', ink: 'zhu', mat: 'r', ts: d2.getTime(),
+                  rot: -3, sc: 1, op: .9, seed: i, px: 20 + (i * 3) % 60, py: 20 + (i * 5) % 60 });
+    }
+    localStorage.setItem('lifestamps_records', JSON.stringify(many));
+    f.src = '../index.html?skipob=1&noopen=1&band=day&tab=memories';
+    await new Promise(r => f.onload = r); await sleep(500);
+    const grid = D().querySelector('.day-grid');
+    const panel = D().querySelector('.day-panel');
+    ok('这一天有 20+ 枚章时明细仍然封顶', grid && grid.clientHeight <= 140,
+       grid ? `可视 ${grid.clientHeight}px / 内容 ${grid.scrollHeight}px` : '没找到明细网格');
+    ok('超出的部分在块内滚动而不是撑长页面', grid && grid.scrollHeight > grid.clientHeight,
+       grid ? `内容 ${grid.scrollHeight} vs 可视 ${grid.clientHeight}` : '');
+    ok('整块「这一天」高度受控（<220px）', panel && panel.getBoundingClientRect().height < 220,
+       panel ? Math.round(panel.getBoundingClientRect().height) + 'px' : '');
+  }
+
+  O.innerHTML = out.join('') + `<div style="margin-top:8px">${out.filter(x=>x.includes('FAIL')).length ? 'HAS FAIL' : 'ALL PASS'}</div>`;
+})().catch(e => { O.innerHTML = out.join('') + `<div class="f">CRASH: ${e.message}</div>`; });
+</script>

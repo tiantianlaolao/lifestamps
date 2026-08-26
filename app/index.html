@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#F6F2EA">
+<title>生活图鉴</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <svg width="0" height="0" style="position:absolute" id="defs-holder"></svg>
+
+  <main>
+    <section id="page-today" class="page"></section>
+    <section id="page-collection" class="page"></section>
+    <section id="page-memories" class="page"></section>
+    <section id="page-me" class="page"></section>
+  </main>
+
+  <!-- ⚠️ data-tab 是内部 id，没跟着改名：memories = 本子，collection = 抽屉。
+       改 id 要连带动 #page-* / switchTab / ?tab= 三处，收益为零，所以只换标签和顺序。 -->
+  <nav id="tabbar">
+    <button data-tab="today">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v16H5z"/><path d="M8.5 9.5h7M8.5 13h4.5"/></svg>
+      今日
+    </button>
+    <button data-tab="memories">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h12a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H6"/><path d="M6 3.5A2.5 2.5 0 0 0 3.5 6v12A2.5 2.5 0 0 0 6 20.5"/><path d="M6 3.5v17"/></svg>
+      本子
+    </button>
+    <button data-tab="collection">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="6" rx="1.2"/><rect x="3.5" y="13" width="17" height="6" rx="1.2"/><path d="M10.5 8h3M10.5 16h3"/></svg>
+      抽屉
+    </button>
+    <button data-tab="me">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="9" r="3.6"/><path d="M5.5 20c1.2-3.4 3.6-5 6.5-5s5.3 1.6 6.5 5"/></svg>
+      我的
+    </button>
+  </nav>
+
+  <div id="backdrop"></div>
+
+  <!-- 印章操作 -->
+  <div class="sheet" id="sheet-actions">
+    <div class="sheet-grab"></div>
+    <div class="sheet-title" id="act-title"></div>
+    <div class="act-list" id="act-list"></div>
+  </div>
+
+  <!-- 印泥盒（库存 + 每日补给） -->
+  <div class="sheet" id="sheet-supply">
+    <div class="sheet-grab"></div>
+    <div class="sheet-title">印 泥 盒</div>
+    <div class="supply-note" id="supply-note"></div>
+    <div class="supply-list" id="supply-list"></div>
+    <div class="supply-foot">新的印泥会陆续上架</div>
+  </div>
+
+  <!-- 隐藏章发现 -->
+  <div class="overlay" id="ov-hidden"></div>
+  <!-- 分享 -->
+  <div class="overlay" id="ov-share"></div>
+  <!-- 合订本：这个月 -->
+  <div class="overlay" id="ov-booklet"></div>
+  <!-- 引导 -->
+  <div class="overlay" id="ov-onboard"></div>
+
+  <div id="drag-ghost"></div>
+
+  <div id="toast"></div>
+</div>
+<script>
+// 内测期：JS 挂了就把错误显示出来，别只剩一条 tab 栏让人干瞪眼
+(function () {
+  var shown = false;
+  function boom(msg) {
+    if (shown) return; shown = true;
+    var d = document.createElement('div');
+    d.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:9999;background:#C93B3B;color:#fff;'
+      + 'font:12px/1.6 monospace;padding:10px 12px;white-space:pre-wrap;word-break:break-all';
+    d.textContent = '出错了，页面没能渲染出来：\n' + msg
+      + '\n\n（把这段截图发出来就行）';
+    (document.body || document.documentElement).appendChild(d);
+  }
+  window.addEventListener('error', function (e) {
+    boom(e.message + (e.filename ? '\n' + e.filename + ':' + e.lineno : ''));
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) {
+    boom('Promise: ' + (e.reason && e.reason.message || e.reason));
+  });
+  // 兜底：3 秒后还是一片空白，说明模块根本没执行
+  setTimeout(function () {
+    // 看当前打开的那一页，不能写死今日页——从 ?tab= 直接开到别的页时今日页本来就是空的
+    var t = document.querySelector('.page.active');
+    if (!t || !t.innerHTML.trim()) boom('模块没有执行（多半是缓存串了版本）。');
+  }, 3000);
+})();
+</script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

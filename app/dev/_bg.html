@@ -1,0 +1,48 @@
+<!doctype html><meta charset="utf-8">
+<style>
+ body{margin:0;background:#CFC9BC;display:flex;gap:10px;padding:10px;font:12px sans-serif}
+ .col{display:flex;flex-direction:column;align-items:center;gap:6px}
+ .lb{color:#3F3530;font-weight:700;letter-spacing:.1em}
+ iframe{width:390px;height:800px;border:none;display:block;background:#F6F2EA}
+</style>
+<div class="col"><span class="lb">A 撒花草（稀疏）</span><iframe id="a"></iframe></div>
+<div class="col"><span class="lb">B 格纹桌布</span><iframe id="b"></iframe></div>
+<div class="col"><span class="lb">C 满印小碎花（甜）</span><iframe id="c"></iframe></div>
+<script>
+const PINK='%23E6C9C9', GRN='%23CCD6C0', CRM='%23EADFC4', STEM='%23CBD3BE', DOT='%23E3DAC6';
+// 能认出来的五瓣花：5 个圆围一圈 + 花心
+const flower = (cx,cy,r,c,heart) =>
+  [0,1,2,3,4].map(i=>{const a=-Math.PI/2+i*2*Math.PI/5;
+    return `<circle cx='${(cx+Math.cos(a)*r).toFixed(1)}' cy='${(cy+Math.sin(a)*r).toFixed(1)}' r='${(r*0.78).toFixed(1)}' fill='${c}'/>`}).join('')
+  + `<circle cx='${cx}' cy='${cy}' r='${(r*0.62).toFixed(1)}' fill='${heart}'/>`;
+const grass = (x,y,s) => `<g fill='none' stroke='${STEM}' stroke-width='${(2.2*s).toFixed(1)}' stroke-linecap='round'>`
+  + `<path d='M${x} ${y} q${1.5*s} ${-9*s} ${-2*s} ${-14*s}'/>`
+  + `<path d='M${x} ${y} q${6*s} ${-6*s} ${9*s} ${-12*s}'/>`
+  + `<path d='M${x} ${y} q${-6*s} ${-4*s} ${-10*s} ${-9*s}'/></g>`;
+const leaf = (x,y,rot) => `<g transform='rotate(${rot} ${x} ${y})' fill='none' stroke='${STEM}' stroke-width='2.2' stroke-linecap='round'>`
+  + `<path d='M${x} ${y} q9 -9 17 -4 q-4 10 -17 4z'/><path d='M${x} ${y} l13 -4.5'/></g>`;
+
+const svg = (w,inner) => `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${w}' viewBox='0 0 ${w} ${w}'>${inner}</svg>")`;
+
+const A = svg(170, flower(30,36,7,PINK,CRM) + flower(126,112,6,GRN,CRM)
+  + grass(102,140,1) + leaf(126,40,-18) + leaf(30,116,160)
+  + `<circle cx='72' cy='18' r='2.6' fill='${DOT}'/><circle cx='158' cy='72' r='2.4' fill='${DOT}'/>`
+  + `<circle cx='12' cy='84' r='2.4' fill='${DOT}'/><circle cx='84' cy='84' r='2.2' fill='${DOT}'/>`);
+
+const B = svg(104, flower(52,24,5.4,PINK,CRM) + grass(22,80,.8)
+  + `<circle cx='84' cy='62' r='2.4' fill='${DOT}'/>`)
+  + `, repeating-linear-gradient(0deg, rgba(196,186,163,.32) 0 1px, transparent 1px 52px)`
+  + `, repeating-linear-gradient(90deg, rgba(196,186,163,.32) 0 1px, transparent 1px 52px)`;
+
+const C = svg(88, flower(20,22,4.6,PINK,CRM) + flower(64,64,4.6,GRN,CRM)
+  + flower(68,16,3.6,CRM,PINK) + flower(18,66,3.4,CRM,GRN)
+  + `<circle cx='44' cy='42' r='2.2' fill='${DOT}'/>`);
+
+for (const [id,bg] of Object.entries({a:A,b:B,c:C})) {
+  const f=document.getElementById(id);
+  f.src='../index.html?demo=1&skipob=1';
+  f.onload=()=>{const st=f.contentDocument.createElement('style');
+    st.textContent=`#app{background-image:${bg};background-color:var(--paper)} .card{background:rgba(255,253,248,.72)}`;
+    f.contentDocument.head.appendChild(st);};
+}
+</script>

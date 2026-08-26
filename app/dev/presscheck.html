@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8">
+<style>body{margin:0;background:#DDD8CC;display:flex;justify-content:center}iframe{width:390px;height:844px;border:none}</style>
+<iframe id="f" src="../index.html?skipob=1&sel=milktea&pressfreeze=1"></iframe>
+<script>
+const f=document.getElementById('f');
+f.onload=()=>setTimeout(()=>{
+  const D=f.contentDocument, cv=D.querySelector('#today-canvas'), r=cv.getBoundingClientRect();
+  const x=r.left+r.width*0.5, y=r.top+r.height*0.55;
+  cv.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:x,clientY:y}));
+  // 标记点击点：红十字
+  setTimeout(()=>{
+    const m=D.createElement('div');
+    m.style.cssText=`position:fixed;left:${x-8}px;top:${y-1}px;width:16px;height:2px;background:#f00;z-index:99`;
+    const m2=D.createElement('div');
+    m2.style.cssText=`position:fixed;left:${x-1}px;top:${y-8}px;width:2px;height:16px;background:#f00;z-index:99`;
+    D.body.append(m,m2);
+  },400);
+},300);
+</script>

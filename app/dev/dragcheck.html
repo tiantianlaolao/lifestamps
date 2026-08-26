@@ -1,0 +1,36 @@
+<!doctype html><meta charset="utf-8">
+<style>body{margin:0;background:#DDD8CC;display:flex;justify-content:center}iframe{width:390px;height:844px;border:none}
+#r{position:fixed;left:4px;top:4px;background:#fff;padding:4px 8px;font:14px Consolas;z-index:9}</style>
+<div id="r">...</div>
+<iframe id="f" src="../index.html?skipob=1"></iframe>
+<script>
+const f=document.getElementById('f'), R=document.getElementById('r');
+const pe=(el,type,x,y)=>el.dispatchEvent(new PointerEvent(type,{bubbles:true,pointerId:7,pointerType:'touch',clientX:x,clientY:y,isPrimary:true}));
+f.onload=()=>setTimeout(()=>{
+  const D=f.contentDocument, out=[];
+  // 1) 横向 pan：在第一个格子上横滑 120px
+  const strip=D.getElementById('deck-strip');
+  const c1=D.querySelector('#deck-strip .dk-stamp');
+  let r=c1.getBoundingClientRect(), x=r.left+20, y=r.top+20;
+  pe(c1,'pointerdown',x,y);
+  for(let i=1;i<=6;i++) pe(c1,'pointermove',x-i*20,y+2);
+  pe(c1,'pointerup',x-120,y+2);
+  out.push('pan scrollLeft='+strip.scrollLeft);
+  // 2) 纵向 drag：换个格子往上拖到画布中间，停在半路（不松手）
+  setTimeout(()=>{
+    strip.scrollLeft=0;
+    const c2=D.querySelectorAll('#deck-strip .dk-stamp')[2];
+    const r2=c2.getBoundingClientRect(), x2=r2.left+25, y2=r2.top+15;
+    const cv=D.getElementById('today-canvas').getBoundingClientRect();
+    pe(c2,'pointerdown',x2,y2);
+    for(let i=1;i<=8;i++) pe(c2,'pointermove',x2-2, y2-(y2-(cv.top+cv.height*0.5))*i/8);
+    const g=D.getElementById('drag-ghost');
+    const gb=g.getBoundingClientRect(), cs=f.contentWindow.getComputedStyle(g);
+    out.push('ghost display='+g.style.display+' svg='+(g.querySelectorAll('svg').length));
+    out.push('rect='+Math.round(gb.left)+','+Math.round(gb.top)+' '+Math.round(gb.width)+'x'+Math.round(gb.height));
+    out.push('comp disp='+cs.display+' vis='+cs.visibility+' op='+cs.opacity+' z='+cs.zIndex+' tf='+cs.transform);
+    out.push('armed='+D.getElementById('today-canvas').className.includes('armed'));
+    R.textContent=out.join(' | ');
+  },100);
+},400);
+</script>

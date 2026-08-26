@@ -1,0 +1,131 @@
+<!doctype html><meta charset="utf-8">
+<!-- 开场校验（规格 §7.1a + 8-26 改动：封面等人碰、一天一次）。
+     两段：① 合着的时候盯一会儿，确认它不会自己翻；② 碰一下，验翻开这套动画和时间线。
+     ⚠️ 无头 Chrome 对「页面空闲之后才启动的动画」不发帧，currentTime 会一直卡在 0（踩过），
+        所以第二段不能靠等一会儿再采样，改成把动画时钟手动拨到指定位置读计算样式。 -->
+<style>
+ body{margin:0;font:12px/1.7 monospace;background:#F6F2EA;color:#3F3530;display:flex}
+ iframe{width:390px;height:760px;border:1px solid #C9C3B7;background:#fff}
+ #out{padding:12px;white-space:pre}
+ .bad{color:#C93B3B;font-weight:700}
+ .ok{color:#2E7D4F}
+</style>
+<iframe id="f" src="../index.html?demo=1&skipob=1&band=day&opening=1"></iframe>
+<pre id="out">采样中…</pre>
+<script>
+const f = document.getElementById('f'), out = document.getElementById('out');
+const NL = String.fromCharCode(10);
+const WAIT_PROBE = 900;        // 合着不动的观察窗：碰之前先盯它这么久
+
+function angleOf(el) {
+  const m = getComputedStyle(el).transform;
+  if (!m || m === 'none') return 0;
+  const n = m.match(/matrix3d\(([^)]+)\)/);
+  if (!n) return 0;
+  const v = n[1].split(',').map(Number);
+  return +(Math.acos(Math.max(-1, Math.min(1, v[0]))) * 180 / Math.PI).toFixed(1);
+}
+function ty(el) {
+  const m = getComputedStyle(el).transform.match(/matrix\(1, 0, 0, 1, [\d.-]+, ([\d.-]+)\)/);
+  return m ? +m[1] : 0;
+}
+
+f.onload = () => {
+  const d = f.contentDocument;
+  const waitSeen = [];
+  let after = null;
+
+  // ① 合着的时候：每 100ms 看一眼封面角度、日付印、托盘
+  for (let t = 100; t <= WAIT_PROBE; t += 100) setTimeout(() => {
+    const cover = d.querySelector('.op-cover');
+    const ds = d.querySelector('#today-canvas .datestamp');
+    const deck = d.querySelector('#page-today #deck');
+    waitSeen.push({
+      deg: cover ? angleOf(cover) : null,
+      dsOp: ds ? +getComputedStyle(ds).opacity : null,
+      deckY: deck ? ty(deck) : null,
+      hint: !!d.querySelector('.op-hint'),
+    });
+  }, t);
+
+  // ② 碰一下，然后拨时钟
+  setTimeout(() => {
+    const layer = d.querySelector('#opening');
+    if (layer) layer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const cover = d.querySelector('.op-cover');
+    const ca = cover ? cover.getAnimations()[0] : null;
+    const scrub = t => { ca.currentTime = t; return angleOf(cover); };
+    const timing = el => {
+      if (!el) return null;
+      const cs = getComputedStyle(el);
+      return { name: cs.animationName, dur: cs.animationDuration, delay: cs.animationDelay };
+    };
+    after = {
+      cover: ca ? { name: ca.animationName, at0: scrub(0), at130: scrub(130), at260: scrub(260), at519: scrub(519) } : null,
+      ds: timing(d.querySelector('#today-canvas .datestamp')),
+      deck: timing(d.querySelector('#page-today #deck')),
+      // 卡片已经从今日页撤掉了（印泥盒进托盘、隐藏章上纸），最后淡入的是顶栏
+      card: timing(d.querySelector('#page-today .t-bar')),
+    };
+    if (ca) ca.currentTime = 0;
+    // 状态机：翻开 → 摊开着；点「合上」→ 合着且封面回来
+    const LS = () => { try { return JSON.parse(f.contentWindow.localStorage.getItem('lifestamps_bookClosed')); } catch { return null; } };
+    after.closedAfterOpen = LS();
+    // 🔴 等开场自然播完（1120ms）再查：翻开之后整页必须真的能用。
+    //    ⚠️ 判据是「没有开场层却还留着 op-wait 这些类名」——点开那一瞬 .opening 本来就在，
+    //       那时候查等于查错时机。坏状态长这样：纸露出来了、托盘还是 pointer-events:none，
+    //       拿不到章也盖不了（8-26 用户实测：封面态下去改封皮颜色，切回来就是它）。
+    setTimeout(() => {
+      const pg = d.querySelector('#page-today');
+      after.layerGone = !d.querySelector('#opening');
+      after.stuckClasses = ['op-wait', 'opening', 'op-closing'].filter(c => pg.classList.contains(c));
+      after.deckUsable = getComputedStyle(d.querySelector('#deck')).pointerEvents !== 'none';
+      d.querySelector('#close-book')?.click();
+      setTimeout(() => {
+        after.closedAfterClose = LS();
+        after.coverBack = !!d.querySelector('#opening .op-cover');
+        report();
+      }, 250);
+    }, 1400);
+  }, WAIT_PROBE + 60);
+
+  function report() {
+    const a = after || {};
+    const degs = [...new Set(waitSeen.map(x => x.deg))].join('/');
+    let s = ' 合着等人碰的 ' + WAIT_PROBE + 'ms 里：封面角度 ' + degs
+      + '°，提示语在=' + waitSeen.every(x => x.hint) + NL + NL;
+    s += ' 碰下去之后（把动画时钟拨到指定位置读出来的）' + NL;
+    if (a.cover) {
+      s += '  封面 ' + a.cover.name + '： 0ms=' + a.cover.at0 + '°  130ms=' + a.cover.at130
+        + '°  260ms=' + a.cover.at260 + '°  519ms=' + a.cover.at519 + '°' + NL;
+    }
+    for (const [k, v] of [['日付印', a.ds], ['托盘', a.deck], ['顶栏', a.card]]) {
+      if (v) s += '  ' + k + ' ' + v.name + '：延迟 ' + v.delay + '，时长 ' + v.dur + NL;
+    }
+    const chk = [
+      ['没碰之前封面一直合着（不自动翻）', waitSeen.length > 5 && waitSeen.every(x => x.deg === 0)],
+      ['合着时纸上是空的（日付印没落、托盘在下面）', waitSeen.every(x => x.dsOp === 0 && Math.abs(x.deckY) > 20)],
+      ['封面上有「碰一下」的提示', waitSeen.every(x => x.hint)],
+      ['碰下去挂上了翻开动画', !!a.cover && a.cover.name === 'op-open'],
+      ['封面从 0° 转到 180°', !!a.cover && a.cover.at0 < 2 && a.cover.at519 > 170],
+      ['翻开不是啪一下：半程还没转过 3/4', !!a.cover && a.cover.at260 < 135],
+      ['起手是慢的：1/4 程不到 45°', !!a.cover && a.cover.at130 < 45],
+      ['日付印排在封面之后（延迟 0.52s）', !!a.ds && a.ds.delay === '0.52s' && a.ds.name === 'op-stamp'],
+      ['托盘排在日付印之后（延迟 0.77s）', !!a.deck && a.deck.delay === '0.77s' && a.deck.name === 'op-deck'],
+      ['顶栏最后（延迟 0.97s）', !!a.card && a.card.delay === '0.97s'],
+      // 🔴 封面出不出，取决于「上次有没有合上」（8-26 用户改的规矩）
+      ['翻开之后本子记为摊开着', a.closedAfterOpen === false],
+      ['点「合上」之后本子记为合着', a.closedAfterClose === true],
+      ['点「合上」之后封面回来了', !!a.coverBack],
+      ['开场播完自己收干净', a.layerGone === true],
+      ['收干净后没留下半开的类名', Array.isArray(a.stuckClasses) && a.stuckClasses.length === 0,
+       '残留 [' + (a.stuckClasses || []).join(',') + ']'],
+      ['翻开后托盘能点', a.deckUsable === true],
+    ];
+    s += NL;
+    for (const [name, pass] of chk) s += (pass ? '  ✓ ' : '  ✗ ') + name + NL;
+    out.textContent = s;
+    out.className = chk.every(c => c[1]) ? 'ok' : 'bad';
+  }
+};
+</script>

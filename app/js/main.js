@@ -157,6 +157,8 @@ function init() {
   if (params.get('slowpress') === '1') pressSlow = 4;    // dev：按压动画慢放
   if (params.get('pressfreeze') === '1') pressFreeze = true; // dev：按压定格
   if (params.get('band')) bandForced = params.get('band');   // dev：钉住时段，不用改系统时间
+  if (params.get('font')) store.settings.font = params.get('font');   // dev：字体 hand|plain
+  if (params.get('desk')) store.settings.desk = params.get('desk');   // dev：桌布 floral|plain|grid
   if (params.get('chip')) CHIP = +params.get('chip');        // dev：纸上章的基准尺寸
   if (params.get('thin')) setThin(+params.get('thin'));      // dev：章的线宽系数
   if (params.get('book') === 'open') { store.bookClosed = false; store.persist(); }  // dev：跳过封面直接摊开
@@ -166,6 +168,7 @@ function init() {
   if (params.get('slowopen')) slowOpen = Math.min(20, +params.get('slowopen') || 1);  // dev：开场慢放
 
   initDiag();               // 真机诊断面板：「我的」页版本号连点 5 下
+  applyLook();
   applyBand(false);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { hiddenAt = Date.now(); return; }
@@ -700,7 +703,7 @@ function renderDeck() {
     ? `<span class="mat-chip on locked">${{ r: '橡皮', w: '木质', p: '光敏' }[lockMat]}</span>`
     : [['r', '橡皮'], ['w', '木质'], ['p', '光敏']].map(([k, n]) =>
       `<button class="mat-chip ${selMat === k ? 'on' : ''}" data-mat="${k}">${n}</button>`).join('');
-  const note = isPhoto ? '光敏章自带印泥，盖多少次都行'
+  const note = isPhoto ? COPY.matPhotoNote
     : !selStamp ? '先从托盘里拿一枚章'
       : inkLeft >= 3 ? COPY.inkFull
         : inkLeft === 2 ? COPY.inkMid
@@ -862,6 +865,15 @@ function bindToday() {
 // 把手势抢走并 pointercancel，手机上拖拽幽灵就永远出不来，8-25 用户实测打回）
 // 托盘开合。⚠️ 只切类名、不重渲染，CSS 的高度过渡才跑得起来；
 //    renderToday() 会把 #deck 整个重建，重建出来的新元素身上是没有过渡可言的。
+// 字体和桌布：只往 <html> 上挂两个 data 属性，具体长什么样全在 CSS 的 token 里。
+// ⚠️ 分享卡吃不到这两个设置——它是把 SVG 塞进 <img> 光栅化的隔离文档，读不到 CSS 变量。
+//    这条是已知的、故意的（分享卡那块单独排）。
+function applyLook() {
+  const de = document.documentElement;
+  de.dataset.font = store.settings.font || 'hand';
+  de.dataset.desk = store.settings.desk || 'floral';
+}
+
 function setDeckOpen(open) {
   deckOpen = open;
   // 托盘展开 = 页面变得能滚了 → 纸得把纵向手势还给浏览器（见 app.css 里 .book 的 touch-action）
@@ -1627,7 +1639,10 @@ function renderMonthView() {
       return `<span class="mn" style="left:${p.x}%;top:${p.y}%">${stampSVG(stampById[r.stampId],
         { size: 13, ink: r.ink, rot: r.rot, mat: r.mat, flat: true })}</span>`;
     }).join('');
-    cells += `<div class="pg-cell ${future ? 'future' : ''} ${today ? 'today' : ''} ${memSelDay === dk ? 'selday' : ''}" data-dk="${dk}">
+    // blank = 过去的日子但一枚章都没有。跟"还没到的日子"（future）要分开：
+    // 那是"还没轮到"，这是"轮到了、空着"——空着的那张纸该看起来在等人写，不是一个空格子。
+    const blank = !future && !list.length;
+    cells += `<div class="pg-cell ${future ? 'future' : ''} ${blank ? 'blank' : ''} ${today ? 'today' : ''} ${memSelDay === dk ? 'selday' : ''}" data-dk="${dk}">
       <span class="pg-paper">${minis}</span><span class="d">${d}</span></div>`;
   }
   // 合订本：月网格最后一格，一张对折的纸
@@ -1811,14 +1826,33 @@ function renderMe() {
           <button data-cover="rose" class="cv rose ${(store.settings.cover || 'rose') === 'rose' ? 'on' : ''}" aria-label="藕粉"></button>
           <button data-cover="cream" class="cv cream ${store.settings.cover === 'cream' ? 'on' : ''}" aria-label="奶油"></button>
         </span></div>
+      <div class="me-item"><span class="k">字体</span>
+        <span class="pick-row">
+          <button data-font="hand" class="pk ${(store.settings.font || 'hand') === 'hand' ? 'on' : ''}">手写</button>
+          <button data-font="plain" class="pk ${store.settings.font === 'plain' ? 'on' : ''}">常规</button>
+        </span></div>
+      <div class="me-item"><span class="k">桌布</span>
+        <span class="pick-row">
+          <button data-desk="floral" class="pk dk-sw floral ${(store.settings.desk || 'floral') === 'floral' ? 'on' : ''}" aria-label="碎花"></button>
+          <button data-desk="plain" class="pk dk-sw plain ${store.settings.desk === 'plain' ? 'on' : ''}" aria-label="素色"></button>
+          <button data-desk="grid" class="pk dk-sw grid ${store.settings.desk === 'grid' ? 'on' : ''}" aria-label="细格"></button>
+        </span></div>
       <div class="me-item"><span class="k">声音</span>
         <label class="switch"><input type="checkbox" id="sw-sound" ${store.settings.sound ? 'checked' : ''}><i></i></label></div>
       <div class="me-item"><span class="k">触感</span>
         <label class="switch"><input type="checkbox" id="sw-haptic" ${store.settings.haptic ? 'checked' : ''}><i></i></label></div>
       <div class="me-item"><span class="k">清空所有记录</span><button id="btn-wipe" class="danger">清空</button></div>
     </div>
-    <div class="me-foot">戳了么 · V1.14</div>`;
+    <div class="me-foot">戳了么 · V1.15</div>`;
 
+  document.querySelectorAll('[data-font]').forEach(b2 =>
+    b2.addEventListener('click', () => {
+      store.settings.font = b2.dataset.font; store.persist(); applyLook(); renderMe();
+    }));
+  document.querySelectorAll('[data-desk]').forEach(b2 =>
+    b2.addEventListener('click', () => {
+      store.settings.desk = b2.dataset.desk; store.persist(); applyLook(); renderMe();
+    }));
   document.querySelectorAll('.cover-pick .cv').forEach(b2 =>
     b2.addEventListener('click', () => {
       store.settings.cover = b2.dataset.cover; store.persist(); renderMe();

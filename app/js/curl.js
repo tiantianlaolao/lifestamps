@@ -157,8 +157,14 @@ export function attachCurl(book, o) {
       + ` rgba(63,53,48,${FOLD_SHADE}) ${f.toFixed(1)}%)`;
   };
 
-  // 装订线底端 = 纸角绕着转的那个圆心
-  const hinge = () => [0, H];
+  // 🔴 8-27 用户实测：「现在只能从右下角往上翻，起码可以从右侧边往左翻」。
+  //    病根不是"别处拖不动"（代码上纸面任意处都能起手），而是**折角永远从右下角长出来**——
+  //    你从右侧中间拖，折痕却出现在下面老远，看着就是没反应。
+  //    改成：铰链和被捏的角都放到**起手那个高度**上，铰链 [0,hingeY]、角 [W,hingeY]。
+  //    ✅ 物理不变：圆心到 C 和到 P 仍然等距 → 折线仍必过装订线那一点 → 撕不下来。
+  //       只是支点跟着手指走：捏右下角就是原来的样子，捏右侧中间就从中间卷。
+  let hingeY = 0;                       // 起手时定下，整段手势不变
+  const hinge = () => [0, hingeY];
   // 把角度换成纸角的位置：0 = 没动（角还在右下），π = 整页翻过去（角到了纸左外侧）
   const atAngle = a => { const [hx, hy] = hinge(); return [hx + W * Math.cos(a), hy - W * Math.sin(a)]; };
   let ang = 0;
@@ -166,10 +172,19 @@ export function attachCurl(book, o) {
   // ⚠️ 传进来的是「手指的位移」，不是手指的坐标：
   //    直接拿手指坐标当纸角位置的话，手按在纸中间那一瞬纸角就瞬移到手指下，进度凭空起跳。
   //    位移加到 C 上得到目标点，再把它投影到那条圆弧上（见文件头的红字）。
+  // 🔴 8-27 第二次改：角度由**位移量**驱动，不再由"手指落点相对圆心的方位角"驱动。
+  //    原来那版有个几何上必然的毛病：角在圆心正右方（方位角 0），**往左拖等于沿同一条射线
+  //    朝圆心走，方位角纹丝不动 → 纸不动**。只有往上抬才转得起来。
+  //    所以用户说"只能从右下角往上翻"是精确的描述，不是错觉。
+  //    现在：往左拉和往上掀都算数（取两者的合位移），走满一个纸宽 = 整页翻过去。
+  //    ⚠️ 圆弧约束一点没动——P 仍然钉在「以装订线上那点为圆心、半径=纸宽」的弧上，
+  //       所以"折线必过装订线、撕不下来"那条物理仍然成立。
+  const SPAN = () => Math.max(1, W);
   const setPointer = (mx, my) => {
-    const [hx, hy] = hinge();
-    const tx = C[0] + mx - hx, ty = C[1] + my - hy;
-    ang = Math.max(0, Math.min(Math.PI, Math.atan2(-ty, tx)));
+    const left = Math.max(0, -mx);          // 往左走了多少
+    const up = Math.max(0, -my);            // 往上掀了多少
+    const travel = Math.hypot(left, up);
+    ang = Math.max(0, Math.min(Math.PI, Math.PI * travel / SPAN()));
     P = atAngle(ang);
     paint();
   };
@@ -229,9 +244,12 @@ export function attachCurl(book, o) {
       if (dx > 0) { drag.back = true; return; }                   // 往右划：回上一页，松手再判
       if (!o.canTurn(1)) { drag = null; return; }
       drag.armed = true; drag.dir = 1;
-      C = [drag.r.width, drag.r.height];                          // 只掀右下角（自由边那侧）
+      // 被捏的角 = 自由边（右边）上跟手指起手同高的那一点
+      const gy = Math.max(0, Math.min(drag.r.height, drag.y0 - drag.r.top));
+      C = [drag.r.width, gy];
       if (!build(1)) { drag = null; return; }
-      C = [W, H];
+      hingeY = Math.max(0, Math.min(H, gy));
+      C = [W, hingeY];
       // ⚠️ 指针已经释放（或是合成事件）时这句会抛 NotFoundError，捕获不到就抓不到，
       //    没必要为此中断整个手势。
       try { book.setPointerCapture?.(e.pointerId); } catch { /* 抓不到就算了 */ }
@@ -315,7 +333,7 @@ export function attachCurl(book, o) {
       if (!o.canTurn(1) || layers || busy) return;
       const paper = o.paper(); if (!paper) return;
       const r = paper.getBoundingClientRect();
-      W = r.width; H = r.height; C = [W, H];
+      W = r.width; H = r.height; hingeY = H; C = [W, H];
       if (!build(1)) return;
       C = [W, H]; P = C.slice();
       paint();
@@ -327,7 +345,7 @@ export function attachCurl(book, o) {
       const paper = o.paper(); if (!paper) return;
       const r = paper.getBoundingClientRect();
       if (!layers) {
-        W = r.width; H = r.height;
+        W = r.width; H = r.height; hingeY = H;
         C = reverse ? [0, H] : [W, H];
         build(reverse ? -1 : 1, reverse);
       }

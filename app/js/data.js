@@ -479,6 +479,8 @@ export const COPY = {
   addStampHere: '补一枚章',
   shareMonthBtn: '本月都戳了什么',
   drawerMine: '我盖过的',
+  // ⚠️「盖多少次都行」被测试者点名说不对（听着像在吹）。只说事实：它自带油、不耗印泥盒。
+  matPhotoNote: '自带印油，可以连着盖',
   meTitlePast: '以前的',
   wipeConfirm: '所有的纸都会被撕掉，确定吗？',
   notebookMonthSub: '盖了 {n} 枚 · 留白 {m} 天',

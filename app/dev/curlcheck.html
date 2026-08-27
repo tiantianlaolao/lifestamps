@@ -51,6 +51,29 @@ const dayNum = t => +t.match(/\d+/g)[1];
   pe(book, 'pointerup', r.left + 260, midY);
   await sleep(760);   // ⚠️ 回弹的兜底定时器是 SNAP_MS+250=510ms，等不够它会把下一段的卷曲层删掉
 
+  // 🔴 8-27 用户："现在只能从右下角往上翻，起码可以从右侧边往左翻"。
+  //    折角要跟着起手高度走——量的是**用户看得见的事实**：从纸的上部起手和从下部起手，
+  //    掀起来那一片的位置必须明显不同（以前折角写死在右下角，两次拖出来一模一样）。
+  {
+    const grab = async (fy) => {
+      pe(paper, 'pointerdown', r.left + 300, r.top + r.height * fy);
+      pe(book, 'pointermove', r.left + 190, r.top + r.height * fy - 10);
+      await sleep(40);
+      const f = d.querySelector('.curl-flap');
+      const box = f ? f.getBoundingClientRect() : null;
+      pe(book, 'pointermove', r.left + 300, r.top + r.height * fy);
+      pe(book, 'pointerup', r.left + 300, r.top + r.height * fy);
+      await sleep(760);          // 等过回弹的兜底定时器，否则会删掉下一段的层
+      return box;
+    };
+    const hi = await grab(0.22), lo = await grab(0.85);
+    ok('从上部起手能掀起来', !!hi);
+    ok('从下部起手能掀起来', !!lo);
+    ok('起手高度不同，掀起来的位置也不同',
+       !!hi && !!lo && Math.abs(hi.top - lo.top) > 40,
+       hi && lo ? `上 top=${hi.top.toFixed(0)} / 下 top=${lo.top.toFixed(0)}` : '');
+  }
+
   // ② 往左拖 = 掀右下角，翻到下一天
   const d0 = day();
   pe(paper, 'pointerdown', r.left + 300, midY);

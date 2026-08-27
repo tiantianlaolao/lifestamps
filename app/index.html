@@ -89,12 +89,17 @@
   window.addEventListener('unhandledrejection', function (e) {
     boom('Promise: ' + (e.reason && e.reason.message || e.reason));
   });
-  // 兜底：3 秒后还是一片空白，说明模块根本没执行
-  setTimeout(function () {
+  // 兜底：一直空白说明模块根本没执行。
+  // ⚠️ 原来是"3 秒时看一眼"的一次性判定——网慢、字体加载久一点就会误报，
+  //    用户看到一条"出错了"而其实马上就好了（8-27 在比稿页上四连误报，当场撞见）。
+  //    改成轮询：每 400ms 看一次，只要出现过内容就永久收手；一直到 10 秒还空才报。
+  var tries = 0;
+  var probe = setInterval(function () {
     // 看当前打开的那一页，不能写死今日页——从 ?tab= 直接开到别的页时今日页本来就是空的
     var t = document.querySelector('.page.active');
-    if (!t || !t.innerHTML.trim()) boom('模块没有执行（多半是缓存串了版本）。');
-  }, 3000);
+    if (t && t.innerHTML.trim()) { clearInterval(probe); return; }
+    if (++tries >= 25) { clearInterval(probe); boom('模块没有执行（多半是缓存串了版本）。'); }
+  }, 400);
 })();
 </script>
 <script type="module" src="js/main.js"></script>

@@ -1,0 +1,22 @@
+<!doctype html><meta charset="utf-8"><style>body{margin:0;background:#fff;display:flex;gap:8px}
+iframe{border:0;width:390px;height:700px}b{font:12px system-ui;display:block}</style>
+<div id="w" style="display:flex;gap:8px"></div>
+<script>
+const now=new Date();
+const SIDS=['milktea','coffee','takeout','hotpot','burger','dessert'];
+const V=[['hand','floral','手写 · 碎花（现在）'],['plain','plain','常规 · 素色'],['plain','grid','常规 · 细格'],['hand','grid','手写 · 细格']];
+const recs=SIDS.map((s,i)=>({id:'l'+i,stampId:s,ink:['zhu','mo','song','wu','ou','jie'][i%6],
+ ts:now.getTime()-i*6e5,rot:(i*11)%15-7,sc:1,op:[0.92,0.62][i%2],px:16+i*13,py:18+i*11,seed:i*5}));
+localStorage.setItem('lifestamps_records',JSON.stringify(recs));
+localStorage.setItem('lifestamps_bookClosed','false');
+document.getElementById('w').innerHTML=V.map((v,i)=>`<div><b>${v[2]}</b><iframe id="f${i}"></iframe></div>`).join('');
+// 🔴 四个 iframe 共用同一份 localStorage：在循环里写设置、再设 src，
+//    iframe 是异步加载的，四个读到的都是最后一次写的值 —— 四张图一模一样而标签是假的（踩过）。
+//    改成用 URL 参数把设置带进去，每个 iframe 自己说了算。
+localStorage.setItem('lifestamps_settings',JSON.stringify(
+  {sound:false,haptic:true,onboarded:true,cover:'rose'}));
+V.forEach((v,i)=>{
+  document.getElementById('f'+i).src =
+    `/index.html?skipob=1&book=open&band=day&font=${v[0]}&desk=${v[1]}`;
+});
+</script>

@@ -1,0 +1,24 @@
+<!doctype html><meta charset="utf-8"><style>body{margin:0;background:#fff;display:flex;gap:8px}
+iframe{border:0;width:390px;height:700px}b{font:12px system-ui}</style>
+<div id="w" style="display:flex;gap:8px"></div>
+<script>
+const FY=[0.18,0.45,0.80];
+const now=new Date();
+const SIDS=['milktea','coffee','takeout','hotpot','burger','dessert'];
+localStorage.setItem('lifestamps_records',JSON.stringify(SIDS.map((s,i)=>({id:'p'+i,stampId:s,ink:'mo',
+ ts:now.getTime()-i*6e5,rot:3,sc:1,op:.9,px:15+i*14,py:18+i*11,seed:i}))));
+localStorage.setItem('lifestamps_settings',JSON.stringify({sound:false,haptic:true,onboarded:true,cover:'rose'}));
+localStorage.setItem('lifestamps_bookClosed','false');
+document.getElementById('w').innerHTML=FY.map((f,i)=>`<div><b>起手高度 ${f}</b><iframe id="f${i}" src="/index.html?skipob=1&book=open&band=day"></iframe></div>`).join('');
+setTimeout(()=>{
+ FY.forEach((fy,i)=>{
+  const fr=document.getElementById('f'+i), d=fr.contentDocument, w=fr.contentWindow;
+  const paper=d.querySelector('#today-canvas'), book=d.querySelector('#page-today .book');
+  const r=paper.getBoundingClientRect();
+  const pe=(el,t,x,y)=>el.dispatchEvent(new w.PointerEvent(t,{bubbles:true,cancelable:true,
+    pointerId:1,pointerType:'touch',clientX:x,clientY:y}));
+  pe(paper,'pointerdown', r.left+r.width-14, r.top+r.height*fy);
+  pe(book,'pointermove', r.left+r.width*0.45, r.top+r.height*fy);   // 纯左拖，零上抬
+ });
+},1400);
+</script>

@@ -358,6 +358,16 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .pg-cell.today .pg-paper{border:1.5px solid var(--accent)}
 .pg-cell.today .d{color:var(--accent)}
 .pg-cell.selday .pg-paper{box-shadow:0 0 0 1.5px rgba(37,36,33,.45)}
+/* 🔴 8-27 用户：月视图「偏空」。空日子原来跟有记录的日子长得一模一样，只是没章，
+   一整月扫过去就是一片空格子。给它一根淡淡的书写线 + 一个折过的角——
+   读起来是「一张等着写的纸」，不是「一个空单元格」。
+   ⚠️ 不能靠调淡来区分：淡了就读成"不可用/已失效"，而这些日子恰恰是**还能补盖**的。 */
+/* ⛔ 试过再加一个"折过的角"（右下角三角），13px 的格子里读不出来是折角，
+   渲染成一根杂乱的竖线。只留这一根书写线，安静但认得出。 */
+.pg-cell.blank .pg-paper::after{
+  content:""; position:absolute; left:20%; right:20%; top:54%; height:1px;
+  background:var(--line); opacity:.75;
+}
 .pg-cell.future .pg-paper{border-style:dashed; background:none}
 .pg-cell.future .d{color:var(--faint)}
 /* 合订本：一张对折的纸 */
@@ -1718,3 +1728,53 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 /* 收起态是横滑条带，格子之间要有缝才看得出"一格一格" */
 .deck:not(.open) #deck-strip{ gap:3px 5px }
 .deck.open #deck-strip{ gap:6px 5px }
+
+/* ============ 字体 / 桌布 可配置（8-27 用户要求）============ */
+/* 做法跟封皮那套一样：只往 <html> 挂 data 属性，具体长什么样全在 token 里。
+   ⚠️ 分享卡吃不到这两个设置——它是把 SVG 塞进 <img> 光栅化的隔离文档，读不到 CSS 变量。
+      这条是已知的、故意的（分享卡那块你说单独排）。 */
+
+/* ---- 字体：常规。⚠️ 只用系统字体栈，**不引第三个 woff2** ----
+   每多一款自托管中文字体就是几百 KB，包体和首屏都要付钱；
+   而"常规"这个需求要的正是"没有个性的那种"，系统字体正好。 */
+:root[data-font="plain"]{
+  --f-title:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --f-ui:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --f-hand:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+}
+/* 快乐体没有粗体、靠字形本身立住；换成系统字体后标题会显得轻，补一点字重 */
+:root[data-font="plain"] .col-title,
+:root[data-font="plain"] .op-cover .op-t,
+:root[data-font="plain"] .bl-t{font-weight:600}
+
+/* ---- 桌布：素色 / 细格。碎花是默认，见 --floral ---- */
+:root[data-desk="plain"]{ --floral:none; }
+:root[data-desk="grid"]{
+  /* 🔴 必须是 repeating-linear-gradient。普通 linear-gradient **不重复**——
+     只会在元素最顶上画一条 1px 线，往下全透明，看起来跟"素色"一模一样（实测撞到）。
+     ⚠️ 顺带：.055 也太淡，提到 .10 才看得见。 */
+  --floral:repeating-linear-gradient(0deg, rgba(120,105,85,.10) 0 1px, transparent 1px 15px),
+           repeating-linear-gradient(90deg, rgba(120,105,85,.10) 0 1px, transparent 1px 15px);
+}
+
+/* ---- 「我的」页里的小选择器 ---- */
+.pick-row{display:flex; gap:6px; align-items:center}
+.pick-row .pk{
+  border:1px solid var(--line); background:var(--card); border-radius:var(--r3);
+  font-family:inherit; font-size:12px; color:var(--sub); padding:4px 10px; cursor:pointer;
+}
+.pick-row .pk.on{border-color:var(--ink); color:var(--ink)}
+/* 桌布是三块小色卡，不是文字按钮——颜色/纹理本来就该拿眼睛选 */
+.pick-row .dk-sw{
+  width:26px; height:26px; padding:0; border-radius:var(--r3);
+  background-color:var(--paper); background-size:22px 22px;
+}
+.pick-row .dk-sw.floral{background-image:var(--floral-swatch)}
+:root{ --floral-swatch:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='88' height='88' viewBox='0 0 88 88'><g opacity='0.55'><circle cx='20.0' cy='17.4' r='3.6' fill='%23E6C9C9'/><circle cx='24.4' cy='20.6' r='3.6' fill='%23E6C9C9'/><circle cx='22.7' cy='25.7' r='3.6' fill='%23E6C9C9'/><circle cx='17.3' cy='25.7' r='3.6' fill='%23E6C9C9'/><circle cx='15.6' cy='20.6' r='3.6' fill='%23E6C9C9'/><circle cx='20' cy='22' r='2.9' fill='%23EADFC4'/><circle cx='64.0' cy='59.4' r='3.6' fill='%23CCD6C0'/><circle cx='68.4' cy='62.6' r='3.6' fill='%23CCD6C0'/><circle cx='66.7' cy='67.7' r='3.6' fill='%23CCD6C0'/><circle cx='61.3' cy='67.7' r='3.6' fill='%23CCD6C0'/><circle cx='59.6' cy='62.6' r='3.6' fill='%23CCD6C0'/><circle cx='64' cy='64' r='2.9' fill='%23EADFC4'/><circle cx='68.0' cy='12.4' r='2.8' fill='%23EADFC4'/><circle cx='71.4' cy='14.9' r='2.8' fill='%23EADFC4'/><circle cx='70.1' cy='18.9' r='2.8' fill='%23EADFC4'/><circle cx='65.9' cy='18.9' r='2.8' fill='%23EADFC4'/><circle cx='64.6' cy='14.9' r='2.8' fill='%23EADFC4'/><circle cx='68' cy='16' r='2.2' fill='%23E6C9C9'/><circle cx='18.0' cy='62.6' r='2.7' fill='%23EADFC4'/><circle cx='21.2' cy='64.9' r='2.7' fill='%23EADFC4'/><circle cx='20.0' cy='68.8' r='2.7' fill='%23EADFC4'/><circle cx='16.0' cy='68.8' r='2.7' fill='%23EADFC4'/><circle cx='14.8' cy='64.9' r='2.7' fill='%23EADFC4'/><circle cx='18' cy='66' r='2.1' fill='%23CCD6C0'/><circle cx='44' cy='42' r='2.2' fill='%23E3DAC6'/></g></svg>"); }   /* 色卡专用：不受 data-desk 覆盖 */
+.pick-row .dk-sw.plain{background-image:none}
+.pick-row .dk-sw.grid{
+  background-image:linear-gradient(0deg, rgba(120,105,85,.16) 0 1px, transparent 1px 7px),
+                   linear-gradient(90deg, rgba(120,105,85,.16) 0 1px, transparent 1px 7px);
+  background-size:7px 7px;
+}
+.pick-row .dk-sw.on{box-shadow:0 0 0 2px rgba(37,36,33,.35)}

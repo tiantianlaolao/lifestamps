@@ -128,14 +128,29 @@ jobs:
           agvtool new-marketing-version "$VERSION"
           agvtool new-version -all "$BUILD_NUM"
 
+      # 出错时最想知道的两件事：工程长什么样、scheme 叫什么。先打出来，下次失败不用猜。
+      - name: Show Xcode project layout
+        run: |
+          ls -la ios/App
+          xcodebuild -list -project ios/App/App.xcodeproj
+
       - name: Build archive
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
+          # 🔴 Capacitor 8 起插件走 Swift Package Manager，不再用 CocoaPods，
+          #    所以**没有 .xcworkspace**，只有 App.xcodeproj。照搬 agentos-ios 的
+          #    -workspace 写法在这儿必然是 "does not exist"（实测踩到）。两种都兜住。
+          if [ -d ios/App/App.xcworkspace ]; then
+            TARGET=(-workspace ios/App/App.xcworkspace)
+          else
+            TARGET=(-project ios/App/App.xcodeproj)
+          fi
+          echo "构建目标: ${TARGET[@]}"
           xcodebuild archive \
-            -workspace ios/App/App.xcworkspace \
+            "${TARGET[@]}" \
             -scheme App \
             -archivePath $RUNNER_TEMP/LifeStamps.xcarchive \
             -sdk iphoneos \

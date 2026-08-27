@@ -19,7 +19,7 @@ export const store = {
   records: load('records', []),        // {id, stampId, ink, ts, rot, sc, op, dx, dy}
   discovered: load('discovered', {}),  // stampId -> firstTs（基础章：盖过=已发现）
   hidden: load('hidden', {}),          // hiddenId -> ts
-  settings: load('settings', { sound: false, haptic: true, onboarded: false, cover: 'rose', font: 'hand', desk: 'floral' }),
+  settings: load('settings', { sound: false, haptic: true, onboarded: false, cover: 'rose', font: 'hand', desk: 'floral', paper: 'dot' }),
   stickers: load('stickers', {}),   // 'YYYY-MM' -> [{id,x,y,rot}] 封面贴纸的位置（将来支持自己拖）
   dayMeta: load('dayMeta', {}),   // dateKey -> { weather }
   lastSeen: load('lastSeen', 0),

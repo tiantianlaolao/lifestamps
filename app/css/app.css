@@ -1778,3 +1778,20 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   background-size:7px 7px;
 }
 .pick-row .dk-sw.on{box-shadow:0 0 0 2px rgba(37,36,33,.35)}
+
+/* ---- 纸的样式：点点格（默认）/ 纯白（8-27 用户要求再加一种）----
+   纸面上所有地方都是靠这两个 token 画的（今日页的纸、月视图的小纸、我的页那两张卡），
+   所以改这两个就够，不用一处处去找。 */
+:root[data-look-paper="plain"]{
+  --paper-page:#FFFFFF;
+  --paper-dot:transparent;   /* 点点格的圆点直接透明掉，网格的间距参数不用动 */
+}
+
+/* 「我盖过的」的展开/收起：不是按钮长相，是一行可点的小字 */
+.mine-more{
+  display:block; width:100%; margin:10px 0 0; padding:8px 0;
+  border:none; background:none; cursor:pointer;
+  font-family:var(--f-title); font-size:11.5px; color:var(--sub);
+  letter-spacing:.1em;
+}
+.mine-more:active{color:var(--ink)}

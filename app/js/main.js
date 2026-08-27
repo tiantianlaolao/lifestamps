@@ -56,6 +56,7 @@ let undoRec = null;              // {id, at} 刚盖下的那一枚，10 秒内�
 let undoTimer = null;
 let drawerSeg = 'stamps';         // 抽屉页分段：我盖过的 / 印泥盒（文具店等内购做了再加第三段）
 let drawerCat = 'all';            // 抽屉里的分类过滤（含「字」）
+let drawerMineOpen = false;       // 「我盖过的」展开了吗（默认只露最常盖的 6 枚）
 let drawerHidOpen = false;        // 「隐藏章」展开了吗
 let pressSlow = 1;               // dev ?slowpress=1 → 按压动画放慢 4 倍便于观察
 let slowOpen = 1;                // dev ?slowopen=N → 开场整场慢放 N 倍
@@ -159,6 +160,7 @@ function init() {
   if (params.get('band')) bandForced = params.get('band');   // dev：钉住时段，不用改系统时间
   if (params.get('font')) store.settings.font = params.get('font');   // dev：字体 hand|plain
   if (params.get('desk')) store.settings.desk = params.get('desk');   // dev：桌布 floral|plain|grid
+  if (params.get('paper')) store.settings.paper = params.get('paper'); // dev：纸 dot|plain
   if (params.get('chip')) CHIP = +params.get('chip');        // dev：纸上章的基准尺寸
   if (params.get('thin')) setThin(+params.get('thin'));      // dev：章的线宽系数
   if (params.get('book') === 'open') { store.bookClosed = false; store.persist(); }  // dev：跳过封面直接摊开
@@ -877,6 +879,7 @@ function applyLook() {
   //    —— 表现就是"越用越卡，用一会儿就死"。同名是病根，改名是根治。
   de.dataset.lookFont = store.settings.font || 'hand';
   de.dataset.lookDesk = store.settings.desk || 'floral';
+  de.dataset.lookPaper = store.settings.paper || 'dot';
 }
 
 function setDeckOpen(open) {
@@ -1287,8 +1290,8 @@ function renderCollection() {
     b2.addEventListener('click', () => { drawerCat = b2.dataset.dcat; renderCollection(); }));
   document.querySelectorAll('#page-collection [data-fold]').forEach(b2 =>
     b2.addEventListener('click', () => {
-      // 折叠区现在只剩「隐藏章」一段（「还没遇到的」8-27 删了），不用再分支
-      drawerHidOpen = !drawerHidOpen;
+      if (b2.dataset.fold === 'mine') drawerMineOpen = !drawerMineOpen;
+      else drawerHidOpen = !drawerHidOpen;
       renderCollection();
     }));
 
@@ -1337,15 +1340,26 @@ function drawerStamps(used, cnt) {
     + `<button data-dcat="glyph" class="glyph-chip ${drawerCat === 'glyph' ? 'sel' : ''}">${COPY.catGlyph}</button>`
     + CATEGORIES.map(c => `<button data-dcat="${c.id}" class="${drawerCat === c.id ? 'sel' : ''}">${c.name}</button>`).join('');
 
-  // 已拥有的：分类是"全部"时按类分段，选了某类就直接铺开
-  const mineInner = drawerCat === 'all'
+  // 🔴 8-27 用户：「我盖过的」默认只露**最常盖的 6 枚**，其余折起来。
+  //    章一多这一段就长得没边，而绝大多数时候你只想看看常用的那几枚。
+  //    ⚠️ 排序按盖的次数（cnt），不是按发现时间——"最多的"是用户的原话。
+  const TOP_N = 6;
+  const mineTop = [...mine].sort((a2, b2) => (cnt[b2.id] || 0) - (cnt[a2.id] || 0)).slice(0, TOP_N);
+  const mineRest = mine.filter(s2 => !mineTop.includes(s2));
+  // 展开之后：分类是"全部"时按类分段，选了某类就直接铺开
+  const gridOf = list => drawerCat === 'all'
     ? CATEGORIES.map(c => {
-      const list = mine.filter(s2 => s2.cat === c.id);
-      if (!list.length) return '';
+      const l = list.filter(s2 => s2.cat === c.id);
+      if (!l.length) return '';
       return `<div class="box-sect"><div class="bs-t">${c.name}</div>
-        <div class="dk-grid">${list.map(s2 => cell(s2, 'sid')).join('')}</div></div>`;
+        <div class="dk-grid">${l.map(s2 => cell(s2, 'sid')).join('')}</div></div>`;
     }).join('')
-    : `<div class="dk-grid">${mine.map(s2 => cell(s2, 'sid')).join('')}</div>`;
+    : `<div class="dk-grid">${list.map(s2 => cell(s2, 'sid')).join('')}</div>`;
+  const mineInner = drawerMineOpen
+    ? gridOf(mine)
+    : `<div class="dk-grid">${mineTop.map(s2 => cell(s2, 'sid')).join('')}</div>`
+      + (mineRest.length ? `<button class="mine-more" data-fold="mine">${
+          COPY.drawerMineMore.replace('{n}', mineRest.length)}</button>` : '');
 
   const fold = (id, title, count, open, inner) => `
     <div class="fold ${open ? 'open' : ''}">
@@ -1379,6 +1393,8 @@ function drawerStamps(used, cnt) {
     <div class="box box-paper">
       <div class="box-t"><span class="bx-n">${COPY.drawerMine}</span><span class="bx-s">${mine.length} 枚</span></div>
       ${mine.length ? mineInner : `<div class="fold-empty">这一类还没有盖过的章。</div>`}
+      ${mine.length > TOP_N && drawerMineOpen
+        ? `<button class="mine-more" data-fold="mine">${COPY.drawerMineLess}</button>` : ''}
     </div>
     ${/* ⛔ 「还没遇到的」整段已删（8-27 用户）：那些章全都摆在托盘里看得见也能用，
          叫"还没遇到"是假的。真·未发现只有下面的隐藏章——收集感在那儿，不在这儿。 */''}
@@ -1836,6 +1852,11 @@ function renderMe() {
           <button data-font="hand" class="pk ${(store.settings.font || 'hand') === 'hand' ? 'on' : ''}">手写</button>
           <button data-font="plain" class="pk ${store.settings.font === 'plain' ? 'on' : ''}">常规</button>
         </span></div>
+      <div class="me-item"><span class="k">纸</span>
+        <span class="pick-row">
+          <button data-paper="dot" class="pk ${(store.settings.paper || 'dot') === 'dot' ? 'on' : ''}">点点格</button>
+          <button data-paper="plain" class="pk ${store.settings.paper === 'plain' ? 'on' : ''}">纯白</button>
+        </span></div>
       <div class="me-item"><span class="k">桌布</span>
         <span class="pick-row">
           <button data-desk="floral" class="pk dk-sw floral ${(store.settings.desk || 'floral') === 'floral' ? 'on' : ''}" aria-label="碎花"></button>
@@ -1848,7 +1869,7 @@ function renderMe() {
         <label class="switch"><input type="checkbox" id="sw-haptic" ${store.settings.haptic ? 'checked' : ''}><i></i></label></div>
       <div class="me-item"><span class="k">清空所有记录</span><button id="btn-wipe" class="danger">清空</button></div>
     </div>
-    <div class="me-foot">戳了么 · V1.17</div>`;
+    <div class="me-foot">戳了么 · V1.18</div>`;
 
   // ⚠️ 一律限定在本页里选，别用全文档选择器——那是上面那个 bug 的另一半原因
   document.querySelectorAll('#page-me [data-font]').forEach(b2 =>
@@ -1858,6 +1879,10 @@ function renderMe() {
   document.querySelectorAll('#page-me [data-desk]').forEach(b2 =>
     b2.addEventListener('click', () => {
       store.settings.desk = b2.dataset.desk; store.persist(); applyLook(); renderMe();
+    }));
+  document.querySelectorAll('#page-me [data-paper]').forEach(b2 =>
+    b2.addEventListener('click', () => {
+      store.settings.paper = b2.dataset.paper; store.persist(); applyLook(); renderMe();
     }));
   document.querySelectorAll('.cover-pick .cv').forEach(b2 =>
     b2.addEventListener('click', () => {

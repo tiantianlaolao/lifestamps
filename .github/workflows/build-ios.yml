@@ -15,6 +15,11 @@ on:
 jobs:
   build:
     runs-on: macos-15
+    # ⚠️ `secrets` 这个上下文在 step 的 if: 里用不了（会 422 说 Unrecognized named-value）。
+    #    在 job 级 env 里先把"配没配"求值成 true/false 字符串，if: 再读 env——
+    #    这样既能条件跳过，也不会把证书本身塞进 env。
+    env:
+      HAS_CERT: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -87,7 +92,7 @@ jobs:
       #    交给下面 archive 那步的 -allowProvisioningUpdates + 管理员权限的 ASC 密钥去自动创建。
       #    先试自动创建这条路，成了就永远不需要 Mac 导 .p12（导 .p12 只有 Mac 能做）。
       - name: Install certificates (可选)
-        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        if: env.HAS_CERT == 'true'
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_DEV_CERTIFICATE_BASE64: ${{ secrets.APPLE_DEV_CERTIFICATE_BASE64 }}

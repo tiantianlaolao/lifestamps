@@ -1,0 +1,14 @@
+<!doctype html><meta charset="utf-8"><style>body{margin:0;background:#fff;display:flex;gap:10px}
+iframe{border:0;width:390px;height:844px}b{position:absolute;font:12px system-ui}</style>
+<div id="w" style="display:flex;gap:10px"></div>
+<script>
+const now=new Date();
+localStorage.setItem('lifestamps_records',JSON.stringify([{id:'a',stampId:'milk',ink:'jie',
+ ts:now.getTime(),rot:4,sc:1,op:.9,px:60,py:22,seed:3}]));
+localStorage.setItem('lifestamps_settings',JSON.stringify({sound:false,haptic:true,onboarded:true,cover:'rose'}));
+localStorage.setItem('lifestamps_bookClosed','false');
+document.getElementById('w').innerHTML=[0,1].map(i=>`<iframe id="f${i}" src="/index.html?skipob=1&book=open&band=night"></iframe>`).join('');
+// 第二个：模拟点一下便签展开
+setTimeout(()=>{ const d=document.getElementById('f1').contentDocument;
+  d.getElementById('riddle-note')?.click(); },1200);
+</script>

@@ -621,13 +621,14 @@ function weatherHTML(dk, pickable) {
 // （替掉了原来纸外那张「🎁 今日隐藏章」卡片——纸上得有不是用户自己盖的东西。）
 function riddleNoteHTML(secret) {
   if (!secret) return '';
-  // 🔴 默认收着（8-27 用户："遮挡位置很大，做成点击展开"）。
-  //    收起态只是纸左下角一个小折角，点开才展开成便签；展开后再点才是翻面看剪影。
+  // 🔴 只有两态：纸左下的小折角「?」 ⇄ 展开的谜面（8-27 用户："遮挡位置很大，做成点击展开"）。
+  // ⛔ 原来还有第三态「翻面显示 ？？？」，已删——那一面的意思是"盖住它别剧透"，
+  //    而收成折角之后"藏起来"已经由折叠完成，而且藏得更彻底（不占地方）。
+  //    留着就是点三下绕一圈回原地，纯噪音（用户当场问"这么设计是什么意思"）。
   return `<div class="riddle-note folded" id="riddle-note">
     <span class="rn-tab" aria-hidden="true">?</span>
     <span class="rn-tape"></span>
     <span class="rn-face rn-front">${esc(secret.hint)}</span>
-    <span class="rn-face rn-back">${COPY.riddleFlip}</span>
   </div>`;
 }
 
@@ -797,13 +798,10 @@ function bindToday() {
   });
 
   // 谜面便签：点一下翻面，露出 ??? 剪影
+  // 点一下开、再点一下收，就这两态
   $('#riddle-note')?.addEventListener('click', e => {
     e.stopPropagation();
-    const el = e.currentTarget;
-    // 收着的时候第一下只负责展开；展开之后再点才是翻面
-    if (el.classList.contains('folded')) { el.classList.remove('folded'); return; }
-    if (el.classList.contains('flipped')) { el.classList.remove('flipped'); el.classList.add('folded'); return; }
-    el.classList.add('flipped');
+    e.currentTarget.classList.toggle('folded');
   });
 
   $('#deck-more')?.addEventListener('click', e => { e.stopPropagation(); setDeckOpen(!deckOpen); });

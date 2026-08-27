@@ -498,7 +498,6 @@ export const COPY = {
   futureStamp: '这一天还没到呢。',
   supplyShort: '补给还没领',
   supplyClaimedShort: '补给领过了',
-  riddleFlip: '？？？',
   yesterdayEdge: '昨天那一页',
   erased: '擦掉了。',
   firstStamp: '啪！收到了。',

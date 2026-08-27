@@ -1027,13 +1027,12 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .wx-row button:hover{opacity:1; background:rgba(63,53,48,.05)}
 .wx.set{left:158px; top:12px; cursor:pointer; line-height:0; animation:stampin .32s cubic-bezier(.2,1.4,.4,1)}
 
-/* 谜面便签：贴在纸左下角，点一下翻面。两个面各自 backface-visibility:hidden */
+/* 谜面便签：贴在纸左下角。⛔ 翻面那一态已删（8-27）——背面就是三个问号，
+   而"藏起来"这件事收成折角之后已经由折叠完成，留着就是点三下绕一圈回原地。 */
 .riddle-note{
   position:absolute; left:14px; bottom:14px; z-index:3; cursor:pointer;
   max-width:62%; min-height:44px; transform:rotate(-3deg);
-  transform-style:preserve-3d; transition:transform 260ms var(--ease-out);
 }
-.riddle-note.flipped{transform:rotate(-3deg) rotateX(180deg)}
 .riddle-note .rn-face{
   display:block; padding:9px 13px 10px; border-radius:3px;
   /* ⚠️ 不能只填 var(--note)：#FAEEDA 跟纸色 #FBF8F1 几乎同色，
@@ -1041,12 +1040,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   background:linear-gradient(180deg,var(--riddle-2),var(--riddle-1)); border:.5px solid rgba(133,79,11,.16);
   color:var(--note-text);
   font-family:var(--f-hand); font-size:13px; line-height:1.55;
-  box-shadow:0 2px 0 rgba(63,53,48,.08); backface-visibility:hidden;
-}
-.riddle-note .rn-back{
-  position:absolute; inset:0; transform:rotateX(180deg);
-  display:flex; align-items:center; justify-content:center;
-  letter-spacing:.3em; font-size:20px; color:var(--faint);
+  box-shadow:0 2px 0 rgba(63,53,48,.08);
 }
 /* 压住便签的一段和纸胶带 */
 .riddle-note .rn-tape{

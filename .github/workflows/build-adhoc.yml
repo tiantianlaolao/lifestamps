@@ -245,8 +245,11 @@ jobs:
           OTA_SSH_USER: ${{ secrets.OTA_SSH_USER }}
           OTA_SSH_PASSWORD: ${{ secrets.OTA_SSH_PASSWORD }}
         run: |
-          python3 -m pip install --quiet paramiko
-          python3 ci/ota_deploy.py \
+          # 🔴 macOS runner 的 Homebrew Python 受 PEP 668 保护，直接 pip install 会被拒
+          #    （externally-managed-environment）。走 venv，不用 --break-system-packages 硬闯。
+          python3 -m venv $RUNNER_TEMP/venv
+          $RUNNER_TEMP/venv/bin/python -m pip install --quiet paramiko
+          $RUNNER_TEMP/venv/bin/python ci/ota_deploy.py \
             $RUNNER_TEMP/export/LifeStamps.ipa \
             $RUNNER_TEMP/export/manifest.plist \
             $RUNNER_TEMP/export/install.html

@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><style>body{margin:0;background:#fff}iframe{border:0;width:390px;height:844px;display:block}</style>
+<iframe id="f"></iframe>
+<script>
+const now=new Date(); const p=new URLSearchParams(location.search);
+const SIDS=['milk','coffee','read','walk','sleep','movie','music','cook','bath','game','sun','love'];
+if(p.get('seed')!=='0'){
+ const recs=SIDS.map((sid,i)=>({id:'c'+i,stampId:sid,ink:['zhu','mo','song','wu','ou','jie'][i%6],
+  ts:now.getTime()-(20-i)*600000,rot:(i*37)%17-8,sc:1-(i%3)*0.06,op:[0.92,0.62,0.34][i%3],
+  px:12+(i%4)*26,py:12+Math.floor(i/4)*26,seed:i*7}));
+ localStorage.setItem('lifestamps_records',JSON.stringify(recs));
+ localStorage.setItem('lifestamps_settings',JSON.stringify({sound:false,haptic:true,onboarded:true,cover:'rose'}));
+ localStorage.setItem('lifestamps_bookClosed','false');
+}
+document.getElementById('f').src='/index.html?skipob=1&book=open&band=day&'+(p.get('q')||'');
+</script>

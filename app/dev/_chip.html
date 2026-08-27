@@ -1,0 +1,22 @@
+<!doctype html><meta charset="utf-8"><title>章的比例 A/B</title>
+<style>body{margin:0;font:12px system-ui;background:#fff;display:flex;gap:12px;padding:8px}
+ .col{text-align:center} .col b{display:block;margin-bottom:4px;color:#333}
+ iframe{border:1px solid #ddd;width:390px;height:760px}</style>
+<div id="w" style="display:flex;gap:12px"></div>
+<script>
+const CFG = [[72,'1.0','现在'],[62,'0.9',''],[56,'0.85',''],[50,'0.8','']];
+const SIDS = ['milk','coffee','read','walk','sleep','movie','music','cook','bath','game','sun','love'];
+const now = new Date();
+const dk = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+// 十二枚章铺在纸上——一枚看不出差别，得是真实密度
+const recs = SIDS.map((sid,i)=>({
+  id:'c'+i, stampId:sid, ink:['zhu','mo','song','wu','ou','jie'][i%6],
+  ts: now.getTime()-(20-i)*600000, rot:(i*37)%17-8, sc:1-(i%3)*0.06, op:[0.92,0.62,0.34][i%3],
+  px: 12+(i%4)*26, py: 12+Math.floor(i/4)*26, seed:i*7
+}));
+localStorage.setItem('lifestamps_records', JSON.stringify(recs));
+localStorage.setItem('lifestamps_settings', JSON.stringify({sound:false,haptic:true,onboarded:true,cover:'rose'}));
+localStorage.setItem('lifestamps_bookClosed', 'false');
+document.getElementById('w').innerHTML = CFG.map(([c,t,tag])=>
+  `<div class="col"><b>${tag} ${c} / ${t}</b><iframe src="/index.html?skipob=1&book=open&band=day&chip=${c}&thin=${t}"></iframe></div>`).join('');
+</script>

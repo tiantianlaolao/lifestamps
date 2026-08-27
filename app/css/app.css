@@ -582,13 +582,15 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 
 /* 日付印：盖在纸左上角的红印，替掉原来的大号 header 数字 */
 .datestamp{
-  position:absolute; left:30px; top:12px; z-index:2; pointer-events:none;
+  position:absolute; left:26px; top:11px; z-index:2; pointer-events:none;
   color:var(--datestamp); border:1.8px solid var(--datestamp); border-radius:2px;
   padding:2px 7px 3px; opacity:.84; line-height:1;
   display:flex; align-items:baseline; gap:5px;
 }
-.datestamp .d{font-size:17px; letter-spacing:.05em; font-weight:400}
-.datestamp .w{font-size:9.5px; letter-spacing:.12em}
+/* 🔴 8-27 用户：「左上角日期太大」。章从 72 降到 56 之后它显得更大了——
+   日付印是每页都有的记号，不该抢主角。字号 17→13.5，手绘框的内边距一起收。 */
+.datestamp .d{font-size:13.5px; letter-spacing:.05em; font-weight:400}
+.datestamp .w{font-size:8.5px; letter-spacing:.1em}
 /* 右上角枚数：纸上的小胶囊，不是 UI 计数器 */
 .paper-count{
   position:absolute; right:14px; top:15px; z-index:2; pointer-events:none;
@@ -1267,7 +1269,9 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 }
 .dk-stamp .face svg{width:38px; height:38px}
 .dk-stamp{
-  padding:4px 0 3px; border-radius:8px;
+  /* ⚠️ 8-27：A5 给格子加了 1px 边框，收起态今日页当场溢出 2px（断言抓到 651 vs 649）。
+     2px 肉眼看不出来，但**页面一旦可滚，原生壳抢手势那个 bug 就回来了**。上下各收 1px 抵掉。 */
+  padding:3px 0 2px; border-radius:8px;
   transition:transform 140ms var(--ease-out);
 }
 .dk-stamp .nm{font-size:9.5px; color:var(--linen-text); opacity:.7; margin-top:1px; letter-spacing:.02em}
@@ -1584,7 +1588,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
    ✅ 改成把框画成一条手绘路径当背景，文字保持清晰。 */
 .datestamp{
   border:none;
-  padding:4px 9px 5px;
+  padding:3px 7px 4px;
   background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='44' viewBox='0 0 120 44' preserveAspectRatio='none'><path d='M3,5 Q30,2 60,4 Q92,6 117,3 Q119,20 117,40 Q90,43 60,41 Q28,38 3,41 Q1,22 3,5 Z' fill='none' stroke='%23C0453F' stroke-width='2.2' stroke-linejoin='round'/></svg>") no-repeat center/100% 100%;
 }
 
@@ -1639,3 +1643,54 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   position:absolute; right:10px; top:7px; z-index:2;
   font-size:10.5px; letter-spacing:.02em; color:var(--linen-text); opacity:.72; pointer-events:none;
 }
+
+/* ============ 8-27 第一批优化（用户真机反馈）============ */
+
+/* ---- A3：顶栏「分享」「合上」改成小图标 ---- */
+/* ⚠️ 图标线条跟章一个语气（略歪、圆头）。用通用几何图标就又是「两种视觉语言硬拼」，
+   那是 8-26 被打回过的病（"一做出来真是无语"）。 */
+.t-ico{
+  border:none; background:none; padding:5px 6px; margin:0; cursor:pointer;
+  color:var(--sub); line-height:0; border-radius:8px;
+  transition:color 140ms var(--ease-out), background 140ms var(--ease-out);
+}
+.t-ico:active{ color:var(--ink); background:rgba(120,105,85,.10) }
+.t-ico svg{ display:block }
+
+/* ---- A2：谜面便签默认收成纸左下的小折角，点开才展开 ---- */
+/* 🔴 8-27 用户：「左下角便签遮挡位置很大」。原来 max-width:62% 占掉纸左下一大片。 */
+.riddle-note{ transition:transform 260ms var(--ease-out), width 240ms var(--ease-out),
+              height 240ms var(--ease-out), opacity 200ms linear }
+.riddle-note .rn-tab{ display:none }
+.riddle-note.folded{
+  width:30px; height:30px; min-height:0; max-width:none; overflow:hidden;
+  transform:rotate(0deg);
+  background:var(--sticker);
+  border-radius:4px 10px 4px 4px;
+  box-shadow:0 1px 0 rgba(63,53,48,.10), inset 0 0 0 1px rgba(120,105,85,.14);
+}
+/* 收起态把便签本体和胶带藏掉，只留一个小问号 */
+.riddle-note.folded .rn-face,.riddle-note.folded .rn-tape{ opacity:0; pointer-events:none }
+.riddle-note.folded .rn-tab{
+  display:block; position:absolute; inset:0; z-index:1;
+  font-family:var(--f-title); font-size:14px; color:var(--sub); opacity:.7;
+  display:flex; align-items:center; justify-content:center; line-height:1;
+}
+
+/* ---- A5：托盘里的章立在凹槽里，看着整齐 ---- */
+/* 🔴 用抽屉印泥页那套「凹槽」语言（inset 阴影），**不能用白底圆角方块**——
+   那是 App 图标的形，8-26 用户亲手否掉过（"一做出来真是无语"那一轮）。 */
+.deck-strip .dk-stamp{
+  background:rgba(255,253,248,.5);
+  border-radius:7px;
+  box-shadow:inset 0 1px 2px rgba(63,53,48,.07), inset 0 -1px 0 rgba(255,255,255,.55);
+  border:1px solid rgba(120,105,85,.10);
+}
+.deck-strip .dk-stamp.sel{
+  background:rgba(255,253,248,.9);
+  box-shadow:inset 0 1px 2px rgba(63,53,48,.10), 0 1px 0 rgba(63,53,48,.08);
+  border-color:rgba(120,105,85,.26);
+}
+/* 收起态是横滑条带，格子之间要有缝才看得出"一格一格" */
+.deck:not(.open) #deck-strip{ gap:3px 5px }
+.deck.open #deck-strip{ gap:6px 5px }

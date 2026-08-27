@@ -2,7 +2,7 @@
 // 生活图鉴 · 主逻辑（V1.2：手账翻书 / 印泥消耗 / 2.5D 盖章）
 // ============================================================
 import { STAMPS, GLYPHS, isGlyph, HIDDEN, CATEGORIES, INKS, COPY, stampById, hiddenById, monthPersona, lockedMaterial, seriesById } from './data.js';
-import { defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint, inkMainColor, inkCSS, darken, seedOf, weatherSVG } from './stamp.js';
+import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint, inkMainColor, inkCSS, darken, seedOf, weatherSVG } from './stamp.js';
 import { store, dateKey, fmtTime } from './store.js';
 import { checkHidden, dailySecret } from './hidden.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
@@ -21,7 +21,25 @@ function undoAlive() {
   return !!undoRec && Date.now() - undoRec.at < UNDO_MS
     && store.records.some(r => r.id === undoRec.id) && dateKey(undoRec.at) === pageDk;
 }
-const CHIP = 72;                 // 纸上印记的基准尺寸（章要够大才像印记不像图标）
+// 顶栏两个小图标。⚠️ 线条要跟章一个语气（略歪、圆头），不然又是"两种视觉语言硬拼"。
+const ICO = {
+  // 分享：一张卡片飞出去
+  share: `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor"
+    stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3.6c.2 3.6.1 7.2 0 10.6"/><path d="M8.4 7.1C9.6 5.8 10.9 4.6 12 3.5c1.2 1 2.4 2.2 3.5 3.5"/>
+    <path d="M5.2 12.6c-.2 2.6-.3 5.2-.1 7.4 4.7.3 9.3.3 13.8 0 .2-2.3.1-4.9-.1-7.4"/></svg>`,
+  // 合上：一本**合着**的书（书脊 + 封面 + 书口那三道页边）。
+  // ⚠️ 第一版画的是摊开的书，19px 下读起来像"打开"，跟功能正好相反。图标要画**结果**不是动作。
+  close: `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor"
+    stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.4 3.8c3.9-.3 7.8-.2 11.6.1.3 5.4.3 10.8 0 16.2-3.9.3-7.8.3-11.6 0-.3-5.4-.3-10.8 0-16.3z"/>
+    <path d="M9.3 3.9c-.2 5.4-.2 10.8 0 16.2"/>
+    <path d="M14.6 8.2c.9-.1 1.8-.1 2.6 0"/></svg>`,
+};
+
+// 纸上印记的基准尺寸。8-27 用户从 72/62/56/50 四档里选的 56（配 THIN 0.85）——
+// 72 那版章会挤到日付印上，50 又小得"像图标不像印记"。dev 参数 ?chip= 可临时调。
+let CHIP = 56;
 // 日付印角度：按日期定死在 -1..-4，同一天每次打开都一样
 function dateStampRot(dk) { let h = 0; for (const c of dk) h = (h * 31 + c.charCodeAt(0)) & 0xffff; return -1 - (h % 4); }
 let curTab = 'today';
@@ -140,6 +158,8 @@ function init() {
   if (params.get('slowpress') === '1') pressSlow = 4;    // dev：按压动画慢放
   if (params.get('pressfreeze') === '1') pressFreeze = true; // dev：按压定格
   if (params.get('band')) bandForced = params.get('band');   // dev：钉住时段，不用改系统时间
+  if (params.get('chip')) CHIP = +params.get('chip');        // dev：纸上章的基准尺寸
+  if (params.get('thin')) setThin(+params.get('thin'));      // dev：章的线宽系数
   if (params.get('book') === 'open') { store.bookClosed = false; store.persist(); }  // dev：跳过封面直接摊开
   if (params.get('day')) pageDk = params.get('day');       // dev：今日页直接停在某一天（含未来）
   if (params.get('deck') === 'open') deckOpen = true;      // dev：直接开到托盘展开态
@@ -244,8 +264,9 @@ function renderToday() {
     <div class="t-bar">
       ${bandIconHTML()}
       <span class="t-bar-mid">${isToday ? '' : `<button class="pg-today-btn" id="pg-today">回到今天</button>`}</span>
-      ${recs.length ? `<button class="t-share" id="share-day">${isToday ? '分享今天' : '分享这天'}</button>` : ''}
-      <button class="t-share t-close" id="close-book">${COPY.closeBook}</button>
+      ${recs.length ? `<button class="t-ico" id="share-day" aria-label="${isToday ? '分享今天' : '分享这天'}"
+        title="${isToday ? '分享今天' : '分享这天'}">${ICO.share}</button>` : ''}
+      <button class="t-ico" id="close-book" aria-label="${COPY.closeBook}" title="${COPY.closeBook}">${ICO.close}</button>
     </div>
     <div class="book">
       ${yesterdayEdge(pageDk)}
@@ -600,7 +621,10 @@ function weatherHTML(dk, pickable) {
 // （替掉了原来纸外那张「🎁 今日隐藏章」卡片——纸上得有不是用户自己盖的东西。）
 function riddleNoteHTML(secret) {
   if (!secret) return '';
-  return `<div class="riddle-note" id="riddle-note">
+  // 🔴 默认收着（8-27 用户："遮挡位置很大，做成点击展开"）。
+  //    收起态只是纸左下角一个小折角，点开才展开成便签；展开后再点才是翻面看剪影。
+  return `<div class="riddle-note folded" id="riddle-note">
+    <span class="rn-tab" aria-hidden="true">?</span>
     <span class="rn-tape"></span>
     <span class="rn-face rn-front">${esc(secret.hint)}</span>
     <span class="rn-face rn-back">${COPY.riddleFlip}</span>
@@ -775,7 +799,11 @@ function bindToday() {
   // 谜面便签：点一下翻面，露出 ??? 剪影
   $('#riddle-note')?.addEventListener('click', e => {
     e.stopPropagation();
-    e.currentTarget.classList.toggle('flipped');
+    const el = e.currentTarget;
+    // 收着的时候第一下只负责展开；展开之后再点才是翻面
+    if (el.classList.contains('folded')) { el.classList.remove('folded'); return; }
+    if (el.classList.contains('flipped')) { el.classList.remove('flipped'); el.classList.add('folded'); return; }
+    el.classList.add('flipped');
   });
 
   $('#deck-more')?.addEventListener('click', e => { e.stopPropagation(); setDeckOpen(!deckOpen); });
@@ -1785,7 +1813,7 @@ function renderMe() {
       <div class="me-item"><span class="k">导出数据</span><button id="btn-export">JSON ›</button></div>
       <div class="me-item"><span class="k">清空所有记录</span><button id="btn-wipe" class="danger">清空</button></div>
     </div>
-    <div class="me-foot">生活图鉴 · LIFE STAMPS · V1.12</div>`;
+    <div class="me-foot">生活图鉴 · LIFE STAMPS · V1.13</div>`;
 
   document.querySelectorAll('.cover-pick .cv').forEach(b2 =>
     b2.addEventListener('click', () => {

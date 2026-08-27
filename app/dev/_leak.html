@@ -1,0 +1,46 @@
+<!doctype html><meta charset="utf-8"><title>泄漏/卡顿探针</title>
+<style>body{font:12px/1.7 monospace;margin:12px}iframe{width:390px;height:760px;border:1px solid #ccc}
+table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:2px 8px;text-align:right}</style>
+<div id="o">跑着…</div><iframe id="f" src="/index.html?skipob=1&book=open&band=day"></iframe>
+<script>
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const f=document.getElementById('f');
+f.onload=async()=>{
+ const W=f.contentWindow, D=f.contentDocument;
+ // 把 setTimeout/setInterval 计数，看有没有越挂越多
+ let tOn=0,iOn=0;
+ const _st=W.setTimeout,_si=W.setInterval,_ct=W.clearTimeout,_ci=W.clearInterval;
+ W.setTimeout=function(){tOn++;return _st.apply(W,arguments)};
+ W.setInterval=function(){iOn++;return _si.apply(W,arguments)};
+ const snap=()=>({
+   nodes:D.getElementsByTagName('*').length,
+   svg:D.getElementsByTagName('svg').length,
+   filters:D.querySelectorAll('[filter]').length,
+   heap:W.performance.memory?Math.round(W.performance.memory.usedJSHeapSize/1048576):-1,
+   timers:tOn, intervals:iOn,
+ });
+ await sleep(1200);
+ const rows=[['起点',snap()]];
+ const cv=()=>D.querySelector('#today-canvas');
+ const cell=()=>D.querySelector('#deck-strip .dk-stamp');
+ for(let round=1;round<=4;round++){
+   for(let k=0;k<12;k++){
+     // 选一枚章（pointerdown/up）
+     const c=cell(); if(c){const r=c.getBoundingClientRect();
+       const pv=(t,x,y)=>c.dispatchEvent(new W.PointerEvent(t,{bubbles:true,cancelable:true,
+         pointerId:9,pointerType:'touch',clientX:x,clientY:y}));
+       pv('pointerdown',r.left+10,r.top+10); pv('pointerup',r.left+10,r.top+10);}
+     await sleep(60);
+     // 盖一下
+     const b=cv().getBoundingClientRect();
+     cv().dispatchEvent(new W.MouseEvent('click',{bubbles:true,
+       clientX:b.left+b.width*(0.2+0.05*k), clientY:b.top+b.height*(0.2+0.05*k)}));
+     await sleep(120);
+   }
+   rows.push(['第'+round+'轮后(共'+(round*12)+'次)',snap()]);
+ }
+ const k=Object.keys(rows[0][1]);
+ document.getElementById('o').innerHTML='<table><tr><th>阶段</th>'+k.map(x=>`<th>${x}</th>`).join('')+'</tr>'
+  +rows.map(([n,v])=>`<tr><td style="text-align:left">${n}</td>`+k.map(x=>`<td>${v[x]}</td>`).join('')+'</tr>').join('')+'</table>';
+};
+</script>

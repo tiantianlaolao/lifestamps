@@ -870,8 +870,13 @@ function bindToday() {
 //    这条是已知的、故意的（分享卡那块单独排）。
 function applyLook() {
   const de = document.documentElement;
-  de.dataset.font = store.settings.font || 'hand';
-  de.dataset.desk = store.settings.desk || 'floral';
+  // 🔴 属性名必须跟按钮上那套**错开**（按钮用 data-font / data-desk）。
+  //    V1.15 我图省事两边同名，结果 <html> 自己匹配上了 querySelectorAll('[data-font]')，
+  //    每进一次「我的」就往根元素挂一个 click 监听、只增不减；而监听里是
+  //    store.persist() + renderMe()，于是**点任何地方**都会触发 N 次写盘和 N 次整页重渲染
+  //    —— 表现就是"越用越卡，用一会儿就死"。同名是病根，改名是根治。
+  de.dataset.lookFont = store.settings.font || 'hand';
+  de.dataset.lookDesk = store.settings.desk || 'floral';
 }
 
 function setDeckOpen(open) {
@@ -1843,13 +1848,14 @@ function renderMe() {
         <label class="switch"><input type="checkbox" id="sw-haptic" ${store.settings.haptic ? 'checked' : ''}><i></i></label></div>
       <div class="me-item"><span class="k">清空所有记录</span><button id="btn-wipe" class="danger">清空</button></div>
     </div>
-    <div class="me-foot">戳了么 · V1.16</div>`;
+    <div class="me-foot">戳了么 · V1.17</div>`;
 
-  document.querySelectorAll('[data-font]').forEach(b2 =>
+  // ⚠️ 一律限定在本页里选，别用全文档选择器——那是上面那个 bug 的另一半原因
+  document.querySelectorAll('#page-me [data-font]').forEach(b2 =>
     b2.addEventListener('click', () => {
       store.settings.font = b2.dataset.font; store.persist(); applyLook(); renderMe();
     }));
-  document.querySelectorAll('[data-desk]').forEach(b2 =>
+  document.querySelectorAll('#page-me [data-desk]').forEach(b2 =>
     b2.addEventListener('click', () => {
       store.settings.desk = b2.dataset.desk; store.persist(); applyLook(); renderMe();
     }));

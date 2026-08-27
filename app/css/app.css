@@ -1737,19 +1737,19 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 /* ---- 字体：常规。⚠️ 只用系统字体栈，**不引第三个 woff2** ----
    每多一款自托管中文字体就是几百 KB，包体和首屏都要付钱；
    而"常规"这个需求要的正是"没有个性的那种"，系统字体正好。 */
-:root[data-font="plain"]{
+:root[data-look-font="plain"]{
   --f-title:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
   --f-ui:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
   --f-hand:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
 }
 /* 快乐体没有粗体、靠字形本身立住；换成系统字体后标题会显得轻，补一点字重 */
-:root[data-font="plain"] .col-title,
-:root[data-font="plain"] .op-cover .op-t,
-:root[data-font="plain"] .bl-t{font-weight:600}
+:root[data-look-font="plain"] .col-title,
+:root[data-look-font="plain"] .op-cover .op-t,
+:root[data-look-font="plain"] .bl-t{font-weight:600}
 
 /* ---- 桌布：素色 / 细格。碎花是默认，见 --floral ---- */
-:root[data-desk="plain"]{ --floral:none; }
-:root[data-desk="grid"]{
+:root[data-look-desk="plain"]{ --floral:none; }
+:root[data-look-desk="grid"]{
   /* 🔴 必须是 repeating-linear-gradient。普通 linear-gradient **不重复**——
      只会在元素最顶上画一条 1px 线，往下全透明，看起来跟"素色"一模一样（实测撞到）。
      ⚠️ 顺带：.055 也太淡，提到 .10 才看得见。 */

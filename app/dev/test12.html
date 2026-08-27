@@ -61,6 +61,34 @@ function clickAt(el, fx=0.5, fy=0.5){
   const anyEnabled = [...D().querySelectorAll('#supply-list [data-refill]')].some(b => !b.disabled);
   ok('已领过：所有补满按钮禁用', !anyEnabled);
 
+  // 🔴 V1.15 埋过一个会把 App 用死的雷，这几条是它的防线：
+  //    applyLook() 把设置写成 <html data-font/data-desk>，而「我的」页用
+  //    document.querySelectorAll('[data-font]') 挂监听 —— <html> 自己匹配上了，
+  //    每进一次「我的」就往根元素挂一个 click 监听、只增不减，
+  //    而监听里是 store.persist() + renderMe()。于是点任何地方都触发 N 次写盘 + N 次整页重渲染。
+  {
+    const de = D().documentElement;
+    ok('根元素不会被当成设置按钮', !de.matches('[data-font],[data-desk]'),
+       `data-font=${de.getAttribute('data-font')} data-desk=${de.getAttribute('data-desk')}`);
+    // 量用户可见的事实：进过几次「我的」之后，在别处点一下不许写设置、不许重渲染「我的」
+    const W = f.contentWindow;
+    for (let i = 0; i < 3; i++) {
+      D().querySelector('#tabbar [data-tab="me"]').click(); await sleep(160);
+      D().querySelector('#tabbar [data-tab="today"]').click(); await sleep(160);
+    }
+    let writes = 0;
+    const orig = W.localStorage.setItem.bind(W.localStorage);
+    W.localStorage.setItem = function (k, v) { if (k === 'lifestamps_settings') writes++; return orig(k, v); };
+    // ⚠️ 别点纸——那会真盖一枚章，而 store.persist() 是把所有 key 一起写的，
+    //    settings 也会被带着写一次，判据就废了（第一版就是这么写的，红了）。
+    //    点 body：正常情况下什么都不该发生；有那个 bug 的话，click 冒泡到 <html>
+    //    会把挂在根上的 N 个监听全触发一遍。
+    D().body.dispatchEvent(new W.MouseEvent('click', { bubbles: true }));
+    await sleep(300);
+    W.localStorage.setItem = orig;
+    ok('在别处点一下不会触发设置写盘（监听没挂到根元素上）', writes === 0, `写了 ${writes} 次`);
+  }
+
   // 4b. 托盘两态
   const bd0 = D().querySelector('#backdrop'); if (bd0) bd0.click(); await sleep(150);
   ok('默认收起态', !D().querySelector('#deck').classList.contains('open'));

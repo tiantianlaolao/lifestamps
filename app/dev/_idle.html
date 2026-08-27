@@ -1,0 +1,31 @@
+<!doctype html><meta charset="utf-8"><title>静置时在干什么</title>
+<style>body{font:12px/1.8 monospace;margin:12px}iframe{width:390px;height:760px;border:1px solid #ccc}</style>
+<pre id="o">观察 8 秒…</pre><iframe id="f" src="/index.html?skipob=1&book=open&band=day"></iframe>
+<script>
+const f=document.getElementById('f');
+f.onload=()=>setTimeout(()=>{
+ const W=f.contentWindow, D=f.contentDocument;
+ let mut=0, muts={};
+ const mo=new W.MutationObserver(list=>{
+   mut+=list.length;
+   for(const m of list){
+     const t=m.target, key=(t.id?'#'+t.id:(t.className&&typeof t.className==='string'?'.'+t.className.split(' ')[0]:t.nodeName));
+     muts[key]=(muts[key]||0)+1;
+   }
+ });
+ mo.observe(D.body,{childList:true,subtree:true,attributes:true,characterData:true});
+ // rAF 有没有在连续跑
+ let frames=0; const tick=()=>{frames++; W.requestAnimationFrame(tick);}; W.requestAnimationFrame(tick);
+ // 有没有长任务
+ let longTasks=0, longMs=0;
+ try{ new W.PerformanceObserver(l=>{for(const e of l.getEntries()){longTasks++;longMs+=e.duration;}})
+   .observe({entryTypes:['longtask']}); }catch(e){}
+ setTimeout(()=>{
+   mo.disconnect();
+   const top=Object.entries(muts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+   document.getElementById('o').textContent =
+     `静置 8 秒：\n  DOM 变动 ${mut} 次\n  rAF 帧 ${frames}\n  长任务 ${longTasks} 个 / 共 ${longMs.toFixed(0)}ms\n\n变动最多的节点：\n`
+     + top.map(([k,v])=>`  ${v.toString().padStart(6)}  ${k}`).join('\n');
+ },8000);
+},1500);
+</script>

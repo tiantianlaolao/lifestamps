@@ -471,7 +471,8 @@ export const COPY = {
   glyphSub: '数字、字母、星期、标点——这些是工具，不算收集',
   undo: '撤销',
   undone: '撕掉了。',
-  meSummary: '盖了 {a} 枚章，解开了 {b} 枚隐藏章，有 {c} 天留下了痕迹。',
+  // 一眼能扫的三个数，不是一句陈述句（8-27 用户："改成清晰表述，一目了然"）
+  statMarks: '枚印记', statDays: '天有记录', statHidden: '隐藏章',
   meTitleLabel: '这个月的称号',
   meTitlePast: '以前的',
   wipeConfirm: '所有的纸都会被撕掉，确定吗？',

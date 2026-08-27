@@ -1782,10 +1782,12 @@ function renderMe() {
 
   $('#page-me').innerHTML = `
     <div class="col-title">我的</div>
-    <div class="me-line">${COPY.meSummary
-      .replace('{a}', store.records.length)
-      .replace('{b}', Object.keys(store.hidden).length)
-      .replace('{c}', store.daysWithRecords())}</div>
+    <div class="me-stat">
+      <div class="st"><span class="v">${store.records.length}</span><span class="k">${COPY.statMarks}</span></div>
+      <div class="st"><span class="v">${store.daysWithRecords()}</span><span class="k">${COPY.statDays}</span></div>
+      <div class="st"><span class="v">${Object.keys(store.hidden).length}<i>/${HIDDEN.length}</i></span>
+        <span class="k">${COPY.statHidden}</span></div>
+    </div>
 
     <div class="ttl-k">${COPY.meTitleLabel}</div>
     <div class="ttl-card">
@@ -1808,7 +1810,6 @@ function renderMe() {
         <label class="switch"><input type="checkbox" id="sw-sound" ${store.settings.sound ? 'checked' : ''}><i></i></label></div>
       <div class="me-item"><span class="k">触感</span>
         <label class="switch"><input type="checkbox" id="sw-haptic" ${store.settings.haptic ? 'checked' : ''}><i></i></label></div>
-      <div class="me-item"><span class="k">导出数据</span><button id="btn-export">JSON ›</button></div>
       <div class="me-item"><span class="k">清空所有记录</span><button id="btn-wipe" class="danger">清空</button></div>
     </div>
     <div class="me-foot">戳了么 · V1.14</div>`;
@@ -1819,13 +1820,6 @@ function renderMe() {
     }));
   $('#sw-sound').onchange = e => { store.settings.sound = e.target.checked; store.persist(); };
   $('#sw-haptic').onchange = e => { store.settings.haptic = e.target.checked; store.persist(); };
-  $('#btn-export').onclick = () => {
-    const blob = new Blob([store.exportJSON()], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `戳了么-备份-${dateKey(Date.now())}.json`;
-    a.click();
-  };
   $('#btn-wipe').onclick = e => {
     const b = e.target;
     if (b.dataset.arm) { store.wipe(); toast('已经清空了。'); render(); }

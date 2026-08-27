@@ -1,5 +1,5 @@
 // ============================================================
-// 生活图鉴 · 主逻辑（V1.2：手账翻书 / 印泥消耗 / 2.5D 盖章）
+// 戳了么 · 主逻辑（V1.2：手账翻书 / 印泥消耗 / 2.5D 盖章）
 // ============================================================
 import { STAMPS, GLYPHS, isGlyph, HIDDEN, CATEGORIES, INKS, COPY, stampById, hiddenById, monthPersona, lockedMaterial, seriesById } from './data.js';
 import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint, inkMainColor, inkCSS, darken, seedOf, weatherSVG } from './stamp.js';
@@ -331,7 +331,7 @@ function renderToday() {
 // ---- 开场：合着的本子等你翻开（规格 §7.1a + 8-26 用户改动）----
 // ⚠️ 跟规格原文有两处有意的不同，用户拍板：
 //   ① 封面不自动翻。规格写的是 250–650ms 自动 rotateY 到 -180°；实测那一下太快，
-//      「生活图鉴」四个字只读得到约 300ms，而且翻开本子本该是人的动作、不是片头动画。
+//      「戳了么」四个字只读得到约 300ms，而且翻开本子本该是人的动作、不是片头动画。
 //      改成：本子合着停在那儿，等你碰一下（点一下 / 往左划）才翻开。
 //   ② 封面出不出，看的是「上次有没有合上」（store.bookClosed）：
 //      合上了 → 下次打开是封面；没合上就搁在桌上 → 下次直接是纸面。跟真本子一样。
@@ -359,7 +359,7 @@ function playOpening(force = false, closing = false) {
       <span class="op-spine"></span>
       <span class="op-label">
         <span class="op-tape l"></span><span class="op-tape r"></span>
-        <span class="op-t">生活图鉴</span><span class="op-mon">${mon}月</span>
+        <span class="op-t">戳了么</span><span class="op-mon">${mon}月</span>
       </span>
       ${coverStickers()}
     </div>
@@ -1234,7 +1234,7 @@ function showHiddenQueue(list) {
     <div class="ov-badge">${stampSVG(h, { size: 168, rot: -2 })}</div>
     <div class="ov-name">${h.name}</div>
     <div class="ov-sub">一枚新的生活印章</div>
-    <button class="ov-btn" id="hid-ok">收入图鉴</button>`;
+    <button class="ov-btn" id="hid-ok">收进抽屉</button>`;
   ov.classList.add('show');
   haptic();
   $('#hid-ok').onclick = () => {
@@ -1811,7 +1811,7 @@ function renderMe() {
       <div class="me-item"><span class="k">导出数据</span><button id="btn-export">JSON ›</button></div>
       <div class="me-item"><span class="k">清空所有记录</span><button id="btn-wipe" class="danger">清空</button></div>
     </div>
-    <div class="me-foot">生活图鉴 · LIFE STAMPS · V1.13</div>`;
+    <div class="me-foot">戳了么 · V1.14</div>`;
 
   document.querySelectorAll('.cover-pick .cv').forEach(b2 =>
     b2.addEventListener('click', () => {
@@ -1823,7 +1823,7 @@ function renderMe() {
     const blob = new Blob([store.exportJSON()], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `生活图鉴-备份-${dateKey(Date.now())}.json`;
+    a.download = `戳了么-备份-${dateKey(Date.now())}.json`;
     a.click();
   };
   $('#btn-wipe').onclick = e => {

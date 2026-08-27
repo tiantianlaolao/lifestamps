@@ -1,5 +1,5 @@
 /* ============================================================
-   生活图鉴 · V1 样式
+   戳了么 · V1 样式
    tokens: 纸 #F6F2EA / 墨 #252421 / 次 #8C8880 / 章红 #C94B3C
    原则：留白多、边框轻、圆角小(2/4/6)、无明显投影
    ============================================================ */
@@ -834,7 +834,10 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
   box-shadow:0 2px 0 rgba(63,53,48,.08);
 }
-.op-cover .op-t{font-family:var(--f-title); font-size:20px; color:var(--cover-text); letter-spacing:.12em}
+/* 🔴 封面标题不能用快乐体（8-27 改名后暴露）：「戳」是 17 画，而快乐体是笔画很粗的展示体，
+   20px 下笔画之间直接粘死成一坨黑，32px 也一样糊（四档对比实测）。换文楷——细笔画撑得开，
+   而且手写体本来就更像手账封面。⚠️ 以后往标题类元素里放笔画密的字，先看一眼再说。 */
+.op-cover .op-t{font-family:var(--f-hand); font-size:26px; color:var(--cover-text); letter-spacing:.14em}
 .op-mon{font-family:var(--f-ui); font-size:13px; color:var(--sub); letter-spacing:.1em}
 /* 标签贴两角的和纸胶带 */
 .op-tape.l,.op-tape.r{

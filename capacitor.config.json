@@ -1,6 +1,6 @@
 {
   "appId": "com.tybbtech.lifestamps",
-  "appName": "生活图鉴",
+  "appName": "戳了么",
   "webDir": "app",
   "ios": {
     "contentInset": "never",

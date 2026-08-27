@@ -51,11 +51,11 @@ function dateStamp(d) {
 }
 
 // 落款：规格 §7.2 只允许「右下角 6px 高的极小印」。
-// 原来是居中一整行 14px 带 6 字距的「生活图鉴 · LIFE STAMPS」——那读起来是水印，
+// 原来是居中一整行 14px 带 6 字距的「戳了么 · LIFE STAMPS」——那读起来是水印，
 // 而分享卡是获客的唯一主路径，它上面不该有像水印的东西（8-26 用户「盖了么」#8）。
 const cornerMark = () =>
   `<text x="1012" y="1398" text-anchor="end" font-size="17" letter-spacing="3"
-     fill="${SUB}" opacity=".45" font-family="${FONT}">生活图鉴</text>`;
+     fill="${SUB}" opacity=".45" font-family="${FONT}">戳了么</text>`;
 
 // 把一枚章渲染为放进大卡的 <g>（含定位/旋转）
 function placedStamp(def, { x, y, size, ink, rot = 0, opacity = 0.92, mat }) {
@@ -208,7 +208,7 @@ export async function openShare(y, m) {
       <img src="${dataUrl}" alt="我的 ${m} 月">
       <button class="ov-btn" id="sh-save" style="margin-top:20px">保存图片</button>
       <button class="ov-btn ghost" id="sh-close">关闭</button>`;
-    bindSaveBtn(document.getElementById('sh-save'), dataUrl, `我的${m}月-生活图鉴.png`);
+    bindSaveBtn(document.getElementById('sh-save'), dataUrl, `我的${m}月-戳了么.png`);
     document.getElementById('sh-close').onclick = () => ov.classList.remove('show');
   } catch (e) {
     ov.innerHTML = `<div class="gen">生成失败了，再试一次吧。</div>

@@ -18,7 +18,7 @@ setTimeout(()=>{
   const pe=(el,t,x,y)=>el.dispatchEvent(new w.PointerEvent(t,{bubbles:true,cancelable:true,
     pointerId:1,pointerType:'touch',clientX:x,clientY:y}));
   pe(paper,'pointerdown', r.left+r.width-14, r.top+r.height*fy);
-  pe(book,'pointermove', r.left+r.width*0.45, r.top+r.height*fy);   // 纯左拖，零上抬
+  pe(book,'pointermove', r.left+r.width*0.62, r.top+r.height*fy);   // 纯左拖、只走三分之一
  });
 },1400);
 </script>

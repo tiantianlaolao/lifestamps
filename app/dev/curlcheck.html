@@ -67,11 +67,19 @@ const dayNum = t => +t.match(/\d+/g)[1];
       return box;
     };
     const hi = await grab(0.22), lo = await grab(0.85);
-    ok('从上部起手能掀起来', !!hi);
-    ok('从下部起手能掀起来', !!lo);
-    ok('起手高度不同，掀起来的位置也不同',
-       !!hi && !!lo && Math.abs(hi.top - lo.top) > 40,
-       hi && lo ? `上 top=${hi.top.toFixed(0)} / 下 top=${lo.top.toFixed(0)}` : '');
+    ok('从上部起手能翻', !!hi);
+    ok('从下部起手能翻', !!lo);
+    // 🔴 判据按用户原话："顺着竖线一点一点平移翻过去，**不要动上下两个边**"。
+    //    竖直折 → 翻起来那一片是个矩形，高度 = 整张纸高（上下边纹丝不动）。
+    //    掀角   → 是个三角，高度必然明显小于纸高。
+    ok('右侧边起手 = 竖直折，上下两边不动',
+       !!hi && Math.abs(hi.height - r.height) < 6,
+       hi ? `翻起片高 ${hi.height.toFixed(0)} / 纸高 ${r.height.toFixed(0)}` : '');
+    // ⚠️ 掀角那一片会**超出**纸的高度（卷起来的角本来就翘到纸外面去，实测 475 vs 340），
+    //    所以判据不能写"比纸矮"。要判的只是"不等于纸高" = 不是那个矩形。
+    ok('右下角起手 = 掀角（不是竖直折）',
+       !!lo && Math.abs(lo.height - r.height) > 6,
+       lo ? `翻起片高 ${lo.height.toFixed(0)} / 纸高 ${r.height.toFixed(0)}` : '');
   }
 
   // ② 往左拖 = 掀右下角，翻到下一天

@@ -1843,7 +1843,7 @@ function renderMe() {
         <label class="switch"><input type="checkbox" id="sw-haptic" ${store.settings.haptic ? 'checked' : ''}><i></i></label></div>
       <div class="me-item"><span class="k">清空所有记录</span><button id="btn-wipe" class="danger">清空</button></div>
     </div>
-    <div class="me-foot">戳了么 · V1.15</div>`;
+    <div class="me-foot">戳了么 · V1.16</div>`;
 
   document.querySelectorAll('[data-font]').forEach(b2 =>
     b2.addEventListener('click', () => {

@@ -164,10 +164,22 @@ export function attachCurl(book, o) {
   //    ✅ 物理不变：圆心到 C 和到 P 仍然等距 → 折线仍必过装订线那一点 → 撕不下来。
   //       只是支点跟着手指走：捏右下角就是原来的样子，捏右侧中间就从中间卷。
   let hingeY = 0;                       // 起手时定下，整段手势不变
+  // 🔴 8-27 用户拍板：**两种翻法，不是一种**（我之前硬塞进同一套几何，所以右侧拖被掰成
+  //    斜的、还把纸的上下边带歪了 —— 用户截图指出"不要动上下两个边"）。
+  //      'corner' 从右下角起手 = 掀角（斜折线绕装订线转，原样保留，用户说"不用变"）
+  //      'edge'   从右侧边起手 = **竖直折线往左平移**，上下两条边纹丝不动
+  //    paint() 本来就是通用的：折线 = C 与 P 的垂直平分线。
+  //    给它同高度的 C 和 P，折线自然就是竖直的——几何一行没改，只是换了 P 怎么取。
+  let mode = 'corner';
   const hinge = () => [0, hingeY];
   // 把角度换成纸角的位置：0 = 没动（角还在右下），π = 整页翻过去（角到了纸左外侧）
   const atAngle = a => { const [hx, hy] = hinge(); return [hx + W * Math.cos(a), hy - W * Math.sin(a)]; };
-  let ang = 0;
+  // 统一进度 t ∈ [0,1]：0 = 没动，1 = 整页翻过去（折线落到装订线上）。
+  // 两种模式只是把同一个 t 映射成不同的纸角位置。
+  const posAt = tt => (mode === 'edge'
+    ? [W - 2 * W * tt, hingeY]              // 竖直折：折线 = C 与 P 的中垂线 → x = W - W·t
+    : atAngle(Math.PI * tt));               // 掀角：沿圆弧转
+  let t = 0;
 
   // ⚠️ 传进来的是「手指的位移」，不是手指的坐标：
   //    直接拿手指坐标当纸角位置的话，手按在纸中间那一瞬纸角就瞬移到手指下，进度凭空起跳。
@@ -183,19 +195,20 @@ export function attachCurl(book, o) {
   const setPointer = (mx, my) => {
     const left = Math.max(0, -mx);          // 往左走了多少
     const up = Math.max(0, -my);            // 往上掀了多少
-    const travel = Math.hypot(left, up);
-    ang = Math.max(0, Math.min(Math.PI, Math.PI * travel / SPAN()));
-    P = atAngle(ang);
+    // 竖直折只认"往左走了多远"——往上抬不该让纸动，那正是"不要动上下两个边"的意思。
+    const travel = mode === 'edge' ? left : Math.hypot(left, up);
+    t = Math.max(0, Math.min(1, travel / SPAN()));
+    P = posAt(t);
     paint();
   };
 
-  // 进度：纸角在圆弧上走了多少。0.5 = 折线正好扫到纸中间
-  const progress = () => ang / Math.PI;
+  // 进度：0.5 = 折线正好扫到纸中间（两种模式同一个口径）
+  const progress = () => t;
 
   const settle = (dir, done) => {
-    // 收尾也沿着那条圆弧走：翻完 = 角度推到 π（折线落在装订线上），弹回 = 推回 0
-    const from = ang;
-    const to = done ? Math.PI : 0;
+    // 收尾走同一条路：翻完 = t 推到 1（折线落在装订线上），弹回 = 推回 0
+    const from = t;
+    const to = done ? 1 : 0;
     const t0 = performance.now();
     let fin = false;
     cancelAnimationFrame(raf);
@@ -210,8 +223,8 @@ export function attachCurl(book, o) {
       if (fin) return;
       const k = Math.min(1, (now - t0) / SNAP_MS);
       const e = 1 - Math.pow(1 - k, 3);                       // ease-out
-      ang = from + (to - from) * e;
-      P = atAngle(ang);
+      t = from + (to - from) * e;
+      P = posAt(t);
       paint();
       if (k < 1) { raf = requestAnimationFrame(step); return; }
       finish();
@@ -244,8 +257,11 @@ export function attachCurl(book, o) {
       if (dx > 0) { drag.back = true; return; }                   // 往右划：回上一页，松手再判
       if (!o.canTurn(1)) { drag = null; return; }
       drag.armed = true; drag.dir = 1;
-      // 被捏的角 = 自由边（右边）上跟手指起手同高的那一点
+      // 被捏的点 = 自由边（右边）上跟手指起手同高的那一点
       const gy = Math.max(0, Math.min(drag.r.height, drag.y0 - drag.r.top));
+      // 🔴 起手在纸的下四分之一 = 掀角（用户："右下角翻页不用变"）；
+      //    其余高度 = 竖直折往左平移（用户："顺着竖线一点一点平移翻过去，不要动上下两个边"）。
+      mode = gy > drag.r.height * 0.75 ? 'corner' : 'edge';
       C = [drag.r.width, gy];
       if (!build(1)) { drag = null; return; }
       hingeY = Math.max(0, Math.min(H, gy));
@@ -333,7 +349,7 @@ export function attachCurl(book, o) {
       if (!o.canTurn(1) || layers || busy) return;
       const paper = o.paper(); if (!paper) return;
       const r = paper.getBoundingClientRect();
-      W = r.width; H = r.height; hingeY = H; C = [W, H];
+      W = r.width; H = r.height; hingeY = H; mode = 'corner'; C = [W, H];
       if (!build(1)) return;
       C = [W, H]; P = C.slice();
       paint();
@@ -345,7 +361,7 @@ export function attachCurl(book, o) {
       const paper = o.paper(); if (!paper) return;
       const r = paper.getBoundingClientRect();
       if (!layers) {
-        W = r.width; H = r.height; hingeY = H;
+        W = r.width; H = r.height; hingeY = H; mode = 'corner';
         C = reverse ? [0, H] : [W, H];
         build(reverse ? -1 : 1, reverse);
       }

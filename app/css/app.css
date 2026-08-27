@@ -47,7 +47,11 @@
   src:url("../fonts/lxgw-wenkai.woff2") format("woff2");
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%}
+/* 🔴 文档本身永远不许滚：只有 main 滚（它是 overflow-y:auto 的 flex:1）。
+   不写死这条的话，原生壳里 WKWebView 外层那个 UIScrollView 一旦变得可滚，
+   它的 pan 手势就会来抢触摸——表现是"贴纸拖不动、翻页翻不动"，而点按正常。
+   ⚠️ 网页版本来也不需要文档滚动，所以这条两边都安全。 */
+html,body{height:100%; overflow:hidden}
 body{
   background:var(--app-bg); color:var(--ink);
   font-family:var(--f-ui);

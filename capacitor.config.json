@@ -3,7 +3,7 @@
   "appName": "生活图鉴",
   "webDir": "app",
   "ios": {
-    "contentInset": "always",
+    "contentInset": "never",
     "backgroundColor": "#EAE5DA"
   },
   "server": {

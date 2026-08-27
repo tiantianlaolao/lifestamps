@@ -8,6 +8,7 @@ import { checkHidden, dailySecret } from './hidden.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
 import { openShare, openShareDay } from './share.js';
 import { attachCurl } from './curl.js';
+import { initDiag } from './diag.js';
 
 const $ = s => document.querySelector(s);
 const WEEK = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
@@ -145,6 +146,7 @@ function init() {
   if (params.get('cat')) deckCat = params.get('cat');       // dev：托盘直接停在某个分类
   if (params.get('slowopen')) slowOpen = Math.min(20, +params.get('slowopen') || 1);  // dev：开场慢放
 
+  initDiag();               // 真机诊断面板：「我的」页版本号连点 5 下
   applyBand(false);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { hiddenAt = Date.now(); return; }
@@ -1429,12 +1431,28 @@ function openDayNote(dk) {
   $('#page-memories').appendChild(box);
   const ta = box.querySelector('textarea');
   ta.focus(); ta.setSelectionRange(cur.length, cur.length);
+  let saved = false;
   const done = () => {
+    if (saved) return;
+    saved = true;
     store.setDayNote(dk, ta.value.trim());
     box.remove();
     renderFlipView();
   };
-  box.querySelector('.ok').addEventListener('click', done);
+  // 🔴 挂 pointerdown 不能挂 click（8-27 用户真机实测：写完点「写好了」没反应）。
+  //    iOS 上键盘弹着的时候点按钮：手指按下 → textarea 失焦 → 键盘收起 → 整个版面往下弹，
+  //    按钮在 click 派发之前就已经从手指底下挪走了，那一下 click 落到空处。
+  //    pointerdown 发生在版面变化之前，preventDefault 还能顺带阻止失焦。
+  const ok = box.querySelector('.ok');
+  ok.addEventListener('pointerdown', e => { e.preventDefault(); done(); });
+  ok.addEventListener('click', done);          // 鼠标/无障碍那条路留着，done 自带幂等
+  // 点框外面也算写好：别让任何一条退出路径把字吃掉
+  const outside = e => {
+    if (box.contains(e.target)) return;
+    document.removeEventListener('pointerdown', outside, true);
+    done();
+  };
+  setTimeout(() => document.addEventListener('pointerdown', outside, true), 0);
 }
 
 function memSeg() {
@@ -1767,7 +1785,7 @@ function renderMe() {
       <div class="me-item"><span class="k">导出数据</span><button id="btn-export">JSON ›</button></div>
       <div class="me-item"><span class="k">清空所有记录</span><button id="btn-wipe" class="danger">清空</button></div>
     </div>
-    <div class="me-foot">生活图鉴 · LIFE STAMPS · V1.10</div>`;
+    <div class="me-foot">生活图鉴 · LIFE STAMPS · V1.11</div>`;
 
   document.querySelectorAll('.cover-pick .cv').forEach(b2 =>
     b2.addEventListener('click', () => {

@@ -384,7 +384,13 @@ function clickAt(el, fx=0.5, fy=0.5){
     ok('字形章不进 discovered（不算发现）', !disc.g2, '实际 ' + JSON.stringify(Object.keys(disc)));
     D().querySelector('#tabbar [data-tab="collection"]').click(); await sleep(400);
     const sub = D().querySelector('#page-collection .col-sub').textContent;
-    ok('抽屉统计没被 49 枚字撑爆', /还有 4[0-2] 枚/.test(sub), sub.trim());
+    // ⚠️ 8-27 文案从「用过 N 枚，还有 M 枚没盖过」改成「已经盖过 N 枚」，判据跟着改；
+    //    但**要防的事没变**：刚盖了一枚字形章，这个数不许把 49 枚字算进去。
+    //    所以量的是数字本身——被字撑爆的话会是 49+。
+    {
+      const n = +(sub.match(/\d+/) || [99])[0];
+      ok('抽屉统计没被 49 枚字撑爆', n < 10, sub.trim() + `（取到 ${n}）`);
+    }
     // 「字」要跟托盘的分类栏一致地出现在抽屉上方（8-27 用户直接问了"为什么不在上方"）
     const gchip = D().querySelector('#drawer-cats [data-dcat="glyph"]');
     ok('抽屉分类栏里有「字」', !!gchip);

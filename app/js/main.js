@@ -54,9 +54,8 @@ let deckCat = 'all';
 let deckOpen = false;             // 托盘展开态（收起态只有一行常用章）
 let undoRec = null;              // {id, at} 刚盖下的那一枚，10 秒内可以撤
 let undoTimer = null;
-let drawerSeg = 'stamps';         // 抽屉页分段：我的章 / 印泥盒（文具店等内购做了再加第三段）
+let drawerSeg = 'stamps';         // 抽屉页分段：我盖过的 / 印泥盒（文具店等内购做了再加第三段）
 let drawerCat = 'all';            // 抽屉里的分类过滤（含「字」）
-let drawerRawOpen = false;        // 「还没遇到的」展开了吗
 let drawerHidOpen = false;        // 「隐藏章」展开了吗
 let pressSlow = 1;               // dev ?slowpress=1 → 按压动画放慢 4 倍便于观察
 let slowOpen = 1;                // dev ?slowopen=N → 开场整场慢放 N 倍
@@ -1271,8 +1270,8 @@ function renderCollection() {
     b2.addEventListener('click', () => { drawerCat = b2.dataset.dcat; renderCollection(); }));
   document.querySelectorAll('#page-collection [data-fold]').forEach(b2 =>
     b2.addEventListener('click', () => {
-      if (b2.dataset.fold === 'raw') drawerRawOpen = !drawerRawOpen;
-      else drawerHidOpen = !drawerHidOpen;
+      // 折叠区现在只剩「隐藏章」一段（「还没遇到的」8-27 删了），不用再分支
+      drawerHidOpen = !drawerHidOpen;
       renderCollection();
     }));
 
@@ -1290,7 +1289,7 @@ function renderCollection() {
     }));
 }
 
-// 抽屉 · 我的章
+// 抽屉 · 我盖过的
 function drawerStamps(used, cnt) {
   // 抽屉 = 一格一格的凹槽。8-26 用户定的三条一起做：
   //   甲 只摆你有的，没遇到的折起来 —— 页面长度跟"你的收藏"走，不跟"总共有多少章"走。
@@ -1313,7 +1312,6 @@ function drawerStamps(used, cnt) {
 
   const inCat = s2 => drawerCat === 'all' || s2.cat === drawerCat;
   const mine = STAMPS.filter(s2 => store.discovered[s2.id] && inCat(s2));
-  const rest = STAMPS.filter(s2 => !store.discovered[s2.id] && inCat(s2));
   const hidGot = HIDDEN.filter(h => store.hidden[h.id]).length;
 
   // 「字」跟托盘的分类栏保持一致——之前只有托盘有，抽屉里它只能待在最底下那一折，
@@ -1359,15 +1357,14 @@ function drawerStamps(used, cnt) {
       </div>`;
   }
 
-  return `<div class="col-sub">${COPY.stampsSummary
-      .replace('{used}', used).replace('{rest}', STAMPS.length - used)}</div>
+  return `<div class="col-sub">${COPY.stampsSummary.replace('{used}', used)}</div>
     <div class="drawer-cats" id="drawer-cats">${cats}</div>
     <div class="box box-paper">
-      <div class="box-t"><span class="bx-n">我的章</span><span class="bx-s">${mine.length} 枚</span></div>
+      <div class="box-t"><span class="bx-n">${COPY.drawerMine}</span><span class="bx-s">${mine.length} 枚</span></div>
       ${mine.length ? mineInner : `<div class="fold-empty">这一类还没有盖过的章。</div>`}
     </div>
-    ${fold('raw', '还没遇到的', rest.length + ' 枚', drawerRawOpen,
-      `<div class="dk-grid">${rest.map(s2 => cell(s2, 'sid')).join('')}</div>`)}
+    ${/* ⛔ 「还没遇到的」整段已删（8-27 用户）：那些章全都摆在托盘里看得见也能用，
+         叫"还没遇到"是假的。真·未发现只有下面的隐藏章——收集感在那儿，不在这儿。 */''}
     ${fold('hid', '隐藏章', hidGot + ' / ' + HIDDEN.length, drawerHidOpen,
       `<div class="dk-grid">${HIDDEN.map(h => cell(h, 'hid')).join('')}</div>`)}`;
 }
@@ -1417,6 +1414,7 @@ function renderFlipView() {
     <div class="flip-bar">
       <button class="flip-back" id="flip-back">‹ ${d.getMonth() + 1}月</button>
       <span class="flip-date">${d.getDate()} 日 · ${WEEK[d.getDay()]}${w ? ` <span class="w">${weatherSVG(w, 18)}</span>` : ''}</span>
+      ${dk <= todayDk ? `<button class="t-share" id="flip-add">${COPY.addStampHere}</button>` : ''}
       ${recs.length ? `<button class="t-share" id="flip-share">分享</button>` : ''}
     </div>
     <div class="book">
@@ -1433,6 +1431,13 @@ function renderFlipView() {
 
   $('#flip-back').addEventListener('click', closeFlip);
   $('#flip-share')?.addEventListener('click', () => openShareDay(dk));
+  // 🔴 本子里这张纸是只读的（paperHTML(dk,'readonly')：没托盘、没 armed、没盖章处理器），
+  //    所以"补盖"不在这儿做——**别把托盘搬进本子**，那等于第二套盖章界面，两边逻辑必然分叉。
+  //    做法是把今日页翻到那一天再切过去：全 App 只有一个盖章面、一条链路。
+  $('#flip-add')?.addEventListener('click', () => {
+    pageDk = dk;
+    switchTab('today');          // 它自己会清掉 flipDk 和本子那页的 DOM
+  });
   $('#flip-prev').addEventListener('click', () => curl?.turn(-1));
   $('#flip-next').addEventListener('click', () => { if (hasNext) curl?.turn(1); });
   $('#flip-note').addEventListener('click', () => openDayNote(dk));
@@ -1648,7 +1653,7 @@ function renderMonthView() {
     <div class="cal-head"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
     <div class="pg-grid">${cells}</div>
     ${dayPanel(memSelDay)}
-    ${recs.length ? `<button class="cta" style="margin-top:18px;letter-spacing:.14em" id="share-month">生成本月手账卡</button>` : ''}`;
+    ${recs.length ? `<button class="cta" style="margin-top:18px;letter-spacing:.14em" id="share-month">${COPY.shareMonthBtn}</button>` : ''}`;
 
   bindShelf();
   bindSeg();
@@ -1700,7 +1705,7 @@ function openBooklet(y, m) {
           <div class="p-n">「${persona.title}」</div>
           <div class="p-l">${persona.line}</div>
         </div>
-        <button class="cta" style="margin-top:20px;letter-spacing:.14em" id="bl-share">生成本月手账卡</button>`
+        <button class="cta" style="margin-top:20px;letter-spacing:.14em" id="bl-share">${COPY.shareMonthBtn}</button>`
       : `<div class="bl-blank">${COPY.notebookQuiet}</div>`}
       <button class="bl-close" id="bl-close">合上</button>
     </div>`;

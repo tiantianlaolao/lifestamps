@@ -452,7 +452,9 @@ export const COPY = {
   inkMid: '印泥还够用一阵',
   inkLow: '印泥剩一点点了，盖出来会发虚',
   inkOut: '章上的墨用完了，蘸一下印泥',
-  stampsSummary: '用过 {used} 枚，还有 {rest} 枚没盖过',
+  // ⛔ 后半句「还有 {rest} 枚没盖过」跟着「还没遇到的」那一段一起删了（8-27 用户）：
+  //    那些章全在托盘里摆着，说"没盖过"就是把可用清单说成待办清单。
+  stampsSummary: '已经盖过 {used} 枚',
   stampWorn: '用旧了',
   // 印泥盒余量：一律用话说
   padFull: '还很足',
@@ -461,7 +463,7 @@ export const COPY = {
   padDry: '这盒干了',
   padRefill: '补一盒',
   baseInkDesc: '不用蘸，也不消耗',
-  drawerSegStamps: '我的章',
+  drawerSegStamps: '我盖过的',
   drawerSegInks: '印泥盒',
   stampUnused: '还没盖过',
   notePlaceholder: '写一句…',
@@ -474,11 +476,14 @@ export const COPY = {
   // 一眼能扫的三个数，不是一句陈述句（8-27 用户："改成清晰表述，一目了然"）
   statMarks: '枚印记', statDays: '天有记录', statHidden: '隐藏章',
   meTitleLabel: '这个月的称号',
+  addStampHere: '补一枚章',
+  shareMonthBtn: '本月都戳了什么',
+  drawerMine: '我盖过的',
   meTitlePast: '以前的',
   wipeConfirm: '所有的纸都会被撕掉，确定吗？',
   notebookMonthSub: '盖了 {n} 枚 · 留白 {m} 天',
   notebookFlip: '翻到这一天',
-  notebookBooklet: '这个月',
+  notebookBooklet: '这个月……',
   notebookBooklet2: '有 {m} 天什么都没留下，也挺好',
   notebookQuiet: '这个月还很安静。',
   weekQuiet: '这一周还很安静。',

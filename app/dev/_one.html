@@ -2,8 +2,25 @@
 <iframe id="f"></iframe>
 <script>
 const now=new Date(); const p=new URLSearchParams(location.search);
-const SIDS=['milk','coffee','read','walk','sleep','movie','music','cook','bath','game','sun','love'];
-if(p.get('seed')!=='0'){
+const SIDS=['milktea','coffee','takeout','hotpot','burger','dessert','fruit','nightsnack','water','shower','laundry','cook'];
+if(p.get('month')==='1'){
+ // 撒一个月的数据：约 2/3 的日子有记录，每天 1~6 枚
+ const now2=new Date(); const recs=[];
+ for(let d=1; d<=now2.getDate(); d++){
+   if((d*7)%3===0) continue;                       // 三分之一的日子留白
+   const n=1+((d*5)%6);
+   for(let k=0;k<n;k++){
+     const i=(d*3+k)%SIDS.length;
+     recs.push({id:`m${d}_${k}`, stampId:SIDS[i], ink:['zhu','mo','song','wu','ou','jie'][(d+k)%6],
+       ts:new Date(now2.getFullYear(),now2.getMonth(),d,9+k*2,15).getTime(),
+       rot:((d*13+k*7)%17)-8, sc:1-((d+k)%3)*0.06, op:[0.92,0.62,0.34][(d+k)%3],
+       px:10+((d*17+k*23)%78), py:10+((d*11+k*31)%74), seed:d*7+k});
+   }
+ }
+ localStorage.setItem('lifestamps_records',JSON.stringify(recs));
+ localStorage.setItem('lifestamps_settings',JSON.stringify({sound:false,haptic:true,onboarded:true,cover:'rose'}));
+ localStorage.setItem('lifestamps_bookClosed','false');
+} else if(p.get('seed')!=='0'){
  const recs=SIDS.map((sid,i)=>({id:'c'+i,stampId:sid,ink:['zhu','mo','song','wu','ou','jie'][i%6],
   ts:now.getTime()-(20-i)*600000,rot:(i*37)%17-8,sc:1-(i%3)*0.06,op:[0.92,0.62,0.34][i%3],
   px:12+(i%4)*26,py:12+Math.floor(i/4)*26,seed:i*7}));

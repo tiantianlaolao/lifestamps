@@ -73,9 +73,17 @@ body{
 /* 数字、时间戳、价格：系统字体 */
 .me-stat .v,.chip .tm,.t-date,.progress-num,.cal-cell .dn{font-family:var(--f-num)}
 
+/* 🔴 顶部安全区归 CSS 管（8-27 真机实测打回：页面全顶到灵动岛底下，「合上」「分享」
+   和本子里的年份都点不到）。原生壳的 ios.contentInset 从 always 改成 never 之后，
+   WebView 铺满整屏、**壳不再替我们垫这一条**，而 CSS 当时只处理了底部（Tab 栏两处）。
+   ⚠️ 必须垫在 #app（那个 100dvh 的外壳）上，**不能垫在 main 里**——main 是滚动容器，
+      垫在它内部的话一往下滚，内容照样钻到灵动岛底下。垫在外面，滚动区从岛下面才开始。
+   ⚠️ 浏览器里 env() 取到 0，网页版一个像素都不动（十个页面状态逐像素对拍验过）。
+   （viewport-fit=cover 早就在 index.html 的 meta 里，没有它 env() 恒为 0。） */
 #app{
   position:relative; max-width:430px; height:100dvh; margin:0 auto;
   background-color:var(--paper); display:flex; flex-direction:column; overflow:hidden;
+  padding-top:env(safe-area-inset-top);
 }
 /* 碎花只铺在本子/抽屉/我的三页——今日页按规格 §7.1a 是「一张木桌」，桌面归木纹，
    两种桌面不能同时铺（8-26 用户拍板：冲突以规格为准，碎花做取舍）。 */

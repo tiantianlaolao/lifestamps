@@ -1,0 +1,12 @@
+{
+  "appId": "com.tybbtech.lifestamps",
+  "appName": "生活图鉴",
+  "webDir": "app",
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#EAE5DA"
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

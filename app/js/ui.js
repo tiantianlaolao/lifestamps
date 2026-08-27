@@ -2,6 +2,7 @@
 // UI 基础件：toast / 底部弹层 / 长按 / 触感 / 音效
 // ============================================================
 import { store } from './store.js';
+import { nativeHaptic } from './native.js';
 
 let toastTimer = null;
 export function toast(msg, ms = 1600) {
@@ -44,8 +45,10 @@ export function onLongPress(el, cb) {
 }
 
 export function haptic() {
-  if (store.settings.haptic && navigator.vibrate) navigator.vibrate(12);
-  // Capacitor 打包后换 @capacitor/haptics（TODO: 原生桥接点）
+  if (!store.settings.haptic) return;
+  // ✅ 原生桥（8-27 接上）：iOS 上 navigator.vibrate 是彻底无效的，只有系统触感这条路
+  if (nativeHaptic()) return;
+  if (navigator.vibrate) navigator.vibrate(12);
 }
 
 // 「啪」：合成的轻响，不用音频资产

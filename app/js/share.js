@@ -4,6 +4,25 @@
 import { INKS, stampById, monthPersona } from './data.js';
 import { defsMarkup, stampSVG, inkSwatchPaint, WEATHER, weatherSVG } from './stamp.js';
 import { store, dateKey } from './store.js';
+import { isNative, shareImage } from './native.js';
+
+// 保存/分享那颗键：浏览器下载，原生壳走系统分享面板
+// 🔴 原生里**绝不回落到 <a download>**——WKWebView 里它是死的，用户点了毫无反应（静默失败最难查）
+// 🔴 文案跟着能力走：原生下真实发生的是「拉起分享面板」，写"保存图片"就是文案说了代码没做的事
+function bindSaveBtn(btn, dataUrl, filename) {
+  if (!btn) return;
+  const nat = isNative();
+  btn.textContent = nat ? '保存 / 分享' : '保存图片';
+  btn.onclick = async () => {
+    if (nat) {
+      try { await shareImage(dataUrl, filename); }
+      catch (e) { if (!/cancel/i.test(String(e && e.message))) alert('没能保存，再试一次吧。'); }
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = dataUrl; a.download = filename; a.click();
+  };
+}
 
 const PAPER = '#F7F3EB', INK_C = '#3A362F', SUB = '#969084', FAINT = '#C9C3B7', RED = '#C94B3C';
 const FONT = `MiSans,'HarmonyOS Sans SC','PingFang SC','Microsoft YaHei',sans-serif`;
@@ -189,11 +208,7 @@ export async function openShare(y, m) {
       <img src="${dataUrl}" alt="我的 ${m} 月">
       <button class="ov-btn" id="sh-save" style="margin-top:20px">保存图片</button>
       <button class="ov-btn ghost" id="sh-close">关闭</button>`;
-    document.getElementById('sh-save').onclick = () => {
-      // 浏览器：直接下载；Capacitor 打包后换 Share/Filesystem 插件（TODO: 原生桥接点）
-      const a = document.createElement('a');
-      a.href = dataUrl; a.download = `我的${m}月-生活图鉴.png`; a.click();
-    };
+    bindSaveBtn(document.getElementById('sh-save'), dataUrl, `我的${m}月-生活图鉴.png`);
     document.getElementById('sh-close').onclick = () => ov.classList.remove('show');
   } catch (e) {
     ov.innerHTML = `<div class="gen">生成失败了，再试一次吧。</div>
@@ -292,11 +307,7 @@ export async function openShareDay(dk) {
       store.setDayNote(dk, v);
       draw();
     };
-    document.getElementById('sh-save').onclick = () => {
-      // 浏览器：下载；Capacitor/小工具打包时换原生桥（TODO）
-      const a = document.createElement('a');
-      a.href = dataUrl; a.download = `今日手账-${dk}.png`; a.click();
-    };
+    bindSaveBtn(document.getElementById('sh-save'), dataUrl, `今日手账-${dk}.png`);
     document.getElementById('sh-close').onclick = () => ov.classList.remove('show');
   }
   try { await draw(); } catch (e) {

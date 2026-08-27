@@ -15,3 +15,15 @@ xhs-package/
 # 本地杂项
 .DS_Store
 Thumbs.db
+
+# ---- Capacitor（8-27 加）----
+# 🔴 原生工程和依赖一律不进仓：它们由 CI 用 `npx cap add ios` 每次现生成。
+#    好处=本地零安装、仓库小；代价=任何手改原生工程的东西会被下一次生成冲掉，
+#    所以图标、Info.plist 改动必须放在 ios-assets/ 里由 workflow 注入，别直接改 ios/。
+node_modules/
+ios/
+android/
+package-lock.json
+
+# 图标是要进仓的（上面 *.png 一刀切会把它也挡掉）
+!ios-assets/**/*.png

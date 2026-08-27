@@ -1,0 +1,203 @@
+name: Build iOS & Upload TestFlight
+
+# 手动触发，或者打 ios-vX.Y.Z 的 tag
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: '传 TestFlight？（App Store Connect 里没有 App 记录时选 false，只出 IPA）'
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'ios-v*'
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 完整历史：build number = git rev-list --count HEAD，浅克隆会永远是 1
+          fetch-depth: 0
+
+      - name: Select latest Xcode
+        run: |
+          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          echo "Using Xcode: $XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH"
+          xcodebuild -version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # ⚠️ 用 npm install 不是 npm ci：本仓刻意不提交 package-lock.json
+      #    （本地零安装的代价，见 .gitignore 里那段说明）
+      - name: Install Capacitor
+        run: npm install
+
+      # 原生工程每次现生成：仓里没有 ios/
+      - name: Generate iOS project
+        run: |
+          npx cap add ios
+          npx cap sync ios
+
+      # 🔴 dev/ 是十来个校验探针页，跟着 webDir 一起被拷进 App 了。
+      #    不删的话它们会随包上架（还会被审核看见）。
+      - name: Strip dev harnesses from the bundle
+        run: |
+          rm -rf ios/App/App/public/dev
+          test ! -d ios/App/App/public/dev
+          echo "bundle 内容："; ls ios/App/App/public
+
+      # 图标/Info.plist 的改动都放在 ios-assets/，在这儿注入——
+      # 直接改 ios/ 没用，下一次 cap add 就冲掉了
+      - name: Inject app icon & plist tweaks
+        run: |
+          if [ -d ios-assets/AppIcon.appiconset ]; then
+            rm -rf ios/App/App/Assets.xcassets/AppIcon.appiconset
+            cp -R ios-assets/AppIcon.appiconset ios/App/App/Assets.xcassets/
+            echo "已注入图标"
+          else
+            echo "::warning::ios-assets/AppIcon.appiconset 不存在，用的是 Capacitor 默认占位图标（TestFlight 会校验不过）"
+          fi
+          PLIST=ios/App/App/Info.plist
+          # 竖屏锁定：这个 App 没有横屏版式
+          /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations" $PLIST 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations array" $PLIST
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" $PLIST
+          # 中文显示名
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 生活图鉴" $PLIST 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 生活图鉴" $PLIST
+
+      # 钥匙串必须先有：不管证书是"我们导进去"还是"Xcode 自己建"，都得有地方放。
+      - name: Prepare keychain
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 12)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH login.keychain
+          security default-keychain -s $KEYCHAIN_PATH
+          echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> $GITHUB_ENV
+
+      # ⚠️ 这一步是**可选**的：没配这两张证书的 secret 就跳过，
+      #    交给下面 archive 那步的 -allowProvisioningUpdates + 管理员权限的 ASC 密钥去自动创建。
+      #    先试自动创建这条路，成了就永远不需要 Mac 导 .p12（导 .p12 只有 Mac 能做）。
+      - name: Install certificates (可选)
+        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_DEV_CERTIFICATE_BASE64: ${{ secrets.APPLE_DEV_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_DEV_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEV_CERTIFICATE_PASSWORD }}
+        run: |
+          DIST_CERT=$RUNNER_TEMP/dist.p12
+          DEV_CERT=$RUNNER_TEMP/dev.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          echo -n "$APPLE_CERTIFICATE_BASE64" | base64 --decode -o $DIST_CERT
+          security import $DIST_CERT -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          if [ -n "$APPLE_DEV_CERTIFICATE_BASE64" ]; then
+            echo -n "$APPLE_DEV_CERTIFICATE_BASE64" | base64 --decode -o $DEV_CERT
+            security import $DEV_CERT -P "$APPLE_DEV_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          fi
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+      - name: Setup App Store Connect API key
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
+        run: |
+          mkdir -p ~/private_keys
+          echo -n "$ASC_API_KEY_BASE64" | base64 --decode -o ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+
+      - name: Set version & build number
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          BUILD_NUM=$(git rev-list --count HEAD)
+          echo "版本 $VERSION / build $BUILD_NUM"
+          cd ios/App
+          agvtool new-marketing-version "$VERSION"
+          agvtool new-version -all "$BUILD_NUM"
+
+      - name: Build archive
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          xcodebuild archive \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -archivePath $RUNNER_TEMP/LifeStamps.xcarchive \
+            -sdk iphoneos \
+            -configuration Release \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID $ASC_KEY_ID \
+            -authenticationKeyIssuerID $ASC_ISSUER_ID \
+            DEVELOPMENT_TEAM=$APPLE_TEAM_ID \
+            CODE_SIGN_STYLE=Automatic \
+            COMPILER_INDEX_STORE_ENABLE=NO
+
+      - name: Export IPA
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          cat > $RUNNER_TEMP/ExportOptions.plist << PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store</string>
+            <key>teamID</key>
+            <string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>uploadSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/LifeStamps.xcarchive \
+            -exportOptionsPlist $RUNNER_TEMP/ExportOptions.plist \
+            -exportPath $RUNNER_TEMP/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID $ASC_KEY_ID \
+            -authenticationKeyIssuerID $ASC_ISSUER_ID
+
+      - name: Keep the IPA as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LifeStamps-ipa
+          path: ${{ runner.temp }}/export/*.ipa
+          if-no-files-found: error
+
+      # 🔴 名字没定 → App Store Connect 里还没有 App 记录 → 传上去必被拒。
+      #    所以这一步是可选的：先只出 IPA，等有了 App 记录再开。
+      - name: Upload to TestFlight
+        if: github.event_name == 'push' || inputs.upload
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          xcrun altool --upload-app \
+            -f "$(ls $RUNNER_TEMP/export/*.ipa | head -1)" \
+            -t ios \
+            --apiKey $ASC_KEY_ID \
+            --apiIssuer $ASC_ISSUER_ID
+
+      - name: Clean up
+        if: always()
+        run: |
+          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db 2>/dev/null || true
+          rm -rf ~/private_keys

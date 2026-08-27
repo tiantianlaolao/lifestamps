@@ -1,0 +1,19 @@
+{
+  "name": "lifestamps",
+  "version": "1.10.0",
+  "private": true,
+  "description": "生活图鉴 / Life Stamps —— 原生壳（Capacitor）。网页源码在 app/，本仓不引入任何打包器。",
+  "scripts": {
+    "cap": "cap"
+  },
+  "dependencies": {
+    "@capacitor/core": "8.5.0",
+    "@capacitor/ios": "8.5.0",
+    "@capacitor/filesystem": "8.1.3",
+    "@capacitor/haptics": "8.0.2",
+    "@capacitor/share": "8.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.0"
+  }
+}

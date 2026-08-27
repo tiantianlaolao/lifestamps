@@ -1,0 +1,57 @@
+<!doctype html><meta charset="utf-8"><title>App 图标比稿</title>
+<link rel="stylesheet" href="../css/app.css">
+<style>
+ body{margin:0;background:#fff;display:flex;gap:24px;padding:24px;font:12px system-ui}
+ .box{width:256px}
+ .ico{width:256px;height:256px;border-radius:56px;overflow:hidden;position:relative;
+      display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.12)}
+ .cap{text-align:center;margin-top:8px;color:#666}
+ .mini{display:flex;gap:16px;justify-content:center;align-items:flex-end;margin-top:14px}
+ .mini span{display:block;border-radius:22%;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.18)}
+ .mini span:first-child{width:120px;height:120px}
+ .mini span:last-child{width:60px;height:60px}
+ /* A：2.5D 章体立在亚麻上 */
+ #a{background:#EDE7DA}
+ #a .in{transform:rotate(-8deg)}
+ /* B：朱红印痕盖在点点格纸上 */
+ #b{background:var(--paper-page,#FBF8F1);
+    background-image:radial-gradient(circle at 3px 3px, #D3CDBE 2.2px, transparent 2.6px);
+    background-size:26px 26px}
+ #b .in{transform:rotate(-6deg)}
+ /* C：印痕 + 日付印那圈手绘红框 */
+ #c{background:#F6F2EA}
+ #c .in{transform:rotate(-4deg)}
+</style>
+<div class="box"><div class="ico" id="a"><div class="in"></div></div>
+  <div class="cap">A · 立体章体（亚麻底）</div>
+  <div class="mini"><span id="a2"></span><span id="a3"></span></div></div>
+<div class="box"><div class="ico" id="b"><div class="in"></div></div>
+  <div class="cap">B · 朱红印痕（点点格纸）</div>
+  <div class="mini"><span id="b2"></span><span id="b3"></span></div></div>
+<div class="box"><div class="ico" id="c"><div class="in"></div></div>
+  <div class="cap">C · 印痕 + 手绘红框</div>
+  <div class="mini"><span id="c2"></span><span id="c3"></span></div></div>
+<script type="module">
+import { STAMPS, stampById } from '../js/data.js';
+import { defsMarkup, stampSVG, stampBodySVG } from '../js/stamp.js';
+document.body.insertAdjacentHTML('afterbegin',
+  `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+const sp = stampById['sparkle'];
+document.querySelector('#a .in').innerHTML = stampBodySVG(sp, { size: 168, ink: 'zhu', charge: 3 });
+document.querySelector('#b .in').innerHTML = stampSVG(sp, { size: 172, ink: 'zhu', mat: 'r', seed: 3 });
+document.querySelector('#c .in').innerHTML =
+  `<div style="width:186px;height:186px;border-radius:22px;display:flex;align-items:center;justify-content:center;
+       border:5px solid #C0453F">${stampSVG(sp, { size: 128, ink: 'zhu', mat: 'r', seed: 5 })}</div>`;
+// 小尺寸预览：桌面上真实看到的就是这两个大小（120 = 大图标，60 = 常规）
+for (const k of ['a','b','c']) {
+  const src = document.querySelector('#' + k);
+  for (const n of ['2','3']) {
+    const box = document.getElementById(k + n);
+    const scale = (n === '2' ? 120 : 60) / 256;
+    const clone = src.cloneNode(true);
+    clone.style.cssText += `;transform:scale(${scale});transform-origin:0 0;box-shadow:none;border-radius:${56*scale}px`;
+    box.style.position = 'relative';
+    box.appendChild(clone);
+  }
+}
+</script>

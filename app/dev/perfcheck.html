@@ -1,0 +1,45 @@
+<!doctype html><meta charset="utf-8"><title>印痕滤镜开销</title>
+<style>body{font:13px/1.7 monospace;margin:14px}iframe{width:390px;height:760px;border:1px solid #ccc}
+table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:3px 9px;text-align:right}th:first-child,td:first-child{text-align:left}</style>
+<h3>一页 N 枚印痕：DOM/样式开销（⚠️ 量不到 GPU 光栅，真机另说）</h3>
+<div id="o">…</div><iframe id="f"></iframe>
+<script>
+const f = document.getElementById('f'), out = document.getElementById('o');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const dk = () => { const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+
+async function run(n) {
+  // 直接往 localStorage 里塞 n 枚今天的记录，再整页渲染一次，量 render→布局稳定的耗时
+  const recs = Array.from({length:n}, (_,i) => ({
+    id:'p'+i, stampId:['milk','coffee','read','study','walk'][i%5], ink:['zhu','mo','song','wu'][i%4],
+    ts: Date.now()-i*60000, rot:(i*7)%16-8, sc:1, op:.9, dx:(i*13)%80+8, dy:(i*29)%70+12, seed:i }));
+  f.src = 'about:blank'; await new Promise(r => f.onload = r);
+  f.src = '/index.html?skipob=1&book=open&band=day&perfseed=' + n;
+  await new Promise(r => f.onload = r);
+  const W = f.contentWindow, D = f.contentDocument;
+  W.localStorage.setItem('lifestamps_records', JSON.stringify(recs));
+  W.location.reload(); await new Promise(r => f.onload = r); await sleep(600);
+  const D2 = f.contentDocument;
+  const filtered = [...D2.querySelectorAll('#today-canvas [filter]')].length;
+  // 强制一次完整的样式+布局，量三轮取中位
+  const times = [];
+  for (let k=0;k<3;k++){
+    const t0 = performance.now();
+    D2.querySelector('#today-canvas').style.opacity = (0.999 - k*0.0001);
+    void D2.querySelector('#today-canvas').getBoundingClientRect();
+    void f.contentWindow.getComputedStyle(D2.querySelector('#today-canvas')).opacity;
+    times.push(performance.now() - t0);
+    await sleep(60);
+  }
+  times.sort((a,b)=>a-b);
+  return { n, filtered, ms: times[1].toFixed(2), chips: D2.querySelectorAll('#today-canvas .chip').length };
+}
+(async () => {
+  const rows = [];
+  for (const n of [1, 10, 30, 60]) rows.push(await run(n));
+  out.innerHTML = '<table><tr><th>记录数</th><th>纸上印痕</th><th>带滤镜的节点</th><th>样式+布局(ms)</th></tr>'
+    + rows.map(r => `<tr><td>${r.n}</td><td>${r.chips}</td><td>${r.filtered}</td><td>${r.ms}</td></tr>`).join('')
+    + '</table>';
+})();
+</script>

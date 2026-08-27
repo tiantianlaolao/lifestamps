@@ -223,7 +223,9 @@ export function attachCurl(book, o) {
     const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
     if (!drag.armed) {
       if (Math.hypot(dx, dy) < 12) return;
-      if (Math.abs(dx) < Math.abs(dy)) { drag = null; return; }   // 纵向：让给页面滚动
+      // 起手方向判定放宽（8-27）：以前是"纵向多一点就放弃"，可纸上本来就没有纵向手势，
+      // 放弃的结果不是"滚页面"而是"什么都没发生"，手感就是翻不动。现在只有明显是竖着划才让开。
+      if (Math.abs(dy) > Math.abs(dx) * 1.7) { drag = null; return; }
       if (dx > 0) { drag.back = true; return; }                   // 往右划：回上一页，松手再判
       if (!o.canTurn(1)) { drag = null; return; }
       drag.armed = true; drag.dir = 1;

@@ -40,6 +40,17 @@ const dayNum = t => +t.match(/\d+/g)[1];
   ok('纵向拖不触发卷曲', !d.querySelector('.curl-flap'));
   pe(book, 'pointerup', r.left + 256, midY + 40);
 
+  // ①b 斜着拖（往左 40、往下 50）：以前"纵向多一点"就整个放弃，手感是翻不动；
+  //     现在只有明显竖划才让开，斜着也该翻得起来（8-27 用户实测打回后放宽）
+  pe(paper, 'pointerdown', r.left + 260, midY);
+  pe(book, 'pointermove', r.left + 220, midY + 50);
+  await sleep(30);
+  ok('斜着拖也能掀起来', !!d.querySelector('.curl-flap'));
+  // ⚠️ 得原路拖回去再松手，否则这一下就真翻页了，后面按"今天是哪天"算的断言全崩（踩过）
+  pe(book, 'pointermove', r.left + 260, midY);
+  pe(book, 'pointerup', r.left + 260, midY);
+  await sleep(760);   // ⚠️ 回弹的兜底定时器是 SNAP_MS+250=510ms，等不够它会把下一段的卷曲层删掉
+
   // ② 往左拖 = 掀右下角，翻到下一天
   const d0 = day();
   pe(paper, 'pointerdown', r.left + 300, midY);

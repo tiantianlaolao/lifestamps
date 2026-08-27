@@ -258,6 +258,7 @@ function renderToday() {
         ${chips}
         ${recs.length ? '' : `<div class="canvas-hint">${emptyHint}</div>`}
         ${undoAlive() ? `<button class="undo-btn" id="undo-btn" title="${COPY.undo}">↺</button>` : ''}
+        <span class="corner-grip" aria-hidden="true"></span>
       </div>
     </div>
     ${renderDeck()}
@@ -299,6 +300,7 @@ function renderToday() {
   //    日付印隐着、托盘 pointer-events:none，拿不到章也盖不了
   //    （8-26 用户实测：封面态下去设置改了封皮颜色，切回来就是这个坏掉的今日页）。
   $('#page-today').classList.remove('op-wait', 'opening', 'op-closing');
+  $('#page-today').classList.toggle('deck-open', deckOpen);   // 重渲染后同步，别让纸的手势和托盘状态脱节
   //    本子还合着就把封面摆回来——顺带，这样改完封皮颜色切回来看到的就是新封面。
   if (store.bookClosed) playOpening();
 }
@@ -679,28 +681,24 @@ function renderDeck() {
           : inkLeft === 1 ? COPY.inkLow
             : COPY.inkOut;
 
-  // 收起态那一行的当前印泥：只画一个铁盒，点它 = 重新蘸一次同色的墨
-  const curId = selInk;
-  const curRatio = curId ? store.padLeft(curId, PAD_CAP) / PAD_CAP : 1;
-  const curD = Math.round(8 + 15 * curRatio);
-  const curTin = `<div class="dk-ink cur ${curId && curRatio <= 0 ? 'dry' : ''}" id="deck-cur-ink"
-      data-ink="${curId || ''}" title="${curId ? INKS[curId].name : '默'}"><span class="can">${
-    curId ? `<span class="ink" style="width:${curD}px;height:${curD}px;background:${inkCSS(curId)}"></span>`
-          : '<span class="bs">默</span>'}</span></div>`;
+  // 🔴 8-27 用户拍板：收起态从「一行章」改成「印泥 + 章」两行。
+  //    原来收起态只摆一个"当前印泥"铁盒，想换个颜色必须展开整个托盘——
+  //    而换印泥是高频操作（一次蘸墨只盖 3 下）。用户原话："收起来还没盖印泥还得打开"。
+  //    整排印泥常驻之后，点当前选中的那盒 = 重新蘸同色的墨（deck-inks 的 click 本来就这么干）。
 
   const supplied = store.claimedSupply(dateKey(Date.now()));
 
   return `<div class="deck ${deckOpen ? 'open' : ''}" id="deck">
     <button class="deck-grab" id="deck-grab" aria-label="${deckOpen ? '收起' : '展开'}"></button>
+    <span class="deck-tip">按住一枚章能拎起来</span>
     <div class="deck-full">
       <div class="deck-status">
         <div class="deck-cats" id="deck-cats">${cats}</div>
         <button class="tool-btn ${eraser ? 'on' : ''}" id="tool-eraser">擦</button>
       </div>
-      <div class="deck-inks ${isPhoto ? 'locked' : ''}" id="deck-inks">${inks}</div>
     </div>
+    <div class="deck-inks ${isPhoto ? 'locked' : ''}" id="deck-inks">${inks}</div>
     <div class="deck-row">
-      ${curTin}
       <div class="deck-strip" id="deck-strip">${strip}</div>
       <button class="deck-more" id="deck-more">${deckOpen ? COPY.deckLess : COPY.deckMore}</button>
     </div>
@@ -790,18 +788,6 @@ function bindToday() {
       else if (dy > 30) setDeckOpen(false);
     });
   }
-  // 收起态那个铁盒：点一下 = 拿同一盒墨再蘸一次
-  $('#deck-cur-ink')?.addEventListener('click', e => {
-    e.stopPropagation();
-    const k = e.currentTarget.dataset.ink || null;
-    if (k) {
-      if (store.padLeft(k, PAD_CAP) <= 0) { toast(COPY.padEmpty, 1600); return; }
-      store.usePad(k, PAD_CAP);
-    }
-    selInk = k; inkLeft = INK_USES; eraser = false;
-    toast(COPY.dipped, 900); haptic();
-    renderToday();
-  });
   // 每日补给入口（原来那张纸外卡片撤了，入口收进托盘这一行）
   $('#tray-supply')?.addEventListener('click', e => { e.stopPropagation(); openSupply(); });
 
@@ -851,6 +837,8 @@ function bindToday() {
 //    renderToday() 会把 #deck 整个重建，重建出来的新元素身上是没有过渡可言的。
 function setDeckOpen(open) {
   deckOpen = open;
+  // 托盘展开 = 页面变得能滚了 → 纸得把纵向手势还给浏览器（见 app.css 里 .book 的 touch-action）
+  $('#page-today')?.classList.toggle('deck-open', open);
   const dk2 = $('#deck');
   if (!dk2) return;
   dk2.classList.toggle('open', open);
@@ -861,36 +849,60 @@ function setDeckOpen(open) {
 
 function bindStampCell(el) {
   let sx = 0, sy = 0, t0 = 0, mode = null, pid = null, panL = 0;
+  let lpTimer = null, lx = 0, ly = 0;
   const ghost = $('#drag-ghost');
   const sid = el.dataset.sid;
 
+  // 🔴 展开态怎么既能滚网格、又能拖章上纸（8-27 用户拍板「长按拎起」）
+  //    8-26 那版是"展开态一律不许拖"——因为纵向手势要留给网格滚动，
+  //    照搬收起态的「纵向动=拎起章」就会变成：想往下找章，每次上滑都拎起一枚，滚不动。
+  //    长按把两个手势在**时间**上分开：划走 = 滚；按住不动 450ms = 拎起来（手机拖桌面图标那套）。
+  //    ⚠️ 关键在于长按期间手指没动 → 浏览器还没开始滚 → 这时候 touchmove 仍然是可取消的，
+  //       preventDefault 才拦得住原生滚动。手指一动就开滚了，那时再拦已经晚了。
+  const LP_MS = 450, LP_SLOP = 8;
+  const blockScroll = ev => ev.preventDefault();
+
+  const lift = (x, y) => {
+    mode = 'drag'; eraser = false;
+    try { el.setPointerCapture(pid); } catch {}
+    document.addEventListener('touchmove', blockScroll, { passive: false });
+    const def = stampById[sid];
+    ghost.innerHTML = stampBodySVG(def, {
+      size: 66,
+      ink: selMat === 'p' ? 'zhu' : (selInk || def.ink),
+      charge: selMat === 'p' ? 3 : inkLeft,
+    });
+    ghost.style.left = x + 'px'; ghost.style.top = y + 'px';
+    ghost.style.display = 'block';
+    $('#today-canvas')?.classList.add('armed');
+  };
+  const dropLongPress = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
+  const unblock = () => document.removeEventListener('touchmove', blockScroll, { passive: false });
+
   el.addEventListener('pointerdown', e => {
-    sx = e.clientX; sy = e.clientY; t0 = Date.now(); mode = null; pid = e.pointerId;
+    sx = e.clientX; sy = e.clientY; lx = sx; ly = sy;
+    t0 = Date.now(); mode = null; pid = e.pointerId;
     panL = document.getElementById('deck-strip')?.scrollLeft || 0;
+    if (deckOpen) {
+      dropLongPress();
+      lpTimer = setTimeout(() => { lpTimer = null; if (pid !== null) { lift(lx, ly); haptic(); } }, LP_MS);
+    }
   });
   el.addEventListener('pointermove', e => {
     if (pid === null || e.pointerId !== pid) return;
-    // 🔴 展开态的网格是纵向滚的，纵向手势必须留给它。
-    //    8-25 定的「纵向动=拎起章」那条规矩是给横滑条带写的，展开态照搬就变成：
-    //    你想往下滚找章，每一次上滑都被判成拎起一枚章，滚不动（8-26 用户手机实测）。
-    //    展开态只点选、不拖拽——托盘占了 60% 屏幕，本来也拖不到纸上。
-    if (deckOpen) return;
+    lx = e.clientX; ly = e.clientY;
     const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (deckOpen) {
+      // 还没拎起来：手指一挪就当是要滚网格，把长按取消掉
+      if (lpTimer && Math.hypot(dx, dy) > LP_SLOP) dropLongPress();
+      if (mode === 'drag') { ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px'; }
+      return;   // 没拎起来就什么都不做，纵向归网格
+    }
+    // 收起态：横滑条带，手势自判（8-25 铁律，一个字没动）
     if (!mode && Math.hypot(dx, dy) > 10) {
       try { el.setPointerCapture(pid); } catch {}
-      if (Math.abs(dy) > Math.abs(dx)) {
-        mode = 'drag'; eraser = false;
-        const def = stampById[sid];
-        ghost.innerHTML = stampBodySVG(def, {
-          size: 66,
-          ink: selMat === 'p' ? 'zhu' : (selInk || def.ink),
-          charge: selMat === 'p' ? 3 : inkLeft,
-        });
-        ghost.style.display = 'block';
-        $('#today-canvas')?.classList.add('armed');
-      } else {
-        mode = 'pan';
-      }
+      if (Math.abs(dy) > Math.abs(dx)) lift(e.clientX, e.clientY);
+      else mode = 'pan';
     }
     if (mode === 'drag') { ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px'; }
     else if (mode === 'pan') {
@@ -900,6 +912,7 @@ function bindStampCell(el) {
   });
   const finish = e => {
     if (pid === null) return;
+    dropLongPress(); unblock();
     const wasDrag = mode === 'drag', wasPan = mode === 'pan';
     mode = null; pid = null;
     ghost.style.display = 'none';
@@ -910,7 +923,9 @@ function bindStampCell(el) {
         selStamp = sid;
         placeStamp(e.clientX, e.clientY, cv);
       } else {
-        cv.classList.remove('armed');
+        // 拎起来又放回托盘：不当"没发生过"，就当选中了它——手都伸过去了
+        selStamp = sid;
+        renderToday();
       }
     } else if (!wasPan && Date.now() - t0 < 600
                && Math.abs(e.clientX - sx) < 8 && Math.abs(e.clientY - sy) < 8) {
@@ -918,19 +933,16 @@ function bindStampCell(el) {
       // 但纵向也要卡住，否则滚一下松手就选中了一枚章
       selStamp = (selStamp === sid) ? null : sid;  // 点一下选中/取消
       eraser = false;
-      // 🔴 收托盘必须在这儿做，不能挂 click：pointerup 里马上就 renderToday() 把格子销毁了，
-      //    click 根本落不到原节点上（8-26 用户手机实测：选完章托盘还盖着纸，没法拖）。
-      if (deckOpen && selStamp) {
-        setDeckOpen(false);                       // 先动画收起
-        $('#today-canvas')?.classList.add('armed');
-        setTimeout(renderToday, 220);             // 等收完再整页同步，否则重建会把过渡掐掉
-      } else {
-        renderToday();
-      }
+      // ⛔ 选完章自动收托盘：8-27 用户明确否掉（"实际也不应该自动收起"）。
+      //    展开/收起是用户的决定，选一枚章不是"我说完了"。收起交给「收起」键和拉手。
+      renderToday();
     }
   };
   el.addEventListener('pointerup', finish);
-  el.addEventListener('pointercancel', () => { mode = null; pid = null; ghost.style.display = 'none'; });
+  el.addEventListener('pointercancel', () => {
+    dropLongPress(); unblock();
+    mode = null; pid = null; ghost.style.display = 'none';
+  });
 }
 
 // 落章（含蘸墨深浅）
@@ -1755,7 +1767,7 @@ function renderMe() {
       <div class="me-item"><span class="k">导出数据</span><button id="btn-export">JSON ›</button></div>
       <div class="me-item"><span class="k">清空所有记录</span><button id="btn-wipe" class="danger">清空</button></div>
     </div>
-    <div class="me-foot">生活图鉴 · LIFE STAMPS · V1.8</div>`;
+    <div class="me-foot">生活图鉴 · LIFE STAMPS · V1.10</div>`;
 
   document.querySelectorAll('.cover-pick .cv').forEach(b2 =>
     b2.addEventListener('click', () => {

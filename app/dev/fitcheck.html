@@ -1,0 +1,50 @@
+<!doctype html><meta charset="utf-8"><title>托盘/纸 是否被切</title>
+<style>
+ body{font:13px/1.7 system-ui;margin:14px;background:#faf8f4}
+ .p{color:#2b7} .f{color:#c33;font-weight:600}
+ #frames{display:flex;gap:10px;margin-top:12px}
+ iframe{border:1px solid #ccc}
+</style>
+<h3>短屏下托盘会不会被切（8-27 托盘改两行之后加的）</h3>
+<div id="out"></div><div id="frames"></div>
+<script>
+// 🔴 别拿 `--window-size=390,844` 直接截 index.html 来判版式：无头 Chrome 在窄窗口下
+//    会按内容宽度排版、再只截窗口那一块，看起来整页往右偏、右边被切（8-27 追了半天）。
+//    用户真机截图里左右边距是好的 —— 以 iframe 里量到的 rect 为准，别信那种截图。
+// 🔴 iframe 必须真有布局，不能 display:none——那样量出来全是 0，会得到 0 vs 0 的假 PASS（8-26 踩过）
+const SIZES = [[390,844],[375,667],[430,932],[360,640]];
+const out = document.getElementById('out');
+const ok = (n, c, d='') => out.insertAdjacentHTML('beforeend',
+  `<div class="${c?'p':'f'}">${c?'PASS':'FAIL'} · ${n}${d?' — '+d:''}</div>`);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+(async () => {
+  for (const [w,h] of SIZES) {
+    const f = document.createElement('iframe');
+    f.width = w; f.height = h;
+    f.src = '/index.html?demo=1&skipob=1&book=open&band=day';
+    document.getElementById('frames').appendChild(f);
+    await new Promise(r => f.onload = r);
+    await sleep(700);
+    const D = f.contentDocument;
+    const R = s => { const e = D.querySelector(s); return e ? e.getBoundingClientRect() : null; };
+    const dk = R('#deck'), inks = R('#deck-inks'), strip = R('#deck-strip'), foot = R('.tray-foot');
+    const tab = R('.tabbar') || R('nav');
+    const tag = `${w}×${h}`;
+    ok(`${tag} 印泥排没被托盘切掉`, inks.height > 20 && inks.bottom <= dk.bottom + 1,
+       `印泥底 ${inks.bottom|0} / 托盘底 ${dk.bottom|0}`);
+    ok(`${tag} 章那一行没被切`, strip.height > 30 && strip.bottom <= dk.bottom + 1,
+       `章底 ${strip.bottom|0} / 托盘底 ${dk.bottom|0}`);
+    ok(`${tag} 材质/状态那行没被切`, foot.bottom <= dk.bottom + 1,
+       `脚底 ${foot.bottom|0} / 托盘底 ${dk.bottom|0}`);
+    if (tab) ok(`${tag} 托盘没被 Tab 栏压住`, foot.bottom <= tab.top + 1,
+       `脚底 ${foot.bottom|0} / Tab 顶 ${tab.top|0}`);
+    const cv = R('#today-canvas');
+    const bk = R('#page-today .book');
+    const cs = f.contentWindow.getComputedStyle(D.querySelector('#page-today .book'));
+    ok(`${tag} 纸还有像样的高度`, cv.height >= 240,
+       `纸 ${cv.width|0}×${cv.height|0} / book ${bk.width|0}×${bk.height|0} / max-width ${cs.maxWidth}`);
+  }
+  out.insertAdjacentHTML('beforeend', '<hr>DONE');
+})();
+</script>

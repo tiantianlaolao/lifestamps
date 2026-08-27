@@ -64,9 +64,80 @@ function clickAt(el, fx=0.5, fy=0.5){
   // 4b. 托盘两态
   const bd0 = D().querySelector('#backdrop'); if (bd0) bd0.click(); await sleep(150);
   ok('默认收起态', !D().querySelector('#deck').classList.contains('open'));
-  ok('收起态有「更多」和当前铁盒', !!D().querySelector('#deck-more') && !!D().querySelector('#deck-cur-ink'));
+  {
+    const m = D().querySelector('main');
+    ok('收起态今日页根本不需要滚', m.scrollHeight <= m.clientHeight + 1,
+       `scrollH ${m.scrollHeight} / clientH ${m.clientHeight}`);
+    const bk = f.contentWindow.getComputedStyle(D().querySelector('#page-today .book'));
+    ok('收起态纸独占手势（翻页不会被滚动抢走）', bk.touchAction === 'none', 'touch-action = ' + bk.touchAction);
+  }
+  ok('收起态有「更多」', !!D().querySelector('#deck-more'));
+  // 🔴 8-27：整排印泥常驻。判据不能只看"元素在不在"——.deck 是 overflow:hidden + max-height，
+  //    被切掉的元素照样有 DOM 和尺寸。量的是"它整个在托盘的可视区里"。
+  {
+    const ik = D().querySelector('#deck-inks').getBoundingClientRect();
+    const dk = D().querySelector('#deck').getBoundingClientRect();
+    ok('收起态整排印泥常驻且没被切', ik.height > 20 && ik.bottom <= dk.bottom + 1 && ik.top >= dk.top - 1,
+       `印泥 ${ik.top.toFixed(0)}~${ik.bottom.toFixed(0)} / 托盘 ${dk.top.toFixed(0)}~${dk.bottom.toFixed(0)}`);
+    const ft = D().querySelector('.tray-foot').getBoundingClientRect();
+    ok('收起态材质/状态那行也没被切', ft.bottom <= dk.bottom + 1, `脚 ${ft.bottom.toFixed(0)} vs 托盘底 ${dk.bottom.toFixed(0)}`);
+  }
+  // 🔴 8-27 托盘改两行之后，用户唯一的硬约束："不要影响拖动"。
+  //    这里量的是用户可见的事实：收起态从托盘竖着拖一枚章上纸，纸上真的多一枚印。
+  //    ⚠️ 不能用 .click()——选中和拖拽都活在 pointer 事件里，click 测不到（8-26 假 PASS 踩过）。
+  {
+    const before = (LS('records') || []).length;
+    const c0 = D().querySelector('#deck-strip .dk-stamp');
+    const rc0 = c0.getBoundingClientRect();
+    const cv0 = D().querySelector('#today-canvas').getBoundingClientRect();
+    const pd = (t, x, y, el) => (el || c0).dispatchEvent(new f.contentWindow.PointerEvent(t,
+      { bubbles: true, cancelable: true, pointerId: 3, pointerType: 'touch', clientX: x, clientY: y }));
+    pd('pointerdown', rc0.left + 20, rc0.top + 20);
+    pd('pointermove', rc0.left + 22, rc0.top - 40); await sleep(30);
+    const lifted = f.contentWindow.getComputedStyle(D().querySelector('#drag-ghost')).display !== 'none';
+    ok('收起态竖着拖 = 拎起一枚章', lifted);
+    const tx = cv0.left + cv0.width * 0.5, ty = cv0.top + cv0.height * 0.6;
+    pd('pointermove', tx, ty); await sleep(30);
+    // ⚠️ 落章不是同步的：章体压下去 300ms 才写记录、760ms 才整页同步（踩过：等 260ms 读到的还是旧数）
+    pd('pointerup', tx, ty); await sleep(1000);
+    ok('拖到纸上真的落了一枚', (LS('records') || []).length === before + 1,
+       `${before} → ${(LS('records') || []).length}`);
+    // 撤回去，别让这一枚影响后面按张数算的断言（顺带验了撤销）
+    D().querySelector('#undo-btn')?.click(); await sleep(200);
+    ok('撤销把它收回去了', (LS('records') || []).length === before,
+       `${(LS('records') || []).length} vs ${before}`);
+  }
+  // 横向拖 = 滚条带，不该拎起章
+  {
+    const c1 = D().querySelector('#deck-strip .dk-stamp');
+    const st1 = D().querySelector('#deck-strip');
+    const l0 = st1.scrollLeft;
+    const r1 = c1.getBoundingClientRect();
+    const pd = (t, x, y) => c1.dispatchEvent(new f.contentWindow.PointerEvent(t,
+      { bubbles: true, cancelable: true, pointerId: 4, pointerType: 'touch', clientX: x, clientY: y }));
+    pd('pointerdown', r1.left + 20, r1.top + 20);
+    pd('pointermove', r1.left - 60, r1.top + 22); await sleep(40);
+    const g1 = f.contentWindow.getComputedStyle(D().querySelector('#drag-ghost')).display !== 'none';
+    ok('收起态横着拖 = 滚条带、不拎章', !g1 && st1.scrollLeft > l0 + 20,
+       `ghost=${g1} scrollLeft ${l0} → ${st1.scrollLeft}`);
+    pd('pointerup', r1.left - 60, r1.top + 22); await sleep(60);
+  }
   D().querySelector('#deck-more').click(); await sleep(320);
   ok('点更多展开', D().querySelector('#deck').classList.contains('open'));
+  // 🔴 8-27 用户实测打回："翻页和屏幕滚动混在一起"。纸的手势必须跟托盘状态联动：
+  //    收起（页面不滚）→ 纸独占 touch-action:none；展开（页面会滚）→ 把纵向还回去。
+  {
+    const bk = f.contentWindow.getComputedStyle(D().querySelector('#page-today .book'));
+    ok('托盘展开时纸把纵向还给页面', bk.touchAction === 'pan-y', 'touch-action = ' + bk.touchAction);
+  }
+  // 新手势的提示必须"展开就看得见"，而且不能被托盘裁掉（.deck 是 overflow:hidden）
+  {
+    const tip = D().querySelector('.deck-tip'), dkr = D().querySelector('#deck').getBoundingClientRect();
+    const tr = tip && tip.getBoundingClientRect();
+    ok('展开态右上角有「按住能拎起来」的提示且没被裁', !!tip && tr.width > 40 &&
+       tr.right <= dkr.right + 1 && tr.left >= dkr.left - 1 && tr.top >= dkr.top - 1,
+       tip ? `提示 ${tr.left|0}~${tr.right|0} / 托盘 ${dkr.left|0}~${dkr.right|0}` : '没找到 .deck-tip');
+  }
   ok('展开态才有分类和材质', !!D().querySelector('#deck-cats') &&
      getComputedStyle(D().querySelector('.mat-chip')).display !== 'none');
   // 展开态的三条实测坑（8-26 用户撞到的）：格子排满、能纵向滚、有得收
@@ -98,12 +169,39 @@ function clickAt(el, fx=0.5, fy=0.5){
     pv('pointerdown', rc.left + 20, rc.top + 20);
     pv('pointermove', rc.left + 22, rc.top - 60); await sleep(40);
     const ghostShown = f.contentWindow.getComputedStyle(D().querySelector('#drag-ghost')).display !== 'none';
-    ok('展开态纵向拖不会拎起章', !ghostShown);
+    ok('展开态快速纵向划不会拎起章（手势归网格滚动）', !ghostShown);
     pv('pointerup', rc.left + 22, rc.top - 60); await sleep(60);
   }
-  // 🔴 展开态选一枚章，托盘必须自己收回去——而且判定不能用 .click()：
-  //    真机是 pointerdown/up，而 pointerup 里就重建了 DOM，click 落不到原格子上。
-  //    用 .click() 测会得到假 PASS（8-26 踩过：探针补了个 click，真机却收不起来）。
+  // 🔴 8-27 用户拍板的新手势：展开态**长按**才拎起来。
+  //    划走 = 滚网格（上面那条），按住不动 450ms = 拎起来拖上纸。
+  {
+    const c2 = D().querySelectorAll('#deck-strip .dk-stamp')[2];
+    const r2 = c2.getBoundingClientRect();
+    const cv2 = D().querySelector('#today-canvas').getBoundingClientRect();
+    const before2 = (LS('records') || []).length;
+    const pv2 = (t, x, y) => c2.dispatchEvent(new f.contentWindow.PointerEvent(t,
+      { bubbles: true, cancelable: true, pointerId: 11, pointerType: 'touch', clientX: x, clientY: y }));
+    pv2('pointerdown', r2.left + 20, r2.top + 20);
+    await sleep(120);
+    const early = f.contentWindow.getComputedStyle(D().querySelector('#drag-ghost')).display !== 'none';
+    ok('按住不到 450ms 还没拎起来', !early);
+    await sleep(500);
+    const lifted2 = f.contentWindow.getComputedStyle(D().querySelector('#drag-ghost')).display !== 'none';
+    ok('展开态按住 450ms 拎起一枚章', lifted2);
+    // 纸在托盘上方，长按之后拖上去应该真的落一枚
+    const tx2 = cv2.left + cv2.width * 0.4, ty2 = cv2.top + cv2.height * 0.5;
+    pv2('pointermove', tx2, ty2); await sleep(40);
+    pv2('pointerup', tx2, ty2); await sleep(1000);
+    ok('长按拖到纸上真的落了一枚', (LS('records') || []).length === before2 + 1,
+       `${before2} → ${(LS('records') || []).length}`);
+    D().querySelector('#undo-btn')?.click(); await sleep(200);
+    ok('撤销收回（别影响后面按张数算的断言）', (LS('records') || []).length === before2);
+    // 长按不该把托盘弄收起来
+    ok('长按拖完托盘仍然是展开的', D().querySelector('#deck').classList.contains('open'));
+  }
+  // ⛔ 8-27 反过来了：展开态选完章托盘**不**自动收起（用户："实际也不应该自动收起"）。
+  //    判定仍然不能用 .click()：真机是 pointerdown/up，pointerup 里就重建了 DOM，
+  //    click 落不到原格子上，会得到假 PASS（8-26 踩过）。
   {
     const c9 = D().querySelectorAll('#deck-strip .dk-stamp')[8];
     const r9 = c9.getBoundingClientRect();
@@ -112,8 +210,13 @@ function clickAt(el, fx=0.5, fy=0.5){
     pv9('pointerdown', r9.left + 20, r9.top + 20);
     pv9('pointerup', r9.left + 20, r9.top + 20);
     await sleep(500);
-    ok('展开态选完章托盘自己收起', !D().querySelector('#deck').classList.contains('open'));
+    ok('展开态选完章托盘保持展开（不自动收）', D().querySelector('#deck').classList.contains('open'));
     ok('选完之后纸进入待盖状态', !!D().querySelector('#today-canvas.armed'));
+    // 换印泥不需要展开：收起态点整排里的另一盒，选中的就该换过去
+    D().querySelector('#deck-more').click(); await sleep(320);
+    D().querySelector('#deck-inks .dk-ink[data-ink="wu"]')?.click(); await sleep(150);
+    ok('收起态直接换印泥（不用展开）', !D().querySelector('#deck').classList.contains('open') &&
+       !!D().querySelector('#deck-inks .dk-ink[data-ink="wu"].sel'));
   }
   if (D().querySelector('#deck').classList.contains('open')) { D().querySelector('#deck-grab').click(); await sleep(320); }
   {

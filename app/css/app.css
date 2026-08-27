@@ -49,7 +49,7 @@
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
 body{
-  background:#EAE5DA; color:var(--ink);
+  background:var(--app-bg); color:var(--ink);
   font-family:var(--f-ui);
   font-size:15px; line-height:1.6;
   overscroll-behavior:none;
@@ -151,7 +151,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 
 .cta{
   display:block; width:100%; margin:20px 0 6px; padding:14px 0;
-  background:var(--accent); color:#F8F4EC; border:none; border-radius:var(--r3);
+  background:var(--accent); color:var(--btn-face); border:none; border-radius:var(--r3);
   font-size:16px; letter-spacing:.3em; font-family:inherit; cursor:pointer;
   transition:transform .12s;
 }
@@ -229,7 +229,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   100%{transform:scale(1)}
 }
 .ov-btn{
-  margin-top:30px; padding:12px 44px; background:var(--accent); color:#F8F4EC;
+  margin-top:30px; padding:12px 44px; background:var(--accent); color:var(--btn-face);
   border:none; border-radius:var(--r3); font-size:15px; font-family:inherit; letter-spacing:.24em; cursor:pointer;
 }
 .ov-btn.ghost{background:none; border:1px solid var(--line); color:var(--sub); margin-top:12px; letter-spacing:.1em; font-size:13px}
@@ -254,10 +254,10 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .box-t{display:flex; align-items:baseline; gap:8px; margin-bottom:2px}
 .box-t .bx-n{font-family:var(--f-title); font-size:15px; letter-spacing:.06em}
 .box-t .bx-s{font-size:11px; color:var(--sub); letter-spacing:.04em}
-.box-paper{background:var(--card,#FFFDF8); border:.5px solid var(--line)}
-.box-w{background:linear-gradient(180deg,#F3DEB6,#EBD09C); border:1.5px solid var(--tray-edge)}
+.box-paper{background:var(--card,var(--card)); border:.5px solid var(--line)}
+.box-w{background:linear-gradient(180deg,var(--tray-hi),var(--box-w)); border:1.5px solid var(--tray-edge)}
 .box-w .bx-s{color:var(--tray-text); opacity:.8}
-.box-p{background:linear-gradient(180deg,#EDEBE6,#DEDBD4); border:1.5px solid var(--tin-edge)}
+.box-p{background:linear-gradient(180deg,var(--box-p),var(--tin-dry-hi)); border:1.5px solid var(--tin-edge)}
 .box-sect{margin-top:12px}
 .box-sect .bs-t{font-size:11.5px; color:var(--sub); letter-spacing:.14em}
 .col-cell .ct{font-size:9.5px; color:var(--sub); opacity:.8; margin-top:-1px}
@@ -275,20 +275,20 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .dk-cell{display:flex; flex-direction:column; align-items:center; gap:0; cursor:pointer}
 .dk-cell .handle{
   width:26px; height:11px; border-radius:6px 6px 2px 2px; display:block;
-  background:linear-gradient(180deg,#E0B075 0 38%,#C9924E 39%,var(--tray-edge));
+  background:linear-gradient(180deg,var(--handle-hi) 0 38%,var(--handle) 39%,var(--tray-edge));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.35);
 }
-.dk-cell.raw .handle{background:linear-gradient(180deg,#DBC8B4 0 38%,#C6B29C 39%,#AD9A85)}
+.dk-cell.raw .handle{background:linear-gradient(180deg,var(--handle-raw-hi) 0 38%,var(--handle-raw) 39%,var(--handle-raw-lo))}
 .dk-cell .face{
   width:46px; height:40px; border-radius:4px; margin-top:-1px;
   display:flex; align-items:center; justify-content:center;
   box-shadow:0 1px 0 rgba(63,53,48,.16);
 }
-.dk-cell .face.inked{background:#FFFDF8; border:1.5px solid currentColor}
+.dk-cell .face.inked{background:var(--card); border:1.5px solid currentColor}
 /* 刻好还没蘸过墨的橡皮：图案只剩浅浅的凹痕 */
 .dk-cell .face.carved{
-  background:linear-gradient(180deg,#F3D6C6,#EBC7B5);
-  border:1.5px solid #D6AC98;
+  background:linear-gradient(180deg,var(--carve-hi),var(--carve-mid));
+  border:1.5px solid var(--carve-lo);
   box-shadow:inset 0 1px 2px rgba(139,90,70,.22), 0 1px 0 rgba(63,53,48,.12);
 }
 .dk-cell .nm{font-size:10.5px; color:var(--ink); margin-top:3px}
@@ -297,7 +297,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 
 /* 抽屉 · 印泥盒段 */
 .sup-list-in .sup-row:last-child{border-bottom:none}
-.sup-row.base .sup-can{background:radial-gradient(circle at 32% 26%,#FFFDF7,#F2EADA 62%,#DCD2BE)}
+.sup-row.base .sup-can{background:radial-gradient(circle at 32% 26%,var(--tin-base-hi),var(--tin-base) 62%,var(--tin-base-lo))}
 .sup-row.base .sup-can .bs{font-size:12px; color:var(--tray-text); opacity:.85}
 .shop-hint{text-align:center; font-size:10.5px; color:var(--faint); letter-spacing:.18em; padding:14px 0 4px}
 .col-cell .nm{font-size:10.5px; color:var(--ink)}
@@ -351,7 +351,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 /* 合订本：一张对折的纸 */
 .pg-cell.booklet .pg-fold{
   position:relative; display:block; width:100%; aspect-ratio:3/4; border-radius:2px;
-  background:linear-gradient(105deg, var(--paper-page) 48%, #EFE7D6 49%, #E6DCC7);
+  background:linear-gradient(105deg, var(--paper-page) 48%, var(--fold-hi) 49%, var(--fold-lo));
   border:.5px solid var(--line);
 }
 .pg-cell.booklet .d{font-family:var(--f-title); font-size:9px; color:var(--tray-text)}
@@ -418,7 +418,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 /* toast */
 #toast{
   position:absolute; left:50%; bottom:86px; transform:translateX(-50%) translateY(8px);
-  background:rgba(37,36,33,.88); color:#F6F2EA; font-size:13px; letter-spacing:.1em;
+  background:rgba(37,36,33,.88); color:var(--paper); font-size:13px; letter-spacing:.1em;
   padding:8px 18px; border-radius:20px; opacity:0; pointer-events:none;
   transition:opacity .2s, transform .2s; z-index:70; white-space:nowrap;
 }
@@ -432,7 +432,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   border:2px solid var(--tray-edge);
   background:
     repeating-linear-gradient(90deg, rgba(178,122,60,.055) 0 2px, transparent 2px 7px),
-    linear-gradient(180deg,#F3DEB6,#EFD6A6 46%,#E8CA95);
+    linear-gradient(180deg,var(--tray-hi),var(--tray) 46%,var(--tray-lo));
   box-shadow:0 2px 0 rgba(63,53,48,.08), inset 0 1px 0 rgba(255,255,255,.5);
 }
 
@@ -451,7 +451,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   flex:none; border:1px solid rgba(178,122,60,.55); background:rgba(255,255,255,.4); cursor:pointer;
   font-family:inherit; font-size:11px; color:var(--tray-text); padding:3px 8px; border-radius:5px; letter-spacing:.04em;
 }
-.tool-btn.on{background:var(--accent); border-color:var(--accent); color:#FBF3E4}
+.tool-btn.on{background:var(--accent); border-color:var(--accent); color:var(--chip-on)}
 
 /* 第 2 行：印泥铁盒横排。盒里那坨墨的直径 = 这盒还剩多少，这是余量唯一的表达 */
 .deck-inks{display:flex; gap:7px; overflow-x:auto; scrollbar-width:none; padding:6px 1px 2px; touch-action:pan-x}
@@ -461,13 +461,13 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .dk-ink .can{
   width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center;
   border:2px solid var(--tin-edge); box-sizing:border-box;
-  background:radial-gradient(circle at 32% 26%, #E4E1DA, var(--tin) 62%, #A9A69E);
+  background:radial-gradient(circle at 32% 26%, var(--tin-hi), var(--tin) 62%, var(--tin-lo));
   box-shadow:0 2px 0 rgba(63,53,48,.1);
 }
 .dk-ink .ink{border-radius:50%; box-shadow:inset 0 1px 2px rgba(37,36,33,.3)}
 .dk-ink.sel .can{border-color:var(--ink); box-shadow:0 0 0 2px rgba(37,36,33,.28)}
-.dk-ink.dry .can{background:radial-gradient(circle at 32% 26%,#DEDBD4,#BFBCB4 70%,#9E9B94)}
-.dk-ink.base .can{background:radial-gradient(circle at 32% 26%,#FFFDF7,#F2EADA 62%,#DCD2BE)}
+.dk-ink.dry .can{background:radial-gradient(circle at 32% 26%,var(--tin-dry-hi),var(--tin-dry) 70%,var(--tin-dry-lo))}
+.dk-ink.base .can{background:radial-gradient(circle at 32% 26%,var(--tin-base-hi),var(--tin-base) 62%,var(--tin-base-lo))}
 .dk-ink .bs{font-size:11px; color:var(--tray-text); line-height:1; opacity:.85}
 
 /* 第 3 行：章立在托盘里（木柄 + 章面），两行横滑 */
@@ -484,12 +484,12 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 }
 .dk-stamp .handle{
   width:29px; height:12px; border-radius:6px 6px 2px 2px; display:block;
-  background:linear-gradient(180deg,#E0B075 0 38%,#C9924E 39%,var(--tray-edge));
+  background:linear-gradient(180deg,var(--handle-hi) 0 38%,var(--handle) 39%,var(--tray-edge));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.35);
 }
 .dk-stamp .face{
   width:44px; height:38px; border-radius:4px; margin-top:-1px;
-  background:#FFFDF8; border:1.5px solid currentColor;
+  background:var(--card); border:1.5px solid currentColor;
   display:flex; align-items:center; justify-content:center;
   box-shadow:0 1px 0 rgba(63,53,48,.16);
 }
@@ -506,7 +506,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   border:1px solid rgba(178,122,60,.5); background:rgba(255,255,255,.38); cursor:pointer;
   font-family:inherit; font-size:10.5px; color:var(--tray-text); padding:2px 7px; border-radius:5px;
 }
-.mat-chip.on{background:var(--tray-edge); border-color:var(--tray-edge); color:#FBF3E4}
+.mat-chip.on{background:var(--tray-edge); border-color:var(--tray-edge); color:var(--chip-on)}
 .tray-note{margin-left:auto; font-size:10.5px; color:var(--tray-text); opacity:.85; text-align:right}
 
 /* 拖拽幽灵 + 画布提示态 */
@@ -589,11 +589,11 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   transform-style:preserve-3d; transform-origin:left center; will-change:transform;
   filter:drop-shadow(-10px 6px 12px rgba(37,36,33,.28));
 }
-.turn-face{position:absolute; inset:0; backface-visibility:hidden; border-radius:var(--r3); overflow:hidden; background:#FBF8F1}
+.turn-face{position:absolute; inset:0; backface-visibility:hidden; border-radius:var(--r3); overflow:hidden; background:var(--paper-page)}
 .turn-face .canvas{margin-top:0; height:100%; min-height:0}
 .turn-face.back{
   transform:rotateY(180deg); border:1px solid var(--line);
-  background:#F2EDE1 linear-gradient(105deg, rgba(37,36,33,.08), transparent 34%);
+  background:var(--turn-back) linear-gradient(105deg, rgba(37,36,33,.08), transparent 34%);
 }
 .turn-base .canvas{margin-top:0; height:100%; min-height:0}
 
@@ -619,10 +619,10 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .sup-row .sup-can{
   width:38px; height:38px; flex:none; border-radius:50%; display:flex; align-items:center; justify-content:center;
   border:2px solid var(--tin-edge); box-sizing:border-box;
-  background:radial-gradient(circle at 32% 26%, #E4E1DA, var(--tin) 62%, #A9A69E);
+  background:radial-gradient(circle at 32% 26%, var(--tin-hi), var(--tin) 62%, var(--tin-lo));
 }
 .sup-row .sup-can .ink{border-radius:50%; box-shadow:inset 0 1px 2px rgba(37,36,33,.3)}
-.sup-row.dry .sup-can{background:radial-gradient(circle at 32% 26%,#DEDBD4,#BFBCB4 70%,#9E9B94)}
+.sup-row.dry .sup-can{background:radial-gradient(circle at 32% 26%,var(--tin-dry-hi),var(--tin-dry) 70%,var(--tin-dry-lo))}
 .sup-row .st{font-size:11px; color:var(--sub); letter-spacing:.02em}
 .sup-mid{flex:1; min-width:0}
 .sup-mid .nm{font-size:13px; letter-spacing:.04em}
@@ -652,7 +652,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 #ov-booklet{background:rgba(37,36,33,.34); padding:24px 18px; justify-content:center}
 .bl-page{
   width:100%; max-width:340px; max-height:100%; overflow-y:auto; scrollbar-width:none;
-  background:linear-gradient(105deg, var(--paper-page) 47%, #F1E9D9 48%, var(--paper-page) 52%);
+  background:linear-gradient(105deg, var(--paper-page) 47%, var(--booklet-page) 48%, var(--paper-page) 52%);
   border:1px solid var(--line); border-radius:3px; padding:22px 20px 20px; text-align:center;
   box-shadow:0 8px 24px rgba(37,36,33,.18);
 }
@@ -673,7 +673,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .chip.has-note .tm{opacity:.5}
 .note-pop{
   position:absolute; z-index:6; transform:translate(-50%,14px);
-  background:var(--card,#FFFDF8); border:1px solid var(--line); border-radius:8px;
+  background:var(--card,var(--card)); border:1px solid var(--line); border-radius:8px;
   padding:5px 8px 6px; box-shadow:0 3px 10px rgba(37,36,33,.14);
   display:flex; align-items:center; gap:7px;
 }
@@ -699,19 +699,19 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .me-line{font-family:var(--f-hand); font-size:15px; color:var(--ink); margin:10px 0 22px; line-height:1.9}
 .ttl-k{font-size:11px; color:var(--sub); letter-spacing:.24em; margin-bottom:8px}
 .ttl-card{
-  background:var(--card,#FFFDF8); border:.5px solid var(--line); border-radius:3px;
+  background:var(--card,var(--card)); border:.5px solid var(--line); border-radius:3px;
   padding:20px 16px 16px; text-align:center; transform:rotate(-1.2deg); margin-bottom:26px;
   box-shadow:0 2px 0 rgba(63,53,48,.06);
 }
 .ttl-card .ttl-n{
-  display:inline-block; font-family:var(--f-hand); font-size:17px; color:var(--ink-cocoa,#8C6A4F);
-  border:2px solid var(--ink-cocoa,#8C6A4F); border-radius:3px; padding:4px 12px 5px; opacity:.9;
+  display:inline-block; font-family:var(--f-hand); font-size:17px; color:var(--ink-cocoa,var(--title-num));
+  border:2px solid var(--ink-cocoa,var(--title-num)); border-radius:3px; padding:4px 12px 5px; opacity:.9;
 }
 .ttl-card .ttl-l{font-size:12px; color:var(--sub); margin-top:10px}
 .ttl-strip{display:flex; gap:8px; overflow-x:auto; scrollbar-width:none; padding-bottom:4px; margin-bottom:24px}
 .ttl-strip::-webkit-scrollbar{display:none}
 .ttl-old{
-  flex:none; min-width:104px; max-width:132px; background:var(--card,#FFFDF8);
+  flex:none; min-width:104px; max-width:132px; background:var(--card,var(--card));
   border:.5px solid var(--line); border-radius:3px; padding:9px 10px 10px; text-align:center;
 }
 .ttl-old .ttl-m{font-family:var(--f-num); font-size:10px; color:var(--faint); letter-spacing:.1em}
@@ -811,16 +811,16 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .op-edges{                       /* 内页厚度：右侧和下侧各露几层纸边 */
   position:absolute; inset:0; z-index:-2; border-radius:var(--r3);
   box-shadow:
-    2px 2px 0 0 #FBF8F1, 3.5px 3.5px 0 0 #F1EADD,
-    5px 5px 0 0 #EAE2D2, 6.5px 6.5px 0 0 #E1D8C6;
+    2px 2px 0 0 var(--paper-page), 3.5px 3.5px 0 0 var(--edge-1),
+    5px 5px 0 0 var(--edge-2), 6.5px 6.5px 0 0 var(--edge-3);
 }
 .op-label{                       /* 封面上 1/3 的标签贴 */
   position:absolute; left:50%; top:22%; transform:translateX(-50%) rotate(-1.5deg);
-  width:56%; min-height:44px; background:#FBF8F1; border-radius:4px;
+  width:56%; min-height:44px; background:var(--paper-page); border-radius:4px;
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
   box-shadow:0 2px 0 rgba(63,53,48,.08);
 }
-.op-cover .op-t{font-family:var(--f-title); font-size:20px; color:#6F5232; letter-spacing:.12em}
+.op-cover .op-t{font-family:var(--f-title); font-size:20px; color:var(--cover-text); letter-spacing:.12em}
 .op-mon{font-family:var(--f-ui); font-size:13px; color:var(--sub); letter-spacing:.1em}
 /* 标签贴两角的和纸胶带 */
 .op-tape.l,.op-tape.r{
@@ -832,7 +832,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 /* 贴纸：当月盖得最多的那几枚章，白边模拟贴纸底纸 */
 .op-sticker{
   position:absolute; line-height:0; padding:4px; border-radius:5px;
-  background:#FDFBF6; box-shadow:0 1px 2px rgba(63,53,48,.18);
+  background:var(--sticker); box-shadow:0 1px 2px rgba(63,53,48,.18);
 }
 /* 今天刚发现的那几枚才给记号——"当月发现的"在月初等于全部，红点一多就没有意思了 */
 .op-sticker.new{background:var(--note); box-shadow:0 1px 2px rgba(133,79,11,.26)}
@@ -849,10 +849,10 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 /* 桌上随手搁着的一个印泥铁盒 */
 .op-desk-tin{   /* 位置由 JS 按本子的矩形算，贴着本子左下角、压在本子底下 */
   position:absolute; width:42px; height:42px; border-radius:50%;
-  background:linear-gradient(180deg,#D3D0C7,var(--tin)); border:1.5px solid var(--tin-edge);
+  background:linear-gradient(180deg,var(--tin-desk),var(--tin)); border:1.5px solid var(--tin-edge);
   display:flex; align-items:center; justify-content:center;
 }
-.op-desk-tin .can{width:22px; height:22px; border-radius:50%; background:#C94B3C; opacity:.85}
+.op-desk-tin .can{width:22px; height:22px; border-radius:50%; background:var(--accent); opacity:.85}
 .op-desk-tin::after{   /* 盒盖那圈边 */
   content:""; position:absolute; inset:4px; border-radius:50%; border:1px solid rgba(138,135,128,.5);
 }
@@ -951,7 +951,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 /* 补一句的输入层 */
 .daynote-pop{
   position:absolute; left:22px; right:22px; bottom:24px; z-index:40;
-  background:var(--card,#FFFDF8); border:1px solid var(--line); border-radius:var(--r3);
+  background:var(--card,var(--card)); border:1px solid var(--line); border-radius:var(--r3);
   padding:12px; box-shadow:0 2px 0 rgba(63,53,48,.08);
 }
 .daynote-pop textarea{
@@ -981,14 +981,22 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   opacity:.13; filter:grayscale(.75);
 }
 .curl-flap::before{   /* 纸背本体：不透明的纸色，别让桌面透上来 */
-  content:""; position:absolute; inset:0; z-index:-1; background:#F4EFE4;
+  content:""; position:absolute; inset:0; z-index:-1; background:var(--curl-back);
 }
 /* 折线附近的暗部——"卷"的观感全靠它，角度由 JS 跟着折线转 */
 .curl-shade{position:absolute; inset:0; pointer-events:none}
 
-/* 翻页手势要横向拿到触摸：pan-y 把纵向留给页面滚动，横向归我们。
-   ⚠️ 别写 touch-action:none——那样纸上就再也滚不动页面了。 */
-#page-today .book,#page-memories .book{touch-action:pan-y}
+/* 🔴 8-27 用户实测打回："翻页和屏幕滚动混在一起，非常容易导致屏幕滚动而不是翻页"。
+   病根是 pan-y：把纵向让给浏览器 = 起手带一点垂直分量就被判成"要滚页面"，
+   手势当场被抢走并 pointercancel，我们连 pointermove 都收不到（电脑用鼠标没有原生滚动手势，所以只有手机复现）。
+   ✅ 实测过"到底什么时候真需要滚"（390/375/430/360 四个尺寸）：
+        今日页 · 托盘收起  → scrollH == clientH，**从来不滚**
+        今日页 · 托盘展开  → 溢出 155~188px，要滚
+        本子页 · 月历      → 要滚，但那一屏没有 .book，翻不了页
+        本子页 · 某一天    → 不滚（这才是能翻页的那个视图）
+   所以：**能翻页的那两个视图本来就不需要滚** → 整张纸交给我们独占，只有托盘展开时才把纵向还回去。 */
+#page-today .book,#page-memories .book{touch-action:none}
+#page-today.deck-open .book{touch-action:pan-y}
 
 /* ============ 纸上的三样（不是用户亲手盖的东西）============ */
 /* 天气小章：没设过时在日付印下面摆一排待选；设过了只剩落下的那一枚。
@@ -1016,7 +1024,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   display:block; padding:9px 13px 10px; border-radius:3px;
   /* ⚠️ 不能只填 var(--note)：#FAEEDA 跟纸色 #FBF8F1 几乎同色，
      贴上去读起来是「纸上的一行字」而不是「一张便签」。压一层浅渐变 + 一根发丝边。 */
-  background:linear-gradient(180deg,#FCF0DA,#F5E4C4); border:.5px solid rgba(133,79,11,.16);
+  background:linear-gradient(180deg,var(--riddle-2),var(--riddle-1)); border:.5px solid rgba(133,79,11,.16);
   color:var(--note-text);
   font-family:var(--f-hand); font-size:13px; line-height:1.55;
   box-shadow:0 2px 0 rgba(63,53,48,.08); backface-visibility:hidden;
@@ -1040,10 +1048,10 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   content:""; position:absolute; left:0; right:0; top:8px; bottom:0; z-index:0;
   border-radius:var(--r3); pointer-events:none;
   box-shadow:
-    4px 4px 0 -1px #F5F0E6, 4.5px 4.5px 0 -1px rgba(63,53,48,.11),
-    8px 8px 0 -2px #EFE9DC, 8.5px 8.5px 0 -2px rgba(63,53,48,.10),
-    12px 12px 0 -3px #E7DFCE, 12.5px 12.5px 0 -3px rgba(63,53,48,.09),
-    16px 16px 0 -4px #DFD6C2, 16.5px 16.5px 0 -4px rgba(63,53,48,.08);
+    4px 4px 0 -1px var(--stack-1), 4.5px 4.5px 0 -1px rgba(63,53,48,.11),
+    8px 8px 0 -2px var(--stack-2), 8.5px 8.5px 0 -2px rgba(63,53,48,.10),
+    12px 12px 0 -3px var(--stack-3), 12.5px 12.5px 0 -3px rgba(63,53,48,.09),
+    16px 16px 0 -4px var(--stack-4), 16.5px 16.5px 0 -4px rgba(63,53,48,.08);
 }
 /* 昨天空白时：底下不是一张空白纸，是一叠翻过去的纸边 */
 .pagestack{
@@ -1051,9 +1059,9 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   /* 同样往右下叠：装订在左，参差只会出现在自由边。
      每层配一条 .5px 的暗线，不然三层叠一起是一块糊的浅色。 */
   box-shadow:
-    5px 5px 0 -1px #F3EEE3, 5.5px 5.5px 0 -1px rgba(63,53,48,.12),
-    9px 9px 0 -2px #EDE7DA, 9.5px 9.5px 0 -2px rgba(63,53,48,.10),
-    13px 13px 0 -3px #E4DCCB, 13.5px 13.5px 0 -3px rgba(63,53,48,.09);
+    5px 5px 0 -1px var(--pstack-1), 5.5px 5.5px 0 -1px rgba(63,53,48,.12),
+    9px 9px 0 -2px var(--linen), 9.5px 9.5px 0 -2px rgba(63,53,48,.10),
+    13px 13px 0 -3px var(--pstack-3), 13.5px 13.5px 0 -3px rgba(63,53,48,.09);
 }
 
 /* ============ V1.5 纸竖版 + 托盘两态 ============ */
@@ -1076,7 +1084,10 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .deck{
   position:relative; overflow:hidden;
   transition:max-height 260ms var(--ease-pop);
-  max-height:136px;                       /* 收起态：拉手 + 一整行章（格子本身约 78px）+ 一行小字 */
+  /* 🔴 8-27 起收起态是两行：整排印泥 + 一行常用章。
+     印泥从「展开才看得见」挪到常驻，因为换印泥是高频动作（一次蘸墨只盖 3 下）。
+     拉手 16 + 印泥 42 + 章 62 + 材质/状态那行 24 ≈ 184，留一点余量。 */
+  max-height:190px;
 }
 .deck.open{max-height:60vh; padding-top:26px}   /* 顶部让出一行，别让「收起」压住分类 */
 .deck-grab{
@@ -1089,13 +1100,16 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 }
 /* ⚠️ 展开态的三块加起来不能超过 .deck 的 60vh：.deck 是 overflow:hidden，
    超出的部分不是能滚，是直接被切掉（材质三选一和状态那行就在最后面）。 */
+/* ⚠️ 8-27 起 .deck-full 里只剩分类行（印泥挪出去常驻了），所以这条上限基本用不满 */
 .deck.open .deck-full{max-height:24vh; opacity:1; overflow-y:auto}
-/* 收起态那一行：[当前印泥][章条带][更多] */
+/* 章那一行：[章条带][更多]。⛔「当前印泥」那个单独的铁盒已作废——整排印泥常驻了。
+   ⚠️「更多」这个键要留着，它在展开态变成「收起」。之前把它藏过一版，
+      展开后就只剩 36×4 那根小拉手能收，等于合不上（用户实测）。 */
 .deck-row{display:flex; align-items:center; gap:6px}
-.deck-row .dk-ink.cur{flex:none; margin:0}
-/* 展开态里当前铁盒让位给整排印泥；但「更多」那个键要留着——它在展开态变成「收起」。
-   ⚠️ 之前把它一起藏了，展开后就只剩 36×4 那根小拉手能收，等于合不上（用户实测）。 */
-.deck.open .dk-ink.cur{display:none}
+/* 印泥排现在两态都在，位置不变——"换颜色"这个动作不该因为托盘开着还是关着而变。
+   ⚠️ 手势不动：这一排是纯点击的，原生 pan-x 横滑没有拖拽可抢；
+      章格子那排仍然是 touch-action:none 自判手势（8-25 铁律），这次一个字没改。 */
+.deck-inks{flex:none}
 .deck-more{
   flex:none; border:1px solid rgba(107,74,30,.25); background:rgba(255,253,248,.5);
   border-radius:var(--r3); font-family:var(--f-title); font-size:11px; color:var(--tray-text);
@@ -1119,7 +1133,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   /* 钉死一排六个，格子跟着屏宽伸缩（8-26 用户指定）。
      用 minmax 自动排的话，390 的屏上只排得下 5 个，宽屏又会变 7 个，不可预期。 */
   grid-auto-flow:row; grid-template-columns:repeat(6,1fr); grid-template-rows:none;
-  max-height:26vh; overflow-y:auto; overflow-x:hidden;
+  max-height:32vh; overflow-y:auto; overflow-x:hidden;
   /* ⚠️ 基础样式是 pan-x（收起态横滑条带用的），展开成网格后必须换成 pan-y，
      否则手机上纵向划不动这片网格。 */
   touch-action:pan-y;
@@ -1129,7 +1143,10 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .deck.open .dk-stamp{
   width:100%;
   /* 🔴 展开态把纵向交给浏览器滚网格。基础样式是 touch-action:none（横滑条带的手势自判），
-     展开态照搬的话，上滑找章 = 每次都拎起一枚章，网格滚不动（8-26 用户手机实测）。 */
+     展开态照搬的话，上滑找章 = 每次都拎起一枚章，网格滚不动（8-26 用户手机实测）。
+     ⚠️ 8-27 起展开态也能拖了，但走的是**长按**（bindStampCell 的 LP_MS）：
+        按住 450ms 不动才拎起来，之后由 JS 的 touchmove preventDefault 拦住原生滚动。
+        这条 pan-y 不能改成 none——改了网格就又滚不动了。 */
   touch-action:pan-y;
 }
 /* 收起态不显示材质三选一，只留两句小字 */
@@ -1151,6 +1168,51 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
    ============================================================ */
 
 /* ---- 桌布：碎花回来，四个时段只换底色，花跟着底色一起变暖变冷 ---- */
+/* ============================================================
+   颜色 token（规格 §11 Phase 1：grep 不到裸 hex）
+   🔴 这是一次**纯重构**：每个 token 的值就是它替换掉的那个字面量，一个像素都不该变。
+      所以下面会出现两个很像的棕色（--tray-text 是木托盘时期的、--linen-text 是 V1.7 亚麻的）
+      —— 合不合并是**设计决定**，不在这一轮里做。
+   ⛔ 例外，故意不收的：
+      · `:root` 里那些 token 自己的定义值（它们就是源头）
+      · `.deck-cats` 遮罩里的 #000 —— 那是透明度模板不是颜色，换肤时不该跟着变
+      · `--floral` 那条 data URI 里的 %23xxxxxx —— 花色靠整组 opacity 往纸色里退，
+        换季时会跟着纸一起变暖变冷，抽出来反而破坏这个机制（见 --floral 上面那段注释）
+   ⚠️ JS 里那 56 处**不能**搬到这儿：分享卡是把 SVG 塞进 <img> 光栅化的，
+      那是个隔离文档，读不到页面的 CSS 自定义属性（跟"卡上字形章会换字体"同一个坑）。
+   ============================================================ */
+:root{
+  /* 亚麻托盘（V1.7 视觉整改） */
+  --linen:#EDE7DA; --linen-text:#8A7F70;
+  /* 纸面上的小卡 / 贴纸 / 便签 / 谜面 */
+  --sticker:#FDFBF6; --card:#FFFDF8; --booklet-page:#F1E9D9; --riddle-1:#F5E4C4;
+  --riddle-2:#FCF0DA;
+  /* 比 --sub 再淡一档的小字 */
+  --sub-soft:#A79E92; --sub-faint:#C6BEB2; --sub-dry:#B5ADA1;
+  /* 印泥铁盒：常态 / 干了 / 「默」 */
+  --tin-hi:#E4E1DA; --tin-lo:#A9A69E; --tin-dry-hi:#DEDBD4; --tin-dry:#BFBCB4;
+  --tin-dry-lo:#9E9B94; --tin-base-hi:#FFFDF7; --tin-base:#F2EADA; --tin-base-lo:#DCD2BE;
+  --tin-base-flat:#FBF7EE; --tin-desk:#D3D0C7;
+  /* 章：木柄（已发现 / 未发现）与橡皮章面 */
+  --handle-hi:#E0B075; --handle:#C9924E; --handle-raw-hi:#DBC8B4; --handle-raw:#C6B29C;
+  --handle-raw-lo:#AD9A85; --carve-hi:#F3D6C6; --carve-mid:#EBC7B5; --carve-lo:#D6AC98;
+  /* 封面两款 */
+  --cover-rose:#D6AEAD; --cover-rose-edge:#BC8E8C; --cover-rose-text:#7A4E4C;
+  --cover-rose-sub:#9C7270; --cover-rose-band:#A87D7B; --cover-cream:#E2D3B8;
+  --cover-cream-edge:#C3AE8B; --cover-cream-text:#7A6647; --cover-cream-sub:#96805F;
+  --cover-text:#6F5232;
+  /* 本子厚度：叠出去的纸边 / 翻过去的纸叠 / 开场书口 */
+  --stack-1:#F5F0E6; --stack-2:#EFE9DC; --stack-3:#E7DFCE; --stack-4:#DFD6C2;
+  --pstack-1:#F3EEE3; --pstack-3:#E4DCCB; --edge-1:#F1EADD; --edge-2:#EAE2D2; --edge-3:#E1D8C6;
+  /* 翻页 / 卷角 / 折角 */
+  --turn-back:#F2EDE1; --curl-back:#F4EFE4; --fold-hi:#EFE7D6; --fold-lo:#E6DCC7;
+  /* 书架四季书脊 */
+  --season-spring:#B7CDA6; --season-summer:#9DC6C4; --season-autumn:#D8AE7E;
+  --season-winter:#B3B6C9;
+  /* 按钮 / 木托盘时期残留 / 其它 */
+  --btn-face:#F8F4EC; --chip-on:#FBF3E4; --chip-on-text:#5C5348; --tray-hi:#F3DEB6;
+  --tray-lo:#E8CA95; --box-w:#EBD09C; --box-p:#EDEBE6; --title-num:#8C6A4F; --app-bg:#EAE5DA;
+}
 :root{ --cloth:#F6F2EA; }
 [data-time-band="dawn"]  { --cloth:#EFEADF; }
 [data-time-band="day"]   { --cloth:#F6F2EA; }
@@ -1176,12 +1238,12 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   background:
     repeating-linear-gradient(0deg,  rgba(120,105,85,.045) 0 1px, transparent 1px 4px),
     repeating-linear-gradient(90deg, rgba(120,105,85,.045) 0 1px, transparent 1px 4px),
-    #EDE7DA;
+    var(--linen);
   box-shadow:0 1px 0 rgba(63,53,48,.06);
 }
 .deck-grab{width:44px; height:5px; background:rgba(120,105,85,.22); margin:5px auto 6px}
 .tray-foot{border-top:1px solid rgba(120,105,85,.14)}
-.tray-note,.tray-supply{color:#8A7F70}
+.tray-note,.tray-supply{color:var(--linen-text)}
 
 /* ---- 章：脱掉图标外壳，露出章本身 ---- */
 /* 之前是「白底圆角方块 + 棕色小帽子」——那是 App 图标的形。同一枚章画在纸上很好看，
@@ -1196,7 +1258,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   padding:4px 0 3px; border-radius:8px;
   transition:transform 140ms var(--ease-out);
 }
-.dk-stamp .nm{font-size:9.5px; color:#8A7F70; opacity:.7; margin-top:1px; letter-spacing:.02em}
+.dk-stamp .nm{font-size:9.5px; color:var(--linen-text); opacity:.7; margin-top:1px; letter-spacing:.02em}
 /* 选中 = 把它拿起来。不描边、不加高亮底——"拿在手上"是物理事实，不是选中状态 */
 .dk-stamp.sel{transform:translateY(-5px) scale(1.06)}
 .dk-stamp.sel .face svg{filter:drop-shadow(0 3px 3px rgba(63,53,48,.22))}
@@ -1211,10 +1273,10 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 }
 .dk-ink .ink{box-shadow:none}
 .dk-ink.base .can{
-  background:#FBF7EE; border:1px solid rgba(120,105,85,.28); border-radius:50%;
+  background:var(--tin-base-flat); border:1px solid rgba(120,105,85,.28); border-radius:50%;
   width:26px; height:26px;
 }
-.dk-ink.base .bs{color:#8A7F70; font-size:11px; opacity:.9}
+.dk-ink.base .bs{color:var(--linen-text); font-size:11px; opacity:.9}
 .dk-ink.dry .can{opacity:.3}
 .dk-ink.sel{transform:scale(1.22)}
 .dk-ink.sel .can{box-shadow:0 0 0 1.5px rgba(63,53,48,.28)}
@@ -1223,16 +1285,16 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 /* ---- 「更多 / 收起」：交给拉手，文字退成一行小字 ---- */
 .deck-more{
   border:none; background:none; padding:2px 4px; writing-mode:horizontal-tb;
-  font-family:var(--f-ui); font-size:11px; color:#8A7F70; letter-spacing:.06em; line-height:1.4;
+  font-family:var(--f-ui); font-size:11px; color:var(--linen-text); letter-spacing:.06em; line-height:1.4;
 }
 .deck.open .deck-more{background:none; padding:2px 4px}
 
 /* ---- 材质：安静的小字，不做成填色标签 ---- */
 .mat-chip{
-  border:1px solid rgba(120,105,85,.22); background:none; color:#8A7F70;
+  border:1px solid rgba(120,105,85,.22); background:none; color:var(--linen-text);
   border-radius:4px; padding:2px 8px;
 }
-.mat-chip.on{background:rgba(120,105,85,.14); border-color:rgba(120,105,85,.4); color:#5C5348}
+.mat-chip.on{background:rgba(120,105,85,.14); border-color:rgba(120,105,85,.4); color:var(--chip-on-text)}
 
 /* ---- 封皮两版皮肤（8-26 用户拍板：甲乙都做，让用户自己选）----
    ⛔ 那条塑料感的红杠松紧带、桌上那个假铁盒都删了。 */
@@ -1244,27 +1306,27 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   background:
     repeating-linear-gradient(0deg,  rgba(255,255,255,.05) 0 1px, transparent 1px 3px),
     repeating-linear-gradient(90deg, rgba(0,0,0,.03) 0 1px, transparent 1px 3px),
-    #D6AEAD;
-  border-color:#BC8E8C;
+    var(--cover-rose);
+  border-color:var(--cover-rose-edge);
 }
-.op-cover.cover-rose .op-spine{background:#BC8E8C}
-.op-cover.cover-rose .op-t{color:#7A4E4C}
-.op-cover.cover-rose .op-mon{color:#9C7270}
+.op-cover.cover-rose .op-spine{background:var(--cover-rose-edge)}
+.op-cover.cover-rose .op-t{color:var(--cover-rose-text)}
+.op-cover.cover-rose .op-mon{color:var(--cover-rose-sub)}
 /* 乙 · 布面奶油 */
 .op-cover.cover-cream{
   background:
     repeating-linear-gradient(0deg,  rgba(255,255,255,.05) 0 1px, transparent 1px 3px),
     repeating-linear-gradient(90deg, rgba(0,0,0,.028) 0 1px, transparent 1px 3px),
-    #E2D3B8;
-  border-color:#C3AE8B;
+    var(--cover-cream);
+  border-color:var(--cover-cream-edge);
 }
-.op-cover.cover-cream .op-spine{background:#C3AE8B}
-.op-cover.cover-cream .op-t{color:#7A6647}
-.op-cover.cover-cream .op-mon{color:#96805F}
+.op-cover.cover-cream .op-spine{background:var(--cover-cream-edge)}
+.op-cover.cover-cream .op-t{color:var(--cover-cream-text)}
+.op-cover.cover-cream .op-mon{color:var(--cover-cream-sub)}
 /* 织带：跟布同族的哑光细带，只有藕粉那版有 */
 .op-cover.cover-rose::after{
   content:""; position:absolute; top:-2px; bottom:-2px; left:81%; width:6px;
-  background:#A87D7B; opacity:.85;
+  background:var(--cover-rose-band); opacity:.85;
 }
 
 /* ---- 合上本子（8-26 用户加）：托盘顶栏先退场，封面再转回来盖上 ---- */
@@ -1277,7 +1339,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 /* ---- 桌上还没贴的贴纸：自定义贴纸的入口（现在是装饰，将来可拖到封面上）---- */
 .loose-sticker{
   position:absolute; line-height:0; padding:4px; border-radius:5px;
-  background:#FDFBF6; box-shadow:0 1px 2px rgba(63,53,48,.16);
+  background:var(--sticker); box-shadow:0 1px 2px rgba(63,53,48,.16);
   opacity:.92;
 }
 
@@ -1287,8 +1349,8 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   width:24px; height:30px; border-radius:3px; cursor:pointer; padding:0;
   border:1px solid rgba(63,53,48,.18);
 }
-.cover-pick .cv.rose{background:#D6AEAD}
-.cover-pick .cv.cream{background:#E2D3B8}
+.cover-pick .cv.rose{background:var(--cover-rose)}
+.cover-pick .cv.cream{background:var(--cover-cream)}
 .cover-pick .cv.on{box-shadow:0 0 0 2px rgba(63,53,48,.42)}
 
 /* ---- 贴纸：模切和手裁两种混着（8-26 用户拍板）----
@@ -1302,15 +1364,15 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 /* 模切：八个方向各描一次白边，够厚时相邻笔画的白边连成一片剪影 */
 .op-sticker.die svg,.loose-sticker.die svg{
   filter:
-    drop-shadow(2.4px 0 0 #FDFBF6) drop-shadow(-2.4px 0 0 #FDFBF6)
-    drop-shadow(0 2.4px 0 #FDFBF6) drop-shadow(0 -2.4px 0 #FDFBF6)
-    drop-shadow(1.7px 1.7px 0 #FDFBF6) drop-shadow(-1.7px -1.7px 0 #FDFBF6)
-    drop-shadow(1.7px -1.7px 0 #FDFBF6) drop-shadow(-1.7px 1.7px 0 #FDFBF6)
+    drop-shadow(2.4px 0 0 var(--sticker)) drop-shadow(-2.4px 0 0 var(--sticker))
+    drop-shadow(0 2.4px 0 var(--sticker)) drop-shadow(0 -2.4px 0 var(--sticker))
+    drop-shadow(1.7px 1.7px 0 var(--sticker)) drop-shadow(-1.7px -1.7px 0 var(--sticker))
+    drop-shadow(1.7px -1.7px 0 var(--sticker)) drop-shadow(-1.7px 1.7px 0 var(--sticker))
     drop-shadow(0 1.5px 1.5px rgba(63,53,48,.32));
 }
 /* 手裁：不规则四边形，两个版型交替，别看出是同一个模子 */
 .op-sticker.cut,.loose-sticker.cut{
-  background:#FDFBF6; padding:6px; box-shadow:0 1.5px 2px rgba(63,53,48,.2);
+  background:var(--sticker); padding:6px; box-shadow:0 1.5px 2px rgba(63,53,48,.2);
   clip-path:polygon(3% 6%, 46% 1%, 92% 5%, 99% 44%, 95% 93%, 52% 99%, 7% 95%, 1% 48%);
 }
 .op-sticker.cut:nth-child(3n),.loose-sticker.cut:nth-child(3n){
@@ -1336,10 +1398,10 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   writing-mode:vertical-rl; font-family:var(--f-title); font-size:10px;
   color:rgba(63,53,48,.62); letter-spacing:.04em;
 }
-.shelf .bk.s-spring{background:#B7CDA6}
-.shelf .bk.s-summer{background:#9DC6C4}
-.shelf .bk.s-autumn{background:#D8AE7E}
-.shelf .bk.s-winter{background:#B3B6C9}
+.shelf .bk.s-spring{background:var(--season-spring)}
+.shelf .bk.s-summer{background:var(--season-summer)}
+.shelf .bk.s-autumn{background:var(--season-autumn)}
+.shelf .bk.s-winter{background:var(--season-winter)}
 .shelf .bk.future{background:none; border:1px dashed rgba(63,53,48,.2); box-shadow:none}
 .shelf .bk.future .bm{color:rgba(63,53,48,.28)}
 .shelf .bk.sel{outline:1.5px solid rgba(63,53,48,.5); outline-offset:1px}
@@ -1357,15 +1419,15 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   box-shadow:inset 0 1px 2px rgba(63,53,48,.07), inset 0 -1px 0 rgba(255,255,255,.5);
 }
 .dk-cell .face svg{width:40px; height:40px}
-.dk-cell .nm{font-size:10px; color:#8A7F70; margin-top:3px}
-.dk-cell .ct{font-size:9px; color:#A79E92}
+.dk-cell .nm{font-size:10px; color:var(--linen-text); margin-top:3px}
+.dk-cell .ct{font-size:9px; color:var(--sub-soft)}
 /* 空槽：只留一个很淡的刻痕，不写「？？？」也不写「还没盖过」——
    26 格重复同一句话，是这一页最吵的东西。空着本身就说明了一切。 */
 .dk-cell.raw{background:rgba(120,105,85,.035)}
 .dk-cell.raw .face{opacity:.22}
 .dk-cell.raw .nm,.dk-cell.raw .ct{display:none}
 /* 隐藏章的谜面要留着——那是线索，不是噪音 */
-.dk-cell.raw .hid-hint{display:block; font-size:9.5px; color:#A79E92; margin-top:3px; line-height:1.4}
+.dk-cell.raw .hid-hint{display:block; font-size:9.5px; color:var(--sub-soft); margin-top:3px; line-height:1.4}
 
 /* ---- 书架：把旧的木片样式压掉（旧的 .bk.sel 有一圈黑环，跟新的 outline 叠成两圈）---- */
 .shelf .bk{border:1px solid rgba(63,53,48,.10); color:inherit; padding-bottom:0}
@@ -1388,11 +1450,11 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   box-shadow:inset 0 2px 3px rgba(63,53,48,.13), inset 0 -1px 0 rgba(255,255,255,.6);
 }
 .ink-well .ink{border-radius:50%; box-shadow:inset 0 1px 2px rgba(37,36,33,.18)}
-.ink-well .nm{font-size:10px; color:#8A7F70; letter-spacing:.02em}
-.ink-well.base .w{background:#FBF7EE; box-shadow:inset 0 0 0 1px rgba(120,105,85,.25)}
-.ink-well.base .bs{font-size:12px; color:#8A7F70}
+.ink-well .nm{font-size:10px; color:var(--linen-text); letter-spacing:.02em}
+.ink-well.base .w{background:var(--tin-base-flat); box-shadow:inset 0 0 0 1px rgba(120,105,85,.25)}
+.ink-well.base .bs{font-size:12px; color:var(--linen-text)}
 .ink-well.dry .w{background:rgba(120,105,85,.05)}
-.ink-well.dry .nm{color:#B5ADA1}
+.ink-well.dry .nm{color:var(--sub-dry)}
 /* 能补的那一槽：点一下补满，边上一个小红点提示 */
 .ink-well.can{cursor:pointer; position:relative}
 .ink-well.can .w{box-shadow:inset 0 2px 3px rgba(63,53,48,.13), 0 0 0 1.5px rgba(201,75,60,.45)}
@@ -1410,7 +1472,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .drawer-cats button{
   flex:none; border:1px solid rgba(120,105,85,.2); background:rgba(255,253,248,.6);
   border-radius:var(--r-pill,999px); cursor:pointer;
-  font-family:var(--f-title); font-size:11.5px; color:#8A7F70; padding:4px 11px;
+  font-family:var(--f-title); font-size:11.5px; color:var(--linen-text); padding:4px 11px;
 }
 .drawer-cats button.sel{background:rgba(120,105,85,.16); border-color:rgba(120,105,85,.4); color:var(--ink)}
 /* 丙：6 列，跟托盘展开态一个密度 */
@@ -1430,8 +1492,8 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   border:none; background:none; padding:12px 14px;
   font-family:var(--f-title); font-size:13px; color:var(--ink);
 }
-.fold-n{margin-left:auto; font-size:11.5px; color:#8A7F70; font-family:var(--f-ui)}
-.fold-a{color:#B5ADA1; transition:transform 180ms var(--ease-out)}
+.fold-n{margin-left:auto; font-size:11.5px; color:var(--linen-text); font-family:var(--f-ui)}
+.fold-a{color:var(--sub-dry); transition:transform 180ms var(--ease-out)}
 .fold.open .fold-a{transform:rotate(90deg)}
 .fold-b{padding:0 10px 12px}
 
@@ -1471,10 +1533,10 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   background:rgba(120,105,85,.05);
 }
 .day-cell .face{line-height:0}
-.day-cell .tm{font-size:8px; color:#A79E92; letter-spacing:.02em}
+.day-cell .tm{font-size:8px; color:var(--sub-soft); letter-spacing:.02em}
 .day-cell .del{
   position:absolute; right:-2px; top:-4px; width:16px; height:16px; line-height:14px;
-  border:none; background:none; color:#C6BEB2; font-size:14px; cursor:pointer; padding:0;
+  border:none; background:none; color:var(--sub-faint); font-size:14px; cursor:pointer; padding:0;
 }
 .day-cell.arm{background:rgba(201,75,60,.12); box-shadow:inset 0 0 0 1px rgba(201,75,60,.45)}
 .day-cell.arm .del{color:var(--accent)}
@@ -1520,4 +1582,48 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   cursor:grabbing; z-index:99; pointer-events:none;
   transform:scale(1.12) rotate(-4deg)!important;
   filter:drop-shadow(0 4px 6px rgba(63,53,48,.3));
+}
+
+/* ---- 纸的右下角：一块真正"可捏的角"（8-27 用户实测：手机上右下角翻不动）----
+   🔴 病根跟 8-25「章格子拖不动」同一类：.book 用 touch-action:pan-y 时，
+      起手只要带一点纵向偏移，浏览器就可能判成"要滚页面"并 pointercancel，手势整个没了。
+      电脑用鼠标没有原生滚动手势，所以只有手机复现。
+   ✅ 只把这一小块交给我们独占（touch-action:none），纸的其他地方保持能滚页面。 */
+.corner-grip{
+  position:absolute; right:0; bottom:0; width:64px; height:64px; z-index:3;
+  touch-action:none; cursor:grab;
+}
+/* 一道很淡的折角暗示：告诉你这儿能捏，但别抢纸的戏 */
+.corner-grip::after{
+  content:""; position:absolute; right:0; bottom:0; width:30px; height:30px;
+  background:linear-gradient(315deg, rgba(63,53,48,.10) 0 42%, transparent 43%);
+  border-bottom-right-radius:var(--r3);
+}
+
+/* ---- 短屏保护：托盘长高之后，纸必须让出位置（8-27）----
+   🔴 实测 375×667（iPhone SE/8）：纸按 100/130 撑满宽度就是 429 高，
+      加上页头 + 190 的托盘 + Tab 栏直接溢出，#page-today 是 overflow:hidden，
+      **溢出的部分不是能滚，是被切掉**——章那一行和材质那行整个看不见。
+   限的是 .book 的宽度而不是 .canvas 的高度：纸边、卷角那几层都是相对 .book 定位的，
+   只缩 canvas 会让它们对不上。0.769 = 100/130。
+   🔴 别用 margin:auto 居中：.book 是列向 flex 的子项，横向 auto 外边距会把 stretch 关掉，
+      而 .book 的内容全是绝对定位的层 + width:100% 的纸 → 宽度算成 2px，整张纸消失
+      （实测四个尺寸全 2×2）。要显式 width:100% + align-self:center。 */
+#page-today .book{
+  width:100%; align-self:center;
+  max-width:calc((100vh - 320px) * 0.769);
+}
+@supports (height:100dvh){
+  #page-today .book{max-width:calc((100dvh - 320px) * 0.769)}
+}
+
+/* 展开态右上角那句「按住一枚章能拎起来」（8-27 新手势的可发现性）
+   ⚠️ 别写进 .tray-foot：展开态那一行要往下滚才看得见（实测截图），教不到人。
+      这儿跟「收起」同一排，是展开之后第一眼就在的位置。 */
+/* 🔴 靠 CSS 藏，别靠"展开时才渲染"：setDeckOpen() 只切类名不重渲染（要留住高度过渡），
+      写成条件渲染的话，点「更多」展开出来的托盘里根本没有这个节点（探针实测 FAIL）。 */
+.deck:not(.open) .deck-tip{display:none}
+.deck-tip{
+  position:absolute; right:10px; top:7px; z-index:2;
+  font-size:10.5px; letter-spacing:.02em; color:var(--linen-text); opacity:.72; pointer-events:none;
 }

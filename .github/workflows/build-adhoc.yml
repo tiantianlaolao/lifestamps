@@ -1,0 +1,269 @@
+name: Build iOS Ad-Hoc & Deploy OTA（测试包，装到已注册设备）
+
+# 手动触发，或者打 test-vX.Y.Z 的 tag
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'test-v*'
+
+jobs:
+  build:
+    runs-on: macos-15
+    # ⚠️ `secrets` 这个上下文在 step 的 if: 里用不了（会 422 说 Unrecognized named-value）。
+    #    在 job 级 env 里先把"配没配"求值成 true/false 字符串，if: 再读 env——
+    #    这样既能条件跳过，也不会把证书本身塞进 env。
+    env:
+      HAS_CERT: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 完整历史：build number = git rev-list --count HEAD，浅克隆会永远是 1
+          fetch-depth: 0
+
+      - name: Select latest Xcode
+        run: |
+          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          echo "Using Xcode: $XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH"
+          xcodebuild -version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # ⚠️ 用 npm install 不是 npm ci：本仓刻意不提交 package-lock.json
+      #    （本地零安装的代价，见 .gitignore 里那段说明）
+      - name: Install Capacitor
+        run: npm install
+
+      # 原生工程每次现生成：仓里没有 ios/
+      - name: Generate iOS project
+        run: |
+          npx cap add ios
+          npx cap sync ios
+
+      # 🔴 dev/ 是十来个校验探针页，跟着 webDir 一起被拷进 App 了。
+      #    不删的话它们会随包上架（还会被审核看见）。
+      - name: Strip dev harnesses from the bundle
+        run: |
+          rm -rf ios/App/App/public/dev
+          test ! -d ios/App/App/public/dev
+          echo "bundle 内容："; ls ios/App/App/public
+
+      # 图标/Info.plist 的改动都放在 ios-assets/，在这儿注入——
+      # 直接改 ios/ 没用，下一次 cap add 就冲掉了
+      - name: Inject app icon & plist tweaks
+        run: |
+          if [ -d ios-assets/AppIcon.appiconset ]; then
+            rm -rf ios/App/App/Assets.xcassets/AppIcon.appiconset
+            cp -R ios-assets/AppIcon.appiconset ios/App/App/Assets.xcassets/
+            echo "已注入图标"
+          else
+            echo "::warning::ios-assets/AppIcon.appiconset 不存在，用的是 Capacitor 默认占位图标（TestFlight 会校验不过）"
+          fi
+          PLIST=ios/App/App/Info.plist
+          # 竖屏锁定：这个 App 没有横屏版式
+          /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations" $PLIST 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations array" $PLIST
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" $PLIST
+          # 中文显示名
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 生活图鉴" $PLIST 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 生活图鉴" $PLIST
+          # 出口合规：这个 App 不含任何自研加密（无账号、无网络、全本地）。
+          # 不声明的话包传上去会停在「缺少合规信息」，每次都要去网页上手动答一遍问卷。
+          /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" $PLIST 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" $PLIST
+
+      # 钥匙串必须先有：不管证书是"我们导进去"还是"Xcode 自己建"，都得有地方放。
+      - name: Prepare keychain
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 12)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH login.keychain
+          security default-keychain -s $KEYCHAIN_PATH
+          echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> $GITHUB_ENV
+
+      # ⚠️ 这一步是**可选**的：没配这两张证书的 secret 就跳过，
+      #    交给下面 archive 那步的 -allowProvisioningUpdates + 管理员权限的 ASC 密钥去自动创建。
+      #    先试自动创建这条路，成了就永远不需要 Mac 导 .p12（导 .p12 只有 Mac 能做）。
+      - name: Install certificates (可选)
+        if: env.HAS_CERT == 'true'
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_DEV_CERTIFICATE_BASE64: ${{ secrets.APPLE_DEV_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_DEV_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEV_CERTIFICATE_PASSWORD }}
+        run: |
+          DIST_CERT=$RUNNER_TEMP/dist.p12
+          DEV_CERT=$RUNNER_TEMP/dev.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          echo -n "$APPLE_CERTIFICATE_BASE64" | base64 --decode -o $DIST_CERT
+          security import $DIST_CERT -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          if [ -n "$APPLE_DEV_CERTIFICATE_BASE64" ]; then
+            echo -n "$APPLE_DEV_CERTIFICATE_BASE64" | base64 --decode -o $DEV_CERT
+            security import $DEV_CERT -P "$APPLE_DEV_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          fi
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+      - name: Setup App Store Connect API key
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
+        run: |
+          mkdir -p ~/private_keys
+          echo -n "$ASC_API_KEY_BASE64" | base64 --decode -o ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+
+      - name: Set version & build number
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          BUILD_NUM=$(git rev-list --count HEAD)
+          echo "版本 $VERSION / build $BUILD_NUM"
+          cd ios/App
+          agvtool new-marketing-version "$VERSION"
+          agvtool new-version -all "$BUILD_NUM"
+
+      # 出错时最想知道的两件事：工程长什么样、scheme 叫什么。先打出来，下次失败不用猜。
+      - name: Show Xcode project layout
+        run: |
+          ls -la ios/App
+          xcodebuild -list -project ios/App/App.xcodeproj
+
+      - name: Build archive
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          # 🔴 Capacitor 8 起插件走 Swift Package Manager，不再用 CocoaPods，
+          #    所以**没有 .xcworkspace**，只有 App.xcodeproj。照搬 agentos-ios 的
+          #    -workspace 写法在这儿必然是 "does not exist"（实测踩到）。两种都兜住。
+          if [ -d ios/App/App.xcworkspace ]; then
+            TARGET=(-workspace ios/App/App.xcworkspace)
+          else
+            TARGET=(-project ios/App/App.xcodeproj)
+          fi
+          echo "构建目标: ${TARGET[@]}"
+          xcodebuild archive \
+            "${TARGET[@]}" \
+            -scheme App \
+            -archivePath $RUNNER_TEMP/LifeStampsTest.xcarchive \
+            -sdk iphoneos \
+            -configuration Release \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID $ASC_KEY_ID \
+            -authenticationKeyIssuerID $ASC_ISSUER_ID \
+            DEVELOPMENT_TEAM=$APPLE_TEAM_ID \
+            CODE_SIGN_STYLE=Automatic \
+            COMPILER_INDEX_STORE_ENABLE=NO
+
+      - name: Export IPA (ad-hoc)
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          cat > $RUNNER_TEMP/ExportOptions.plist << PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>ad-hoc</string>
+            <key>teamID</key>
+            <string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>uploadSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/LifeStampsTest.xcarchive \
+            -exportOptionsPlist $RUNNER_TEMP/ExportOptions.plist \
+            -exportPath $RUNNER_TEMP/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID $ASC_KEY_ID \
+            -authenticationKeyIssuerID $ASC_ISSUER_ID
+
+      # ---- OTA：生成安装清单和安装页，放到已有的 HTTPS 站点下 ----
+      # 🔴 装在 /var/www/lifestamps/_t/ ——那儿已经有证书、**不用动 nginx conf**。
+      #    网页部署脚本那边已经加了 --exclude '_t/'，否则发一次网页就把这里冲没了。
+      - name: Generate manifest.plist + install.html
+        run: |
+          BASE=https://www.tybbtech.com/lifestamps/_t
+          IPA=$(ls $RUNNER_TEMP/export/*.ipa | head -1)
+          cp "$IPA" $RUNNER_TEMP/export/LifeStamps.ipa
+          VERSION=$(node -p "require('./package.json').version")
+          BUILD_NUM=$(git rev-list --count HEAD)
+          cat > $RUNNER_TEMP/export/manifest.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict><key>items</key><array><dict>
+            <key>assets</key><array><dict>
+              <key>kind</key><string>software-package</string>
+              <key>url</key><string>${BASE}/LifeStamps.ipa</string>
+            </dict></array>
+            <key>metadata</key><dict>
+              <key>bundle-identifier</key><string>com.tybbtech.lifestamps</string>
+              <key>bundle-version</key><string>${BUILD_NUM}</string>
+              <key>kind</key><string>software</string>
+              <key>title</key><string>生活图鉴</string>
+            </dict>
+          </dict></array></dict></plist>
+          PLIST
+          cat > $RUNNER_TEMP/export/install.html <<HTML
+          <!doctype html><meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>生活图鉴 · 测试包</title>
+          <style>body{font:16px/1.8 -apple-system,system-ui;margin:0;padding:56px 24px;
+          background:#EAE5DA;color:#252421;text-align:center}
+          h1{font-size:22px;margin:0 0 6px}p{color:#8C8880;font-size:14px;margin:4px 0}
+          a.install{display:inline-block;margin-top:28px;padding:14px 34px;background:#C94B3C;
+          color:#fff;text-decoration:none;border-radius:10px;font-size:17px}
+          .n{margin-top:34px;font-size:12px;color:#A79E92;line-height:1.9}</style>
+          <h1>生活图鉴</h1>
+          <p>测试包 v${VERSION} (build ${BUILD_NUM})</p>
+          <p><a class="install" href="itms-services://?action=download-manifest&amp;url=${BASE}/manifest.plist">安装</a></p>
+          <div class="n">用 iPhone 的 Safari 打开这一页才能装<br>
+          只能装进已注册的设备<br>装完若提示「未受信任」：设置 → 通用 → VPN 与设备管理 → 信任</div>
+          HTML
+          ls -l $RUNNER_TEMP/export
+
+      - name: Deploy OTA
+        env:
+          OTA_SSH_HOST: ${{ secrets.OTA_SSH_HOST }}
+          OTA_SSH_PORT: ${{ secrets.OTA_SSH_PORT }}
+          OTA_SSH_USER: ${{ secrets.OTA_SSH_USER }}
+          OTA_SSH_PASSWORD: ${{ secrets.OTA_SSH_PASSWORD }}
+        run: |
+          python3 -m pip install --quiet paramiko
+          python3 ci/ota_deploy.py \
+            $RUNNER_TEMP/export/LifeStamps.ipa \
+            $RUNNER_TEMP/export/manifest.plist \
+            $RUNNER_TEMP/export/install.html
+
+      - name: Print install URL
+        run: |
+          echo '::notice title=安装地址::用 iPhone 的 Safari 打开 https://www.tybbtech.com/lifestamps/_t/install.html'
+
+      - name: Keep the IPA as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LifeStamps-adhoc-ipa
+          path: ${{ runner.temp }}/export/*.ipa
+          if-no-files-found: error
+
+      - name: Clean up
+        if: always()
+        run: |
+          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db 2>/dev/null || true
+          rm -rf ~/private_keys

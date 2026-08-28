@@ -10,7 +10,7 @@ import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.
 import { openShare, openShareDay } from './share.js';
 import { attachCurl } from './curl.js';
 import { initDiag } from './diag.js';
-import { setLang, getLang, detectLang, weekName, LANGS } from './i18n.js';
+import { setLang, getLang, detectLang, weekName, monthDay, LANGS } from './i18n.js';
 
 const $ = s => document.querySelector(s);
 // 星期改走 Intl（i18n.js 的 weekName）。中文输出跟原来的两个数组逐字相同：
@@ -48,6 +48,9 @@ const ICO = {
     <path d="M14.6 8.2c.9-.1 1.8-.1 2.6 0"/></svg>`,
 };
 
+// 材质名：三种橡皮章材质。⚠️ 做成函数不是常量 —— 常量会在模块加载时就把当时的语言定死。
+const MAT_NAME = () => ({ r: COPY.matRubber, w: COPY.matWood, p: COPY.matPhoto });
+
 // 纸上印记的基准尺寸。8-27 用户从 72/62/56/50 四档里选的 56（配 THIN 0.85）——
 // 72 那版章会挤到日付印上，50 又小得"像图标不像印记"。dev 参数 ?chip= 可临时调。
 let CHIP = 56;
@@ -73,6 +76,7 @@ let drawerSeg = 'stamps';         // 抽屉页分段：我盖过的 / 印泥盒�
 let drawerCat = 'all';            // 抽屉里的分类过滤（含「字」）
 let drawerMineOpen = false;       // 「我盖过的」展开了吗（默认只露最常盖的 6 枚）
 let drawerHidOpen = false;        // 「隐藏章」展开了吗
+let drawerLockOpen = false;       // 「还没遇到的」展开了吗
 let pressSlow = 1;               // dev ?slowpress=1 → 按压动画放慢 4 倍便于观察
 let slowOpen = 1;                // dev ?slowopen=N → 开场整场慢放 N 倍
 let noOpening = false;           // dev ?noopen=1 → 一律不出封面，方便截图
@@ -102,10 +106,10 @@ const BAND_ICON = {
   night: `<svg viewBox="0 0 24 24" fill="none" stroke="#7C86A8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
     <path d="M17.5 14.5A6.5 6.5 0 0 1 9.5 6.6a6.6 6.6 0 1 0 8 7.9z"/><path d="M17.5 5.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z"/></svg>`,
 };
-const BAND_NAME = { dawn: '清晨', day: '白天', dusk: '傍晚', night: '夜里' };
+const BAND_NAME = () => ({ dawn: COPY.bandDawn, day: COPY.bandDay, dusk: COPY.bandDusk, night: COPY.bandNight });
 function bandIconHTML() {
   const b = bandForced || bandOf(new Date());
-  return `<span class="band-icon" title="${BAND_NAME[b]}" aria-label="${BAND_NAME[b]}">${BAND_ICON[b]}</span>`;
+  return `<span class="band-icon" title="${BAND_NAME()[b]}" aria-label="${BAND_NAME()[b]}">${BAND_ICON[b]}</span>`;
 }
 
 function bandOf(d) {
@@ -169,6 +173,11 @@ function init() {
   if (params.get('sel')) selStamp = params.get('sel');
   if (params.get('mem') === 'week') memMode = 'week';
   if (params.get('seg')) drawerSeg = params.get('seg');   // dev：直接开到抽屉的某一段
+  // dev：直接把抽屉里某一折展开，方便截图（mine / lock / hid）
+  if (params.get('fold')) {
+    const f = params.get('fold');
+    drawerMineOpen = f === 'mine'; drawerLockOpen = f === 'lock'; drawerHidOpen = f === 'hid';
+  }
   const devPage = params.get('page');                    // dev：直接开到本子里的某一天
   if (params.get('slowpress') === '1') pressSlow = 4;    // dev：按压动画慢放
   if (params.get('pressfreeze') === '1') pressFreeze = true; // dev：按压定格
@@ -311,9 +320,9 @@ function renderToday() {
     <div class="lamp dusk"></div><div class="lamp night"></div>
     <div class="t-bar">
       ${bandIconHTML()}
-      <span class="t-bar-mid">${isToday ? '' : `<button class="pg-today-btn" id="pg-today">回到今天</button>`}</span>
-      ${recs.length ? `<button class="t-ico" id="share-day" aria-label="${isToday ? '分享今天' : '分享这天'}"
-        title="${isToday ? '分享今天' : '分享这天'}">${ICO.share}</button>` : ''}
+      <span class="t-bar-mid">${isToday ? '' : `<button class="pg-today-btn" id="pg-today">${COPY.backToToday}</button>`}</span>
+      ${recs.length ? `<button class="t-ico" id="share-day" aria-label="${isToday ? COPY.shareToday : COPY.shareThatDay}"
+        title="${isToday ? COPY.shareToday : COPY.shareThatDay}">${ICO.share}</button>` : ''}
       <button class="t-ico" id="close-book" aria-label="${COPY.closeBook}" title="${COPY.closeBook}">${ICO.close}</button>
     </div>
     <div class="book">
@@ -323,7 +332,7 @@ function renderToday() {
           <span class="d">${pd.getMonth() + 1} · ${pd.getDate()}</span>
           <span class="w">${weekName(pd)}</span>
         </div>
-        ${recs.length ? `<div class="paper-count">${isToday ? '今天' : '这天'} ${recs.length} 枚</div>` : ''}
+        ${recs.length ? `<div class="paper-count">${COPY.countOnPaper.replace('{w}', isToday ? COPY.todayWord : COPY.thatDayWord).replace('{n}', recs.length)}</div>` : ''}
         ${weatherHTML(pageDk, !isFuture)}
         ${riddleNoteHTML(isToday ? secret : null)}
         ${chips}
@@ -406,7 +415,7 @@ function playOpening(force = false, closing = false) {
       <span class="op-spine"></span>
       <span class="op-label">
         <span class="op-tape l"></span><span class="op-tape r"></span>
-        <span class="op-t">戳了么</span><span class="op-mon">${mon}月</span>
+        <span class="op-t">戳了么</span><span class="op-mon">${COPY.coverMonth.replace('{m}', mon)}</span>
       </span>
       ${coverStickers()}
     </div>
@@ -575,7 +584,7 @@ function paperHTML(dk, extraCls = '') {
       <span class="d">${pd.getMonth() + 1} · ${pd.getDate()}</span>
       <span class="w">${weekName(pd)}</span>
     </div>
-    ${recs.length ? `<div class="paper-count">这天 ${recs.length} 枚</div>` : ''}
+    ${recs.length ? `<div class="paper-count">${COPY.countOnPaper.replace('{w}', COPY.thatDayWord).replace('{n}', recs.length)}</div>` : ''}
     ${weatherHTML(dk, false)}
     ${chipsHTML(recs)}
     ${recs.length ? '' : `<div class="canvas-hint">${
@@ -656,7 +665,7 @@ function looseStickers(r, pr) {
 const WX_KINDS = ['sun', 'cloud', 'rain', 'snow', 'night'];
 function weatherHTML(dk, pickable) {
   const w = store.weatherOf(dk);
-  if (w) return `<div class="wx set" data-dk="${dk}" title="换一个">${weatherSVG(w, 26, '#4A463E')}</div>`;
+  if (w) return `<div class="wx set" data-dk="${dk}" title="${COPY.weatherChange}">${weatherSVG(w, 26, '#4A463E')}</div>`;
   if (!pickable) return '';
   return `<div class="wx pick">
     <span class="wx-ask">${COPY.weatherAsk}</span>
@@ -698,7 +707,7 @@ function yesterdayEdge(dk) {
   const y = shiftDk(dk, -1);
   // 底下永远是真的那一页（哪怕是空白的）——本子的厚度由 .book::after 常驻负责，
   // 不用再靠这里假装（原来空白时换成一叠假纸边，一翻页就穿帮）。
-  return `<div class="pageedge" id="pageedge" data-dk="${y}" aria-label="翻回昨天">${paperHTML(y)}</div>`;
+  return `<div class="pageedge" id="pageedge" data-dk="${y}" aria-label="${COPY.flipBackYesterday}">${paperHTML(y)}</div>`;
 }
 
 // ---- 木托盘（章抽屉）----
@@ -713,7 +722,7 @@ function renderDeck() {
   // 分类
   // 字形章单独一类，不混进「全部」——49 枚字挤进生活章里会把它们淹掉。
   // ⚠️ 放在「全部」后面而不是队尾：分类行是横滚的，排最后要滑一下才看得见（实测被挤出屏幕）。
-  const cats = `<button data-cat="all" class="${deckCat === 'all' ? 'sel' : ''}">全部</button>`
+  const cats = `<button data-cat="all" class="${deckCat === 'all' ? 'sel' : ''}">${COPY.catAll}</button>`
     + `<button data-cat="glyph" class="glyph-chip ${deckCat === 'glyph' ? 'sel' : ''}">${COPY.catGlyph}</button>`
     + CATEGORIES.map(c => `<button data-cat="${c.id}" class="${deckCat === c.id ? 'sel' : ''}">${c.name}</button>`).join('');
 
@@ -752,11 +761,11 @@ function renderDeck() {
 
   // 材质 + 状态一句话（没墨了 / 还剩多少，都用话说，不用数字和进度条）
   const mats = lockMat
-    ? `<span class="mat-chip on locked">${{ r: '橡皮', w: '木质', p: '光敏' }[lockMat]}</span>`
-    : [['r', '橡皮'], ['w', '木质'], ['p', '光敏']].map(([k, n]) =>
+    ? `<span class="mat-chip on locked">${MAT_NAME()[lockMat]}</span>`
+    : Object.entries(MAT_NAME()).map(([k, n]) =>
       `<button class="mat-chip ${selMat === k ? 'on' : ''}" data-mat="${k}">${n}</button>`).join('');
   const note = isPhoto ? COPY.matPhotoNote
-    : !selStamp ? '先从托盘里拿一枚章'
+    : !selStamp ? COPY.pickStampFirst
       : inkLeft >= 3 ? COPY.inkFull
         : inkLeft === 2 ? COPY.inkMid
           : inkLeft === 1 ? COPY.inkLow
@@ -770,12 +779,12 @@ function renderDeck() {
   const trialLeftNow = store.trialLeft(dateKey(Date.now()), TRIAL_DIPS);
 
   return `<div class="deck ${deckOpen ? 'open' : ''}" id="deck">
-    <button class="deck-grab" id="deck-grab" aria-label="${deckOpen ? '收起' : '展开'}"></button>
-    <span class="deck-tip">按住一枚章能拎起来</span>
+    <button class="deck-grab" id="deck-grab" aria-label="${deckOpen ? COPY.deckFold : COPY.deckUnfold}"></button>
+    <span class="deck-tip">${COPY.deckHoldTip}</span>
     <div class="deck-full">
       <div class="deck-status">
         <div class="deck-cats" id="deck-cats">${cats}</div>
-        <button class="tool-btn ${eraser ? 'on' : ''}" id="tool-eraser">擦</button>
+        <button class="tool-btn ${eraser ? 'on' : ''}" id="tool-eraser">${COPY.toolEraser}</button>
       </div>
     </div>
     <div class="deck-inks ${isPhoto ? 'locked' : ''}" id="deck-inks">${inks}</div>
@@ -830,7 +839,7 @@ function bindToday() {
     if (!selStamp) {
       const chip = e.target.closest('.chip');
       if (chip) return openNote(chip.dataset.rid);
-      toast('先在下面选一枚章。', 1200); return;
+      toast(COPY.pickBelow, 1200); return;
     }
     placeStamp(e.clientX, e.clientY, cv);
   });
@@ -1010,7 +1019,7 @@ function setDeckOpen(open) {
   const dk2 = $('#deck');
   if (!dk2) return;
   dk2.classList.toggle('open', open);
-  dk2.querySelector('#deck-grab')?.setAttribute('aria-label', open ? '收起' : '展开');
+  dk2.querySelector('#deck-grab')?.setAttribute('aria-label', open ? COPY.deckFold : COPY.deckUnfold);
   const more = dk2.querySelector('#deck-more');
   if (more) more.textContent = open ? COPY.deckLess : COPY.deckMore;   // 不重渲染，文字得手动换
 }
@@ -1389,23 +1398,23 @@ function openActions(rid) {
   const def = stampById[rec.stampId];
   $('#act-title').textContent = `${def.name} · ${fmtTime(rec.ts)}`;
   $('#act-list').innerHTML = `
-    <button data-a="again">再拿这枚章</button>
-    <button data-a="time">编辑时间</button>
-    <button data-a="del" class="danger">删除</button>
-    <button data-a="close" class="plain">取消</button>`;
+    <button data-a="again">${COPY.actAgain}</button>
+    <button data-a="time">${COPY.actTime}</button>
+    <button data-a="del" class="danger">${COPY.actDelete}</button>
+    <button data-a="close" class="plain">${COPY.actCancel}</button>`;
   $('#act-list').onclick = e => {
     const a = e.target.dataset?.a; if (!a) return;
     if (a === 'close') return closeSheets();
     if (a === 'again') {
       pickStamp(rec.stampId); selMat = rec.mat || 'r'; eraser = false;
-      closeSheets(); renderToday(); toast('拿好了，接着盖。', 1200);
+      closeSheets(); renderToday(); toast(COPY.tookItAgain, 1200);
     }
     if (a === 'time') {
       const d = new Date(rec.ts);
       const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       $('#act-list').innerHTML = `
-        <div class="act-time"><input type="time" id="t-in" value="${hm}"><button data-a="tsave">好</button></div>
-        <button data-a="close" class="plain">取消</button>`;
+        <div class="act-time"><input type="time" id="t-in" value="${hm}"><button data-a="tsave">${COPY.actSaveTime}</button></div>
+        <button data-a="close" class="plain">${COPY.actCancel}</button>`;
       $('#act-list').querySelector('[data-a="tsave"]').onclick = () => {
         const v = $('#t-in').value; if (!v) return;
         const [h, m] = v.split(':').map(Number);
@@ -1417,7 +1426,7 @@ function openActions(rid) {
     if (a === 'del') {
       const btn = e.target;
       if (btn.dataset.arm) { store.removeRecord(rid); closeSheets(); render(); }
-      else { btn.dataset.arm = '1'; btn.textContent = '真的不要了？'; }
+      else { btn.dataset.arm = '1'; btn.textContent = COPY.actConfirmDelete; }
     }
   };
   openSheet('sheet-actions');
@@ -1430,11 +1439,11 @@ function showHiddenQueue(list) {
   const [h, ...rest] = list; if (!h) return;
   const ov = $('#ov-hidden');
   ov.innerHTML = `
-    <div class="ov-spark">✦ 新发现</div>
+    <div class="ov-spark">${COPY.ovNewFind}</div>
     <div class="ov-badge">${stampSVG(h, { size: 168, rot: -2 })}</div>
     <div class="ov-name">${h.name}</div>
-    <div class="ov-sub">一枚新的生活印章</div>
-    <button class="ov-btn" id="hid-ok">收进抽屉</button>`;
+    <div class="ov-sub">${COPY.ovNewSub}</div>
+    <button class="ov-btn" id="hid-ok">${COPY.ovPutAway}</button>`;
   ov.classList.add('show');
   haptic();
   $('#hid-ok').onclick = () => {
@@ -1457,7 +1466,7 @@ function renderCollection() {
 
   $('#page-collection').innerHTML = `
     <div class="col-head">
-      <div class="col-title">抽屉</div>
+      <div class="col-title">${COPY.colDrawer}</div>
       <div class="seg" id="drawer-seg">${seg}</div>
     </div>
     ${drawerSeg === 'stamps' ? drawerStamps(used, cnt) : drawerInks()}`;
@@ -1475,7 +1484,9 @@ function renderCollection() {
     b2.addEventListener('click', () => { drawerCat = b2.dataset.dcat; renderCollection(); }));
   document.querySelectorAll('#page-collection [data-fold]').forEach(b2 =>
     b2.addEventListener('click', () => {
-      if (b2.dataset.fold === 'mine') drawerMineOpen = !drawerMineOpen;
+      const f = b2.dataset.fold;
+      if (f === 'mine') drawerMineOpen = !drawerMineOpen;
+      else if (f === 'lock') drawerLockOpen = !drawerLockOpen;
       else drawerHidOpen = !drawerHidOpen;
       renderCollection();
     }));
@@ -1484,13 +1495,13 @@ function renderCollection() {
     el.addEventListener('click', () => {
       const sid = el.dataset.sid;
       const first = new Date(store.discovered[sid]);
-      toast(`首次发现 ${first.getMonth() + 1}月${first.getDate()}日 · 一共 ${cnt[sid] || 0} 次`);
+      toast(COPY.firstFoundAt.replace('{m}', first.getMonth() + 1).replace('{d}', first.getDate()).replace('{n}', cnt[sid] || 0));
     }));
   document.querySelectorAll('#page-collection .dk-cell[data-hid]').forEach(el =>
     el.addEventListener('click', () => {
       const h = hiddenById[el.dataset.hid];
       const d = new Date(store.hidden[h.id]);
-      toast(`${d.getMonth() + 1}月${d.getDate()}日 解锁 · ${h.name}`);
+      toast(COPY.unlockedAt.replace('{m}', d.getMonth() + 1).replace('{d}', d.getDate()).replace('{name}', h.name));
     }));
 }
 
@@ -1518,10 +1529,14 @@ function drawerStamps(used, cnt) {
   const inCat = s2 => drawerCat === 'all' || s2.cat === drawerCat;
   const mine = STAMPS.filter(s2 => store.discovered[s2.id] && inCat(s2));
   const hidGot = HIDDEN.filter(h => store.hidden[h.id]).length;
+  // 还没解锁的（真的不在托盘里的那些）。⚠️ 跟"没盖过"不是一回事：
+  // 解锁了但还没盖过的章在托盘里摆着，属于「我盖过的」那折的空缺，不属于这儿。
+  const locked = STAMPS.filter(s2 => !isUnlocked(s2.id) && inCat(s2));
+  const unlockedCnt = STAMPS.filter(s2 => isUnlocked(s2.id) && inCat(s2)).length;
 
   // 「字」跟托盘的分类栏保持一致——之前只有托盘有，抽屉里它只能待在最底下那一折，
   // 用户直接问了"为什么不在上方"（8-27）。两边不一致就是不一致，没有别的理由。
-  const cats = `<button data-dcat="all" class="${drawerCat === 'all' ? 'sel' : ''}">全部</button>`
+  const cats = `<button data-dcat="all" class="${drawerCat === 'all' ? 'sel' : ''}">${COPY.catAll}</button>`
     + `<button data-dcat="glyph" class="glyph-chip ${drawerCat === 'glyph' ? 'sel' : ''}">${COPY.catGlyph}</button>`
     + CATEGORIES.map(c => `<button data-dcat="${c.id}" class="${drawerCat === c.id ? 'sel' : ''}">${c.name}</button>`).join('');
 
@@ -1577,13 +1592,19 @@ function drawerStamps(used, cnt) {
     <div class="drawer-cats" id="drawer-cats">${cats}</div>
     <div class="box box-paper">
       <div class="box-t"><span class="bx-n">${COPY.drawerMine}</span><span class="bx-s">${mine.length} 枚</span></div>
-      ${mine.length ? mineInner : `<div class="fold-empty">这一类还没有盖过的章。</div>`}
+      ${mine.length ? mineInner : `<div class="fold-empty">${COPY.foldEmpty}</div>`}
       ${mine.length > TOP_N && drawerMineOpen
         ? `<button class="mine-more" data-fold="mine">${COPY.drawerMineLess}</button>` : ''}
     </div>
-    ${/* ⛔ 「还没遇到的」整段已删（8-27 用户）：那些章全都摆在托盘里看得见也能用，
-         叫"还没遇到"是假的。真·未发现只有下面的隐藏章——收集感在那儿，不在这儿。 */''}
-    ${fold('hid', '隐藏章', hidGot + ' / ' + HIDDEN.length, drawerHidOpen,
+    ${/* 「还没遇到的」8-27 被删过一次，理由是"那些章全都摆在托盘里看得见也能用，
+         叫还没遇到是假的"。8-28 初始 12 枚 + 30 枚靠用解锁之后，它们**真的不在托盘里**了，
+         这句话重新变成真话，所以加回来。
+         ⚠️ 只画刻痕（carve）不写名字：让人知道"还有东西"，但不剧透是什么、更不写怎么解锁——
+            那会把它变成一张待办清单，禁词表管着呢。 */''}
+    ${locked.length ? fold('lock', COPY.drawerLocked,
+      (unlockedCnt + ' / ' + (unlockedCnt + locked.length)), drawerLockOpen,
+      `<div class="dk-grid">${locked.map(s2 => cell(s2, 'sid')).join('')}</div>`) : ''}
+    ${fold('hid', COPY.drawerHidden, hidGot + ' / ' + HIDDEN.length, drawerHidOpen,
       `<div class="dk-grid">${HIDDEN.map(h => cell(h, 'hid')).join('')}</div>`)}`;
 }
 
@@ -1633,18 +1654,18 @@ function renderFlipView() {
 
   $('#page-memories').innerHTML = `
     <div class="flip-bar">
-      <button class="flip-back" id="flip-back">‹ ${d.getMonth() + 1}月</button>
-      <span class="flip-date">${d.getDate()} 日 · ${weekName(d)}${w ? ` <span class="w">${weatherSVG(w, 18)}</span>` : ''}</span>
+      <button class="flip-back" id="flip-back">‹ ${COPY.coverMonth.replace('{m}', d.getMonth() + 1)}</button>
+      <span class="flip-date">${COPY.dayOnly.replace('{d}', d.getDate())} · ${weekName(d)}${w ? ` <span class="w">${weatherSVG(w, 18)}</span>` : ''}</span>
       ${dk <= todayDk ? `<button class="t-share" id="flip-add">${COPY.addStampHere}</button>` : ''}
-      ${recs.length ? `<button class="t-share" id="flip-share">分享</button>` : ''}
+      ${recs.length ? `<button class="t-share" id="flip-share">${COPY.flipShare}</button>` : ''}
     </div>
     <div class="book">
       ${paperHTML(dk, 'readonly')}
     </div>
     <div class="flip-foot">
-      <button id="flip-prev">‹ 昨天</button>
-      <button id="flip-note" class="mid">${store.dayNoteOf(dk) ? '改一改这天的话' : '给这天补一句'}</button>
-      <button id="flip-next" ${hasNext ? '' : 'disabled'}>明天 ›</button>
+      <button id="flip-prev">${COPY.flipPrev}</button>
+      <button id="flip-note" class="mid">${store.dayNoteOf(dk) ? COPY.flipEditNote : COPY.flipAddNote}</button>
+      <button id="flip-next" ${hasNext ? '' : 'disabled'}>${COPY.flipNext}</button>
     </div>`;
 
   const cv = $('#page-memories .book .canvas');
@@ -1679,7 +1700,7 @@ function openDayNote(dk) {
   const box = document.createElement('div');
   box.className = 'daynote-pop';
   box.innerHTML = `<textarea maxlength="30" placeholder="${COPY.dayNoteHint}">${esc(cur)}</textarea>
-    <div class="dn-act"><button class="ok">写好了</button></div>`;
+    <div class="dn-act"><button class="ok">${COPY.noteDone}</button></div>`;
   $('#page-memories').appendChild(box);
   const ta = box.querySelector('textarea');
   ta.focus(); ta.setSelectionRange(cur.length, cur.length);
@@ -1709,8 +1730,8 @@ function openDayNote(dk) {
 
 function memSeg() {
   return `<div class="mem-seg">
-    <button data-mode="week" class="${memMode === 'week' ? 'sel' : ''}">周</button>
-    <button data-mode="month" class="${memMode === 'month' ? 'sel' : ''}">月</button>
+    <button data-mode="week" class="${memMode === 'week' ? 'sel' : ''}">${COPY.memWeek}</button>
+    <button data-mode="month" class="${memMode === 'month' ? 'sel' : ''}">${COPY.memMonth}</button>
   </div>`;
 }
 function bindSeg() {
@@ -1730,11 +1751,11 @@ function dayPanel(dk) {
       <div class="day-cell" title="${stampById[r.stampId].name} · ${fmtTime(r.ts)}">
         <span class="face">${stampSVG(stampById[r.stampId], { size: 30, ink: r.ink, rot: r.rot, mat: r.mat })}</span>
         <span class="tm">${fmtTime(r.ts)}</span>
-        <button class="del" data-rid="${r.id}" aria-label="删掉">×</button>
+        <button class="del" data-rid="${r.id}" aria-label="${COPY.delOne}">×</button>
       </div>`).join('')}</div>`
-    : `<div class="empty">这一天是空白的，也很好。</div>`;
+    : `<div class="empty">${COPY.dayEmpty}</div>`;
   return `<div class="day-panel" id="day-panel">
-    <div class="dp-t">${d.getMonth() + 1} 月 ${d.getDate()} 日 · ${weekName(d)}
+    <div class="dp-t">${monthDay(d, true)} · ${weekName(d)}
       ${w ? `<span class="w">${weatherSVG(w, 22)}</span>` : ''}
       <button class="dp-flip" data-flip="${dk}">${COPY.notebookFlip} ›</button>
     </div>
@@ -1773,7 +1794,7 @@ function shelfHTML(selM = memM) {
     const isCur = memY === curY && m === curM;
     const h = 40 + Math.round(Math.min(1, n / 60) * 18);      // 40~58px
     books += `<button class="bk s-${SEASON(m)} ${future ? 'future' : ''} ${m === selM ? 'sel' : ''} ${isCur ? 'cur' : ''}"
-        data-m="${m}" style="height:${h}px" title="${m} 月 · ${n} 枚">
+        data-m="${m}" style="height:${h}px" title="${COPY.monthBarTitle.replace('{m}', m).replace('{n}', n)}">
         <span class="bm">${m}月</span></button>`;
   }
   return `<div class="shelf-wrap">

@@ -86,4 +86,15 @@ export function monthLabel(m) {
   }
   return m + '月';
 }
+// 「8 月 28 日」（spaced）/「8月28日」/「Aug 28」
+// ⚠️ 中文两种写法都在用（本子页带空格、翻页栏不带），迁移时必须逐字对上，
+//    否则中文界面会有肉眼看不见的一像素差 —— 逐像素对拍会当场抓到。
+export function monthDay(d, spaced = false) {
+  if (lang === 'en') {
+    return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(d);
+  }
+  const m = d.getMonth() + 1, dd = d.getDate();
+  return spaced ? `${m} 月 ${dd} 日` : `${m}月${dd}日`;
+}
+
 export function locale() { return LOCALE[lang]; }

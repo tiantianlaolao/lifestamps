@@ -1,0 +1,55 @@
+<!doctype html><meta charset="utf-8"><title>章的线宽比稿</title>
+<link rel="stylesheet" href="../css/app.css">
+<style>
+ body{margin:0;background:#DDD8CC;font:13px/1.7 "Xiaolai",system-ui;color:#252421;padding:22px}
+ .wrap{max-width:1080px;margin:0 auto}
+ h2{font-family:"LXGW WenKai",serif;font-size:16px;letter-spacing:.12em;margin:0 0 6px;color:#5A544A}
+ .sub{color:#6B655C;font-size:12px;margin-bottom:16px;max-width:800px}
+ .row{background:#FBF8F1;border-radius:10px;padding:12px 16px 10px;margin-bottom:12px;
+      background-image:radial-gradient(circle at 3px 3px,#D3CDBE 2.2px,transparent 2.6px);
+      background-size:26px 26px}
+ .rt{font-size:12px;letter-spacing:.1em;color:#8C8880;margin-bottom:6px}
+ .rt b{color:#252421;font-weight:400;font-family:"LXGW WenKai",serif;font-size:14px}
+ .line{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+ .cell{text-align:center}
+ .cell .nm{font-size:10px;color:#B3ACA0;margin-top:-2px}
+</style>
+<div class="wrap">
+  <h2>章的线宽（THIN）</h2>
+  <div class="sub">纸上真实尺寸 CHIP=56，外加托盘里 30px 和分享卡上 168px 三种密度一起看
+    —— 线宽太细在大尺寸上会显得空，太粗在小尺寸上会糊成一坨。
+    ⚠️ 8-26 你从四档里选了 0.85；当时 0.8 被打回"像 icon"，但那次 CHIP 还没从 72 降到 56。</div>
+  <div id="out"></div>
+</div>
+<script type="module">
+import { STAMPS, stampById } from '../js/data.js';
+import { defsMarkup, stampSVG, setThin } from '../js/stamp.js';
+document.body.insertAdjacentHTML('afterbegin',
+  `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+
+// 挑笔画密度差别大的：奶茶（密）、火锅（很密）、小确幸（很疏）、躺平、开心、阅读
+const IDS = ['milktea', 'hotpot', 'read', 'lie', 'happy', 'sparkle', 'coffee', 'water'];
+const LEVELS = [
+  [0.85, '现在'],
+  [0.78, ''],
+  [0.72, ''],
+  [0.66, '最细'],
+];
+
+let h = '';
+for (const [t, tag] of LEVELS) {
+  setThin(t);
+  h += `<div class="row"><div class="rt"><b>THIN = ${t}</b>${tag ? '　' + tag : ''}</div><div class="line">`;
+  // 纸上真实尺寸
+  for (const id of IDS) h += `<div class="cell">${stampSVG(stampById[id], { size: 56, ink: 'zhu', mat: 'r', seed: 3 })}</div>`;
+  h += `<div style="width:16px"></div>`;
+  // 托盘尺寸
+  for (const id of IDS.slice(0, 4)) h += `<div class="cell">${stampSVG(stampById[id], { size: 30, ink: 'mo', mat: 'r', seed: 3 })}</div>`;
+  h += `<div style="width:16px"></div>`;
+  // 分享卡尺寸
+  h += `<div class="cell">${stampSVG(stampById['hotpot'], { size: 120, ink: 'zhu', mat: 'r', seed: 3 })}</div>`;
+  h += '</div></div>';
+}
+setThin(0.85);
+document.getElementById('out').innerHTML = h;
+</script>

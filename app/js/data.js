@@ -472,7 +472,7 @@ export const COPY = {
   glyphBox: '数字和字母',
   glyphSub: '数字、字母、星期、标点——这些是工具，不算收集',
   undo: '撤销',
-  undone: '撕掉了。',
+  undone: '撤销',
   // 一眼能扫的三个数，不是一句陈述句（8-27 用户："改成清晰表述，一目了然"）
   statMarks: '枚印记', statDays: '天有记录', statHidden: '隐藏章',
   meTitleLabel: '这个月的称号',

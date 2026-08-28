@@ -1854,8 +1854,8 @@ function renderMe() {
         </span></div>
       <div class="me-item"><span class="k">纸</span>
         <span class="pick-row">
-          <button data-paper="dot" class="pk ${(store.settings.paper || 'dot') === 'dot' ? 'on' : ''}">点点格</button>
-          <button data-paper="plain" class="pk ${store.settings.paper === 'plain' ? 'on' : ''}">纯白</button>
+          <button data-paper="dot" class="pk ${(store.settings.paper || 'dot') === 'dot' ? 'on' : ''}">点阵</button>
+          <button data-paper="plain" class="pk ${store.settings.paper === 'plain' ? 'on' : ''}">纯色</button>
         </span></div>
       <div class="me-item"><span class="k">桌布</span>
         <span class="pick-row">

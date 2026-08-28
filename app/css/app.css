@@ -317,6 +317,19 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .ink .faded, .ink.faded{opacity:.22}
 .dk-ink .ink.faded{opacity:.2}
 
+/* 判词：这一天的一句话结论（同时是分享卡的主角）。
+   用手写体、比正文大一档 —— 它是"写下来的一句话"，不是系统提示。
+   ⚠️ 但也不能压过纸上的章：不加粗、不加色块、字距松一点，让它像随手写在页脚。 */
+.verdict-line{
+  /* 🔴 绝对定位：它**不能占布局流**。挂在托盘下面会把今日页撑高 41px，
+     而今日页一旦可滚，原生壳外面那个 UIScrollView 就会抢走触摸手势
+     （拖拽全废、翻页翻不动，点按却正常）。断言 `收起态今日页根本不需要滚` 守着这条。 */
+  position:absolute; left:0; right:0; bottom:12px;
+  text-align:center; padding:0 22px; pointer-events:none;
+  font-family:var(--f-hand); font-size:15px; color:var(--ink);
+  letter-spacing:.08em; line-height:1.7; opacity:.8;
+}
+
 .shop-hint{text-align:center; font-size:10.5px; color:var(--faint); letter-spacing:.18em; padding:14px 0 4px}
 
 /* ---- 高级印泥盒的购买卡片 ----

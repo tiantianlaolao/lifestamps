@@ -1,0 +1,68 @@
+<!doctype html><meta charset="utf-8"><title>分享卡比稿</title>
+<link rel="stylesheet" href="../css/app.css">
+<style>
+ body{margin:0;background:#DDD8CC;font:13px/1.6 "Xiaolai",system-ui;color:#252421;padding:20px}
+ .wrap{max-width:1400px;margin:0 auto}
+ h2{font-family:"LXGW WenKai",serif;font-size:16px;letter-spacing:.12em;margin:0 0 14px;color:#5A544A}
+ .row{display:flex;gap:18px;flex-wrap:wrap}
+ .one{width:330px}
+ .one .cap{font-size:11.5px;color:#6B655C;margin-bottom:6px;line-height:1.5}
+ .one .box{box-shadow:0 2px 10px rgba(0,0,0,.14);border-radius:6px;overflow:hidden;line-height:0}
+ .one svg{width:330px;height:440px;display:block}
+</style>
+<div class="wrap"><h2>日卡重做：判词做主角，章放大成证据</h2><div class="row" id="out"></div></div>
+<script type="module">
+import { store } from '../js/store.js';
+import { buildDayCard, buildMonthCard } from '../js/share.js';
+
+// 造几种典型的一天，直接调真正的 buildDayCard —— 不另写一套渲染，
+// 否则比稿好看不代表产品里好看（踩过）。
+let seq = 0;
+const at = (id, h, m = 0, ink = 'zhu') => ({
+  id: 'r' + (seq++), stampId: id, ink, mat: 'r',
+  ts: new Date(2026, 7, 28, h, m).getTime(),
+  rot: [-4, 3, -2, 5][seq % 4], op: 0.92,
+});
+
+const CASES = [
+  ['1 枚', [at('milktea', 15, 20)], ''],
+  ['3 枚 · 加班到深夜', [at('work', 10, 5), at('coffee', 14, 30), at('stayup', 23, 40)], ''],
+  ['4 枚 · 周末摆烂', [at('lie', 11, 10), at('daze', 14, 0), at('phone', 16, 30), at('lie', 21, 50)], ''],
+  ['6 枚 · 出门遛一圈', [at('goout', 9, 15), at('coffee', 10, 0), at('cat', 11, 30),
+                        at('flower', 15, 10), at('sunset', 18, 40), at('happy', 20, 0)], ''],
+  ['8 枚 · 很满的一天', [at('goout', 8, 0), at('coffee', 9, 10), at('work', 10, 0), at('takeout', 12, 30),
+                        at('water', 14, 0), at('series', 20, 0), at('happy', 21, 0), at('stayup', 23, 20)], ''],
+  ['自己写了一句（优先于判词）', [at('emo', 15, 0), at('cry', 21, 0), at('tired', 22, 30)],
+   '哭完就好了，明天再说'],
+  ['空白的一天', [], ''],
+];
+
+let h = '';
+for (const [label, recs, note] of CASES) {
+  // buildDayCard 从 store 读，所以直接替换 store 里的数据
+  store.records = recs;
+  store.dayMeta = note ? { '2026-08-28': { note } } : {};
+  h += `<div class="one"><div class="cap">${label}</div>
+    <div class="box">${buildDayCard('2026-08-28', recs.length ? 'sun' : null)}</div></div>`;
+}
+// ---- 月卡 ----
+// 造一个月的数据：45 枚散在 26 天里，学习和摆烂都不少（好触发「一边努力一边摆烂」）
+{
+  const R = [];
+  const pool = ['work','read','study','lie','stayup','daze','milktea','takeout','water','goout','happy','tired','series','coffee'];
+  let k = 0;
+  for (let day = 1; day <= 28; day++) {
+    if (day % 6 === 0) continue;                     // 留几天空白
+    const n = 1 + (day % 3);
+    for (let i = 0; i < n; i++) {
+      R.push({ id: 'm' + (k++), stampId: pool[(day * 3 + i) % pool.length], ink: 'zhu', mat: 'r',
+               ts: new Date(2026, 7, day, 9 + i * 4, 10).getTime(), rot: [-4,3,-2,5][k % 4], op: .92 });
+    }
+  }
+  store.records = R; store.dayMeta = {};
+  h += `<div class="one" style="width:330px"><div class="cap">月卡 · 人格印章做主角</div>
+    <div class="box">${buildMonthCard(2026, 8)}</div></div>`;
+}
+store.records = []; store.dayMeta = {};
+document.getElementById('out').innerHTML = h;
+</script>

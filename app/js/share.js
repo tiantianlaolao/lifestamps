@@ -2,8 +2,12 @@
 // 分享图：月度手账卡（1080×1440），SVG 组装 → canvas → PNG
 // ============================================================
 import { INKS, stampById, monthPersona } from './data.js';
-import { defsMarkup, stampSVG, inkSwatchPaint, WEATHER, weatherSVG } from './stamp.js';
+// ⛔ inkSwatchPaint 随「本月用过的印泥」那一行 8-28 一起退场（月卡放不下，
+//    而三块证据里它对别人最没信息量）。
+import { defsMarkup, stampSVG, WEATHER, weatherSVG } from './stamp.js';
 import { store, dateKey } from './store.js';
+import { verdictOf } from './verdict.js';
+import { COPY } from './i18n.js';
 import { isNative, shareImage } from './native.js';
 
 // 保存/分享那颗键：浏览器下载，原生壳走系统分享面板
@@ -53,9 +57,35 @@ function dateStamp(d) {
 // 落款：规格 §7.2 只允许「右下角 6px 高的极小印」。
 // 原来是居中一整行 14px 带 6 字距的「戳了么 · LIFE STAMPS」——那读起来是水印，
 // 而分享卡是获客的唯一主路径，它上面不该有像水印的东西（8-26 用户「盖了么」#8）。
-const cornerMark = () =>
-  `<text x="1012" y="1398" text-anchor="end" font-size="17" letter-spacing="3"
-     fill="${SUB}" opacity=".45" font-family="${FONT}">戳了么</text>`;
+// ---- 二维码 ----
+// 🔴 **预生成**的，运行时不引任何二维码库：内容是固定的中转页地址，没必要为它带一个库
+//    （而且 App 里禁 CDN，带库就得自托管，为一张固定的图不值当）。
+//    重新生成：改下面的 URL 之后，用 _fonts_src 里的 segno 脚本重出这两行。
+//    容错级 M —— 朋友圈和小红书会压缩图片，太低会扫不出；太高又变密。
+// ⚠️ 指向的是**中转页**不是商店：中转页判设备分流（iOS 跳 App Store、安卓给官网 APK），
+//    所以 App 还没上架时先让它指 web 版，上架后改中转页一行，已经发出去的旧卡自动生效。
+const QR_URL = 'https://www.tybbtech.com/lifestamps/get';
+const QR_N = 29;
+const QR_PATH = '"M0 0h7v1h-7zM8 0h1v1h-1zM11 0h4v1h-4zM18 0h1v1h-1zM22 0h7v1h-7zM0 1h1v1h-1zM6 1h1v1h-1zM12 1h3v1h-3zM16 1h3v1h-3zM20 1h1v1h-1zM22 1h1v1h-1zM28 1h1v1h-1zM0 2h1v1h-1zM2 2h3v1h-3zM6 2h1v1h-1zM8 2h6v1h-6zM17 2h1v1h-1zM20 2h1v1h-1zM22 2h1v1h-1zM24 2h3v1h-3zM28 2h1v1h-1zM0 3h1v1h-1zM2 3h3v1h-3zM6 3h1v1h-1zM9 3h2v1h-2zM12 3h4v1h-4zM17 3h2v1h-2zM22 3h1v1h-1zM24 3h3v1h-3zM28 3h1v1h-1zM0 4h1v1h-1zM2 4h3v1h-3zM6 4h1v1h-1zM11 4h4v1h-4zM16 4h1v1h-1zM18 4h1v1h-1zM22 4h1v1h-1zM24 4h3v1h-3zM28 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM8 5h2v1h-2zM11 5h1v1h-1zM14 5h1v1h-1zM16 5h1v1h-1zM18 5h1v1h-1zM22 5h1v1h-1zM28 5h1v1h-1zM0 6h7v1h-7zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h1v1h-1zM16 6h1v1h-1zM18 6h1v1h-1zM20 6h1v1h-1zM22 6h7v1h-7zM9 7h2v1h-2zM14 7h2v1h-2zM18 7h3v1h-3zM0 8h1v1h-1zM2 8h1v1h-1zM6 8h2v1h-2zM9 8h3v1h-3zM15 8h1v1h-1zM18 8h1v1h-1zM20 8h1v1h-1zM23 8h1v1h-1zM26 8h1v1h-1zM28 8h1v1h-1zM0 9h1v1h-1zM2 9h2v1h-2zM5 9h1v1h-1zM7 9h1v1h-1zM9 9h1v1h-1zM11 9h1v1h-1zM14 9h4v1h-4zM19 9h1v1h-1zM21 9h3v1h-3zM27 9h2v1h-2zM1 10h1v1h-1zM3 10h4v1h-4zM9 10h3v1h-3zM13 10h1v1h-1zM15 10h2v1h-2zM19 10h2v1h-2zM22 10h2v1h-2zM25 10h2v1h-2zM28 10h1v1h-1zM1 11h1v1h-1zM7 11h2v1h-2zM10 11h3v1h-3zM18 11h1v1h-1zM23 11h3v1h-3zM4 12h1v1h-1zM6 12h2v1h-2zM9 12h1v1h-1zM12 12h4v1h-4zM20 12h1v1h-1zM22 12h2v1h-2zM28 12h1v1h-1zM0 13h1v1h-1zM4 13h2v1h-2zM9 13h1v1h-1zM15 13h3v1h-3zM19 13h4v1h-4zM27 13h2v1h-2zM0 14h1v1h-1zM2 14h1v1h-1zM4 14h1v1h-1zM6 14h2v1h-2zM9 14h3v1h-3zM13 14h3v1h-3zM17 14h1v1h-1zM19 14h1v1h-1zM21 14h1v1h-1zM28 14h1v1h-1zM0 15h1v1h-1zM3 15h2v1h-2zM7 15h4v1h-4zM12 15h1v1h-1zM16 15h1v1h-1zM19 15h1v1h-1zM21 15h1v1h-1zM23 15h1v1h-1zM0 16h3v1h-3zM4 16h1v1h-1zM6 16h1v1h-1zM10 16h5v1h-5zM16 16h1v1h-1zM19 16h2v1h-2zM22 16h1v1h-1zM28 16h1v1h-1zM1 17h1v1h-1zM9 17h2v1h-2zM13 17h1v1h-1zM15 17h3v1h-3zM19 17h2v1h-2zM22 17h2v1h-2zM26 17h3v1h-3zM0 18h5v1h-5zM6 18h3v1h-3zM12 18h1v1h-1zM15 18h1v1h-1zM17 18h3v1h-3zM21 18h2v1h-2zM25 18h1v1h-1zM28 18h1v1h-1zM3 19h3v1h-3zM7 19h1v1h-1zM11 19h3v1h-3zM18 19h1v1h-1zM20 19h1v1h-1zM22 19h2v1h-2zM0 20h4v1h-4zM5 20h4v1h-4zM13 20h1v1h-1zM15 20h2v1h-2zM19 20h7v1h-7zM27 20h1v1h-1zM8 21h1v1h-1zM10 21h2v1h-2zM15 21h2v1h-2zM20 21h1v1h-1zM24 21h3v1h-3zM28 21h1v1h-1zM0 22h7v1h-7zM8 22h9v1h-9zM20 22h1v1h-1zM22 22h1v1h-1zM24 22h1v1h-1zM28 22h1v1h-1zM0 23h1v1h-1zM6 23h1v1h-1zM10 23h3v1h-3zM14 23h1v1h-1zM16 23h1v1h-1zM19 23h2v1h-2zM24 23h1v1h-1zM27 23h2v1h-2zM0 24h1v1h-1zM2 24h3v1h-3zM6 24h1v1h-1zM10 24h1v1h-1zM12 24h4v1h-4zM19 24h7v1h-7zM28 24h1v1h-1zM0 25h1v1h-1zM2 25h3v1h-3zM6 25h1v1h-1zM11 25h6v1h-6zM21 25h1v1h-1zM23 25h4v1h-4zM28 25h1v1h-1zM0 26h1v1h-1zM2 26h3v1h-3zM6 26h1v1h-1zM8 26h2v1h-2zM12 26h4v1h-4zM17 26h1v1h-1zM20 26h2v1h-2zM24 26h1v1h-1zM27 26h2v1h-2zM0 27h1v1h-1zM6 27h1v1h-1zM11 27h1v1h-1zM13 27h1v1h-1zM15 27h1v1h-1zM18 27h3v1h-3zM23 27h3v1h-3zM0 28h7v1h-7zM8 28h4v1h-4zM15 28h1v1h-1zM20 28h2v1h-2zM24 28h1v1h-1zM28 28h1v1h-1z"'.slice(1, -1);
+
+// 卡片落款：署名 + 二维码。
+// ⚠️ 署名以前淡到 45%，截图放大才认得出 —— 它是这张卡唯一的身份，得看得见。
+//    但也不能喧宾夺主：小字 + 松字距，像盖在页脚的一个小印。
+function cornerMark(size = 140) {
+  const x = 1080 - 64 - size, y = 1440 - 72 - size;
+  const sc = size / QR_N;
+  return `<g>
+    <!-- ⚠️ 静区用纸色不用纯白：白方块在暖色纸上是个突兀的白斑。
+         纸色 #F7F3EB 跟墨色模块的对比度足够扫，实测过。 -->
+    <rect x="${x - 12}" y="${y - 12}" width="${size + 24}" height="${size + 24}" rx="8"
+      fill="${PAPER}" stroke="rgba(58,54,47,.10)" stroke-width="1.5"/>
+    <g transform="translate(${x},${y}) scale(${sc})"><path d="${QR_PATH}" fill="${INK_C}"/></g>
+    <text x="64" y="${1440 - 104}" font-size="42" letter-spacing="8"
+      fill="${INK_C}" opacity=".88" font-family="${HAND_CN}">戳了么</text>
+    <text x="66" y="${1440 - 64}" font-size="21" letter-spacing="3"
+      fill="${SUB}" opacity=".8" font-family="${FONT}">扫一扫，也开始记你的</text>
+  </g>`;
+}
 
 // 把一枚章渲染为放进大卡的 <g>（含定位/旋转）
 function placedStamp(def, { x, y, size, ink, rot = 0, opacity = 0.92, mat }) {
@@ -71,114 +101,107 @@ export function buildMonthCard(y, m) {
   const offset = (new Date(y, m - 1, 1).getDay() + 6) % 7;
 
   const byDay = {};
-  const cnt = {}, catCnt = {}, usedInks = new Set();
+  const cnt = {}, catCnt = {};
   for (const r of recs) {
     const d = new Date(r.ts).getDate();
     (byDay[d] = byDay[d] || []).push(r);
     cnt[r.stampId] = (cnt[r.stampId] || 0) + 1;
     const c = stampById[r.stampId]?.cat; if (c) catCnt[c] = (catCnt[c] || 0) + 1;
-    usedInks.add(r.ink);
   }
   const top = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const persona = monthPersona(catCnt, recs.length);
+  const blankDays = daysInMonth - Object.keys(byDay).length;
 
-  // ---- 日历格 ----
-  const gridX = 70, gridY = 330, colW = 134.3, rowH = 104;
+  // ---- 主角：人格印章 ----
+  // 🔴 旧版这枚印只有 128px、缩在统计区右边角上 —— 而它是整张卡上**唯一**
+  //    会让别人说"这也是我"的东西，其余（日历、排行、印泥）都是关于 A 的数据报表。
+  //    所以放大到 250、摆到正中，标题跟着它走；日历和排行降级成证据。
+  const SEAL = 250, sealX = 540 - SEAL / 2, sealY = 236;
+  const sealChars = (persona.seal || persona.title.replace(/[「」，。]/g, '').slice(0, 4)).padEnd(4, '　');
+  const seal = `
+    <g transform="translate(${sealX},${sealY}) rotate(-3 ${SEAL / 2} ${SEAL / 2})">
+      <g filter="url(#ls-w0)">
+        <rect x="0" y="0" width="${SEAL}" height="${SEAL}" rx="18" fill="${RED}"/>
+        <text x="${SEAL / 2}" y="${SEAL * 0.42}" text-anchor="middle" font-size="${SEAL * 0.3}"
+          font-weight="700" fill="${PAPER}" font-family="${FONT}">${sealChars.slice(0, 2)}</text>
+        <text x="${SEAL / 2}" y="${SEAL * 0.79}" text-anchor="middle" font-size="${SEAL * 0.3}"
+          font-weight="700" fill="${PAPER}" font-family="${FONT}">${sealChars.slice(2, 4)}</text>
+      </g>
+    </g>`;
+
+  // 称号：字数多的收一档，别撑破
+  const tSize = persona.title.length <= 8 ? 54 : persona.title.length <= 12 ? 46 : 40;
+
+  // ---- 证据一：日历（降级）----
+  // 保留是因为它一眼就能传达"一个月的生活"这个质感，但不再是主角：
+  // 行高压到 76、日期数字缩小、每天最多摆 2 枚。
+  const gridX = 88, gridY = 726, colW = 129.1, rowH = 66;
   const rows = Math.ceil((offset + daysInMonth) / 7);
   let cal = '';
-  // 网格线
   for (let r = 0; r <= rows; r++)
-    cal += `<line x1="${gridX}" y1="${gridY + r * rowH}" x2="${gridX + colW * 7}" y2="${gridY + r * rowH}" stroke="rgba(58,54,47,.10)"/>`;
-  for (let c = 1; c < 7; c++)
-    cal += `<line x1="${gridX + c * colW}" y1="${gridY}" x2="${gridX + c * colW}" y2="${gridY + rows * rowH}" stroke="rgba(58,54,47,.06)" stroke-dasharray="3 4"/>`;
-  // 星期头
-  const wk = ['一','二','三','四','五','六','日'];
+    cal += `<line x1="${gridX}" y1="${gridY + r * rowH}" x2="${gridX + colW * 7}" y2="${gridY + r * rowH}" stroke="rgba(58,54,47,.09)"/>`;
+  const wk = ['一', '二', '三', '四', '五', '六', '日'];
   cal += wk.map((w, i) =>
-    `<text x="${gridX + i * colW + colW / 2}" y="${gridY - 14}" text-anchor="middle" font-size="15" letter-spacing="4"
+    `<text x="${gridX + i * colW + colW / 2}" y="${gridY - 16}" text-anchor="middle" font-size="14" letter-spacing="3"
       fill="${i === 5 ? '#7593A6' : i === 6 ? RED : SUB}" font-family="${FONT}">${w}</text>`).join('');
-  // 天
   const rots = [-5, 4, -3, 6, -6, 3, 5, -4, 2, -2, 4, -5, 3, -3, 5, -4, 6, -2, 3, -6, 4, -3, -5, 2, 5, -4, 3, -2, 6, -3, 4];
   for (let d = 1; d <= daysInMonth; d++) {
     const pos = offset + d - 1, r = Math.floor(pos / 7), c = pos % 7;
     const cx = gridX + c * colW, cy = gridY + r * rowH;
     const future = isCur && d > now.getDate();
-    cal += `<text x="${cx + 10}" y="${cy + 24}" font-size="17" fill="${future ? FAINT : SUB}" font-family="${HAND}">${d}</text>`;
+    cal += `<text x="${cx + 8}" y="${cy + 19}" font-size="14" fill="${future ? FAINT : SUB}"
+      opacity=".7" font-family="${HAND}">${d}</text>`;
     if (isCur && d === now.getDate())
-      cal += `<ellipse cx="${cx + 17}" cy="${cy + 18}" rx="17" ry="13" fill="none" stroke="${RED}" stroke-width="2.6" filter="url(#ls-w1)"/>`;
+      cal += `<ellipse cx="${cx + 14}" cy="${cy + 14}" rx="15" ry="12" fill="none" stroke="${RED}" stroke-width="2.2" filter="url(#ls-w1)"/>`;
     const list = (byDay[d] || []).slice(0, 2);
     list.forEach((rec, j) => {
       const def = stampById[rec.stampId]; if (!def) return;
-      const size = list.length > 1 ? 44 : 50;
-      const x = cx + (list.length > 1 ? (j === 0 ? 10 : 62) : 42);
-      const yy = cy + (list.length > 1 ? (j === 0 ? 30 : 46) : 34);
+      const size = list.length > 1 ? 32 : 38;
+      const x = cx + (list.length > 1 ? (j === 0 ? 16 : 62) : 46);
+      const yy = cy + (list.length > 1 ? (j === 0 ? 22 : 30) : 22);
       cal += placedStamp(def, { x, y: yy, size, ink: rec.ink, mat: rec.mat, rot: rots[(d + j * 7) % 31] });
     });
   }
+  const calBottom = gridY + rows * rowH;
 
-  // ---- 统计 ----
-  const statY = gridY + rows * rowH + 66;
-  let stats = `<text x="70" y="${statY}" font-size="17" letter-spacing="6" fill="${SUB}" font-family="${FONT}">这个月收集最多的</text>`;
+  // ---- 证据二：收集最多的（降级成一行小图）----
+  // 🔴 底部这一条塞了三样东西（收集最多的 / 统计句 / 落款），第一版全挤在同一水平带上：
+  //    ×N 直接压在「戳了么」署名上、「盖了 N 枚」被二维码切掉半句。
+  //    改法：统计句挪到日历**上方**当日历的说明，top5 缩小上移，最底那条只留落款。
+  const statY = calBottom + 40;
+  let stats = '';
   top.forEach(([sid, n], i) => {
-    const def = stampById[sid];
-    const x = 70 + i * 128;
-    stats += placedStamp(def, { x, y: statY + 22, size: 92, rot: rots[i * 3] - 1 });
-    stats += `<text x="${x + 46}" y="${statY + 148}" text-anchor="middle" font-size="22" fill="${INK_C}" font-family="${HAND}">×${n}</text>`;
-    stats += `<text x="${x + 46}" y="${statY + 176}" text-anchor="middle" font-size="15" fill="${SUB}" font-family="${FONT}">${def.name}</text>`;
+    const def = stampById[sid]; if (!def) return;
+    const x = 88 + i * 112;
+    stats += placedStamp(def, { x, y: statY, size: 62, rot: rots[i * 3] - 1 });
+    stats += `<text x="${x + 31}" y="${statY + 90}" text-anchor="middle" font-size="17"
+      fill="${INK_C}" font-family="${HAND}">×${n}</text>`;
   });
 
-  // 人格印
-  const sealX = 850, sealY = statY - 4;
-  const sealChars = (persona.seal || persona.title.replace(/[「」，。]/g, '').slice(0, 4)).padEnd(4, '　');
-  const seal = `
-    <g transform="translate(${sealX},${sealY}) rotate(-3)">
-      <g filter="url(#ls-w0)">
-        <rect x="0" y="0" width="128" height="128" rx="10" fill="${RED}"/>
-        <text x="64" y="54" text-anchor="middle" font-size="38" font-weight="700" fill="${PAPER}" font-family="${FONT}">${sealChars.slice(0, 2)}</text>
-        <text x="64" y="102" text-anchor="middle" font-size="38" font-weight="700" fill="${PAPER}" font-family="${FONT}">${sealChars.slice(2, 4)}</text>
-      </g>
-    </g>
-    <text x="${sealX + 64}" y="${sealY + 162}" text-anchor="middle" font-size="15" letter-spacing="5" fill="${SUB}" font-family="${FONT}">本 月 人 格</text>
-    <text x="${sealX + 64}" y="${sealY + 190}" text-anchor="middle" font-size="16" fill="${INK_C}" font-family="${FONT}">「${persona.title}」</text>`;
-
-  // ---- 印泥行 ----
-  const inkY = statY + 226;
-  let inks = `<text x="70" y="${inkY + 22}" font-size="16" letter-spacing="4" fill="${SUB}" font-family="${FONT}">本月用过的印泥 —</text>`;
-  [...usedInks].slice(0, 6).forEach((ik, i) => {
-    const x = 320 + i * 108;
-    inks += `<g filter="url(#ls-w1)"><rect x="${x}" y="${inkY}" width="66" height="34" rx="7" fill="${inkSwatchPaint(ik)}"/></g>`;
-    inks += `<text x="${x + 33}" y="${inkY + 58}" text-anchor="middle" font-size="13" fill="${SUB}" font-family="${FONT}">${INKS[ik]?.name || ''}</text>`;
-  });
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1440" viewBox="0 0 1080 1440">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1440" viewBox="0 0 1080 1440">
   ${defsMarkup()}
   <rect width="1080" height="1440" fill="${PAPER}"/>
-  <!-- 和纸胶带 -->
   <g transform="rotate(-2.5 540 8)" opacity=".82">
     <rect x="445" y="-12" width="190" height="40" fill="#F3D9DD"/>
     ${[0,1,2,3,4,5,6,7,8,9].map(i => `<rect x="${445 + i * 20}" y="-12" width="10" height="40" fill="#E8B4BE" transform="skewX(-20)" transform-origin="${445 + i * 20} 0"/>`).join('')}
   </g>
-  <!-- 标题 -->
-  <text x="70" y="130" font-size="18" letter-spacing="10" fill="${SUB}" font-family="${FONT}">MY ${['','JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'][m]} · ${y}</text>
-  <text x="66" y="196" font-size="56" font-weight="600" letter-spacing="6" fill="${INK_C}" font-family="${FONT}">我的 ${m} 月</text>
-  <path d="M70,224 Q110,218 150,223 Q195,228 235,222 Q285,217 325,223 Q347,226 366,222" fill="none" stroke="${RED}" stroke-width="4.5" stroke-linecap="round" filter="url(#ls-w1)"/>
-  <!-- 邮戳 -->
-  <g transform="translate(880,84) rotate(7)" opacity=".9">
-    <g filter="url(#ls-w0)">
-      <circle cx="65" cy="65" r="56" fill="none" stroke="${RED}" stroke-width="4.5"/>
-      <circle cx="65" cy="65" r="44" fill="none" stroke="${RED}" stroke-width="2.4"/>
-      <text x="65" y="76" text-anchor="middle" font-size="30" font-weight="600" fill="${RED}" font-family="${FONT}">${m}月</text>
-      <text x="65" y="40" text-anchor="middle" font-size="11" letter-spacing="2" fill="${RED}" font-family="${HAND}">LIFE</text>
-      <text x="65" y="96" text-anchor="middle" font-size="11" letter-spacing="2" fill="${RED}" font-family="${HAND}">${daysInMonth} DAYS</text>
-    </g>
-  </g>
-  ${cal}${stats}${seal}${inks}
-  <text x="540" y="1368" text-anchor="middle" font-size="24" letter-spacing="4" fill="${INK_C}" font-family="${FONT}">这个月也辛苦了。</text>
+  <text x="540" y="126" text-anchor="middle" font-size="17" letter-spacing="9" fill="${SUB}"
+    font-family="${FONT}">MY ${['','JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'][m]} · ${y}</text>
+  <text x="540" y="196" text-anchor="middle" font-size="46" font-weight="600" letter-spacing="5"
+    fill="${INK_C}" font-family="${FONT}">我的 ${m} 月</text>
+  ${recs.length ? seal : ''}
+  ${recs.length ? `<text x="540" y="${sealY + SEAL + 76}" text-anchor="middle" font-size="${tSize}"
+      letter-spacing="2" fill="${INK_C}" font-family="${HAND_CN}">${xesc(persona.title)}</text>
+    <text x="540" y="${sealY + SEAL + 130}" text-anchor="middle" font-size="24" letter-spacing="3"
+      fill="${SUB}" font-family="${HAND_CN}">${xesc(persona.line)}</text>` : ''}
+  ${recs.length ? `<text x="540" y="${gridY - 56}" text-anchor="middle" font-size="22" letter-spacing="5"
+    fill="${SUB}" font-family="${FONT}">盖了 ${recs.length} 枚 · 留白 ${blankDays} 天</text>` : ''}
+  ${cal}
+  ${stats}
   ${cornerMark()}
 </svg>`;
-  return svg;
 }
 
-// SVG → PNG dataURL
 export function rasterize(svg, w, h, scale = 2) {
   return new Promise((resolve, reject) => {
     const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
@@ -226,27 +249,67 @@ const WEEK_CN = ['星期日','星期一','星期二','星期三','星期四','�
 export function buildDayCard(dk, weather) {
   const recs = store.recordsOf(dk);
   const d = new Date(dk + 'T12:00:00');
-  // 这天的一句话（本子里「给这天补一句」写的那句）。有就印在卡上，没有才回落到统计句。
-  const note = (store.dayNoteOf(dk) || '').slice(0, 24);
 
-  // 画布区：把 px/py 百分比映射进 940x920 的纸框
-  const FX = 70, FY = 320, FW = 940, FH = 920;
+  // ---- 主角那句话 ----
+  // 优先用用户自己写的（本子里「给这天补一句」）；没写才用判词替他说一句。
+  // 🔴 顺序不能反：用户自己的话永远比系统生成的贴切。
+  const note = (store.dayNoteOf(dk) || '').slice(0, 30);
+  const key = verdictOf(recs);
+  const hero = note || (key ? COPY[key] : '');
+
+  // ---- 章：证据，横排放大 ----
+  // 🔴 旧版把章按纸上的坐标铺进一张 940×920 的大纸里，一天就那么几枚章 ——
+  //    纸占了卡的三分之二全是空白，看着像一张没做完的作业，所以从来没人发。
+  //    现在纸不画了：章横排、放大到能看清笔触和印泥的斑驳，那才是这产品好看的地方。
+  const N = recs.length;
+  const perRow = N <= 4 ? N : (N <= 8 ? Math.ceil(N / 2) : Math.ceil(N / 3));
+  const rows = N ? Math.ceil(N / perRow) : 0;
+  const size = N <= 3 ? 200 : N <= 6 ? 168 : 132;
+  const gapX = size * 0.34, gapY = size * 0.62;
+  const stampsH = N ? rows * size + (rows - 1) * gapY + 34 : 0;   // +34 给章脚下的时刻
+  // 🔴 把判词、章、时间跨度当**一整块**垂直居中，别各自为政 ——
+  //    第一版判词钉在 y=430、章居中在 760、落款在底，三块之间距离不匀，
+  //    1~3 枚的卡下半张几乎全空，看着还是"没做完"。
+  const HERO_H = 120, SPAN_H = N >= 2 ? 90 : 0;
+  const totalH = (hero ? HERO_H : 0) + stampsH + SPAN_H;
+  // 居中线取 740：比卡的正中(720)略低一点，给顶上的日付印让位
+  const blockTop = 740 - totalH / 2;
+  const heroY = blockTop + (hero ? 78 : 0);
+  const top = blockTop + (hero ? HERO_H : 0);
+  const blockH = rows * size + (rows - 1) * gapY;
+  const rotSeq = [-4, 3, -2, 5, -5, 2, 4, -3, 2, -2];
+
   let art = '';
-  const rots = [-4, 3, -2, 5, -5, 2, 4, -3, 2, -2];
   recs.forEach((r, i) => {
     const def = stampById[r.stampId]; if (!def) return;
-    const px = r.px != null ? r.px : 12 + (i * 31) % 73;
-    const py = r.py != null ? r.py : 14 + (i * 47) % 66;
-    const size = 120;
-    const x = FX + px / 100 * FW - size / 2;
-    const y = FY + py / 100 * FH - size / 2;
-    const inner = stampSVG(def, { size, ink: r.ink, mat: r.mat, rot: r.rot ?? rots[i % 10], opacity: r.op ?? 0.92 });
-    art += `<g transform="translate(${x},${y})">${inner.replace('<svg', '<svg x="0" y="0"')}</g>`;
-    const hh = String(new Date(r.ts).getHours()).padStart(2, '0');
-    const mm = String(new Date(r.ts).getMinutes()).padStart(2, '0');
-    art += `<text x="${x + size / 2}" y="${y + size + 16}" text-anchor="middle" font-size="14" fill="${SUB}" opacity=".8" font-family="${FONT}">${hh}:${mm}</text>`;
+    const row = Math.floor(i / perRow);
+    const inRow = i % perRow;
+    const cols = Math.min(perRow, N - row * perRow);
+    const rowW = cols * size + (cols - 1) * gapX;
+    const x = 540 - rowW / 2 + inRow * (size + gapX);
+    const y = top + row * (size + gapY);
+    art += placedStamp(def, {
+      x, y, size, ink: r.ink, mat: r.mat,
+      rot: r.rot ?? rotSeq[i % 10], opacity: r.op ?? 0.92,
+    });
+    const t = new Date(r.ts);
+    const hh = String(t.getHours()).padStart(2, '0'), mm = String(t.getMinutes()).padStart(2, '0');
+    art += `<text x="${x + size / 2}" y="${y + size + 30}" text-anchor="middle" font-size="20"
+      fill="${SUB}" opacity=".75" font-family="${FONT}">${hh}:${mm}</text>`;
   });
 
+  // ---- 只有这一天才有的信息：从几点到几点 ----
+  // 时间戳本来就存着，旧版把它缩到 14px 印在章脚边、小到读不出来，等于白存。
+  let span = '';
+  if (N >= 2) {
+    const ts = recs.map(r => r.ts).sort((a, b) => a - b);
+    const f = t => `${String(new Date(t).getHours()).padStart(2, '0')}:${String(new Date(t).getMinutes()).padStart(2, '0')}`;
+    span = `<text x="540" y="${top + blockH + 100}" text-anchor="middle" font-size="26" letter-spacing="7"
+      fill="${FAINT}" font-family="${FONT}">${f(ts[0])} — ${f(ts[ts.length - 1])}</text>`;
+  }
+
+  // 主角字号跟着长度走：短句大、长句收，别撑破也别缩成一行小字
+  const heroSize = hero.length <= 8 ? 78 : hero.length <= 14 ? 62 : 50;
   const wSvg = weather ? weatherSVG(weather, 84, RED).replace('<svg', `<svg x="920" y="96"`) : '';
 
   return `<svg xmlns="${'http:'}//www.w3.org/2000/svg" width="1080" height="1440" viewBox="0 0 1080 1440">
@@ -257,19 +320,12 @@ export function buildDayCard(dk, weather) {
   </g>
   ${dateStamp(d)}
   ${wSvg}
-  <defs>
-    <pattern id="ls-dots" width="44" height="44" patternUnits="userSpaceOnUse" x="${FX}" y="${FY}">
-      <circle cx="4" cy="4" r="3.4" fill="#D3CDBE"/>
-    </pattern>
-  </defs>
-  <rect x="${FX}" y="${FY}" width="${FW}" height="${FH}" rx="10" fill="#FBF8F1"/>
-  <rect x="${FX}" y="${FY}" width="${FW}" height="${FH}" rx="10" fill="url(#ls-dots)"/>
-  <rect x="${FX}" y="${FY}" width="${FW}" height="${FH}" rx="10" fill="none" stroke="rgba(58,54,47,.12)" stroke-width="2"/>
-  ${[0,1,2,3,4,5,6,7,8,9,10,11].map(i => `<circle cx="${FX + 26}" cy="${FY + 58 + i * 74}" r="7" fill="rgba(37,36,33,.13)"/>`).join('')}
+  ${hero ? `<text x="540" y="${heroY}" text-anchor="middle" font-size="${heroSize}" letter-spacing="3"
+      fill="${INK_C}" font-family="${HAND_CN}">${xesc(hero)}</text>` : ''}
   ${art}
-  ${recs.length ? '' : `<text x="540" y="${FY + FH / 2}" text-anchor="middle" font-size="22" fill="${FAINT}" font-family="${FONT}">今天是空白的一页，也很好。</text>`}
-  <text x="540" y="1338" text-anchor="middle" font-size="${note ? 30 : 24}" letter-spacing="${note ? 2 : 4}"
-        fill="${INK_C}" font-family="${note ? HAND_CN : FONT}">${note ? xesc(note) : `今天收集了 ${recs.length} 个小生活。`}</text>
+  ${span}
+  ${N ? '' : `<text x="540" y="740" text-anchor="middle" font-size="34" fill="${FAINT}"
+      font-family="${HAND_CN}">这一天留白着，也很好。</text>`}
   ${cornerMark()}
 </svg>`;
 }

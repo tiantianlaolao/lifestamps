@@ -5,6 +5,7 @@ import { STAMPS, GLYPHS, isGlyph, HIDDEN, CATEGORIES, INKS, COPY, stampById, hid
 import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint, inkMainColor, inkCSS, darken, seedOf, weatherSVG } from './stamp.js';
 import { store, dateKey, fmtTime } from './store.js';
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked } from './hidden.js';
+import { verdictOf } from './verdict.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
 import { openShare, openShareDay } from './share.js';
 import { attachCurl } from './curl.js';
@@ -328,12 +329,11 @@ function renderToday() {
         ${chips}
         ${recs.length ? '' : `<div class="canvas-hint">${emptyHint}</div>`}
         ${undoAlive() ? `<button class="undo-btn" id="undo-btn" title="${COPY.undo}">↺</button>` : ''}
+        ${verdictLine(recs, isToday)}
         <span class="corner-grip" aria-hidden="true"></span>
       </div>
     </div>
     ${renderDeck()}
-    ${(isToday && now.getHours() >= 21 && recs.length >= 3)
-      ? `<div style="text-align:center;color:var(--sub);font-size:12.5px;letter-spacing:.14em;margin-top:10px">${COPY.dayDone}</div>` : ''}
     ${isToday ? `
     ` : ''}`;
 
@@ -581,6 +581,7 @@ function paperHTML(dk, extraCls = '') {
     ${recs.length ? '' : `<div class="canvas-hint">${
       dk > dateKey(Date.now()) ? COPY.emptyFuture : COPY.emptyPast}</div>`}
     ${note ? `<div class="day-note">${esc(note)}</div>` : ''}
+    ${verdictLine(recs, dk === dateKey(Date.now()))}
   </div>`;
 }
 
@@ -953,6 +954,29 @@ function pickStamp(sid) {
     selInk = usableInk(def.ink);
     inkLeft = INK_USES;      // 跟随的一定是不耗盒的颜色，直接给满
   }
+}
+
+// 判词：这一天的一句话结论。它同时是分享卡的主角 ——
+// 放在纸上，是为了让人每天先自己看到一眼，而不是只有点了分享才知道有这东西。
+//
+// 🔴🔴 它必须**画在纸里面、绝对定位、不占布局流**。
+//    第一版挂在托盘下面，把今日页撑高了 41px，断言 `收起态今日页根本不需要滚` 当场变红。
+//    那条断言守的是这个：**任何一层只要"能滚"，原生壳外面那个 UIScrollView 就会来抢触摸手势**，
+//    症状是拖拽全废、翻页翻不动（点按却正常，所以极难往"页面能滚"上想）。
+//    8-26 那次只溢出 2px 就被抓到过 —— 2px 看不见，但手势已经废了。
+//
+// 什么时候出现：
+//   · 今天  —— 盖满 3 枚才出。一两枚的时候这一天还没成形，
+//              这时候说「今天什么也没干，很好」是瞎猜。
+//              🔴 原来那行「今天收集得不错」是 21 点后才出的，等于绝大多数人永远看不到。
+//   · 过去的某天 —— 有 1 枚就出。那天已经完整了，不用等。
+// ⚠️ 它会随着继续盖章变化 —— 这是有意的：你多盖一枚句子就变了，
+//    人自己就明白这句话是从自己的章来的。
+function verdictLine(recs, isToday) {
+  if (isToday && recs.length < 3) return '';
+  const key = verdictOf(recs);
+  if (!key) return '';
+  return `<div class="verdict-line">${esc(COPY[key])}</div>`;
 }
 
 // index.html 里写死的那几处文字，换语言时统一重写。

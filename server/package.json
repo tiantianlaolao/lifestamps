@@ -1,0 +1,13 @@
+{
+  "name": "lifestamps-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "戳了么 · 分享短码 + 匿名赠礼章。零依赖：只用 node:http + node:sqlite",
+  "type": "commonjs",
+  "main": "server.js",
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js"
+  }
+}

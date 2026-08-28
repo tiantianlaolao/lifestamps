@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F6F2EA">
+<title>戳了么</title>
+<meta name="robots" content="noindex">
+<!-- 分享卡上二维码的落点。URL 是 https://www.tybbtech.com/lifestamps/get
+     🔴 二维码指的是**这一页**而不是商店：上架之后只改下面 STORE 那几行，
+        已经发出去的所有分享卡自动生效。指商店的话旧卡就永远指错地方了。 -->
+<style>
+@font-face{font-family:"ZCOOL KuaiLe";src:url("../fonts/zcool-kuaile.woff2") format("woff2");font-display:swap}
+@font-face{font-family:"Xiaolai";src:url("../fonts/xiaolai.woff2") format("woff2");font-display:swap}
+@font-face{font-family:"LXGW WenKai";src:url("../fonts/lxgw-wenkai.woff2") format("woff2");font-display:swap}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{
+  min-height:100dvh; background:#F6F2EA; color:#252421;
+  font-family:"Xiaolai","PingFang SC","Microsoft YaHei",sans-serif;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:40px 26px; text-align:center;
+  /* 碎花桌布，跟 App 里同一张（data URI，不额外请求） */
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='88' height='88' viewBox='0 0 88 88'><g opacity='0.5'><circle cx='20.0' cy='17.4' r='3.6' fill='%23E6C9C9'/><circle cx='24.4' cy='20.6' r='3.6' fill='%23E6C9C9'/><circle cx='22.7' cy='25.7' r='3.6' fill='%23E6C9C9'/><circle cx='17.3' cy='25.7' r='3.6' fill='%23E6C9C9'/><circle cx='15.6' cy='20.6' r='3.6' fill='%23E6C9C9'/><circle cx='20' cy='22' r='2.9' fill='%23EADFC4'/><circle cx='64.0' cy='59.4' r='3.6' fill='%23CCD6C0'/><circle cx='68.4' cy='62.6' r='3.6' fill='%23CCD6C0'/><circle cx='66.7' cy='67.7' r='3.6' fill='%23CCD6C0'/><circle cx='61.3' cy='67.7' r='3.6' fill='%23CCD6C0'/><circle cx='59.6' cy='62.6' r='3.6' fill='%23CCD6C0'/><circle cx='64' cy='64' r='2.9' fill='%23EADFC4'/><circle cx='68.0' cy='12.4' r='2.8' fill='%23EADFC4'/><circle cx='71.4' cy='14.9' r='2.8' fill='%23EADFC4'/><circle cx='70.1' cy='18.9' r='2.8' fill='%23EADFC4'/><circle cx='65.9' cy='18.9' r='2.8' fill='%23EADFC4'/><circle cx='64.6' cy='14.9' r='2.8' fill='%23EADFC4'/><circle cx='68' cy='16' r='2.2' fill='%23E6C9C9'/><circle cx='18.0' cy='62.6' r='2.7' fill='%23EADFC4'/><circle cx='21.2' cy='64.9' r='2.7' fill='%23EADFC4'/><circle cx='20.0' cy='68.8' r='2.7' fill='%23EADFC4'/><circle cx='16.0' cy='68.8' r='2.7' fill='%23EADFC4'/><circle cx='14.8' cy='64.9' r='2.7' fill='%23EADFC4'/><circle cx='18' cy='66' r='2.1' fill='%23CCD6C0'/><circle cx='44' cy='42' r='2.2' fill='%23E3DAC6'/></g></svg>");
+  background-size:88px 88px;
+}
+.mark{width:96px;height:96px;margin-bottom:18px}
+h1{font-family:"LXGW WenKai",serif;font-size:34px;letter-spacing:.14em;font-weight:400}
+.sub{font-family:"LXGW WenKai",serif;font-size:15.5px;color:#6B655C;line-height:1.9;margin-top:10px;max-width:17em}
+.cta{
+  display:inline-block; margin-top:30px; padding:15px 40px; border-radius:10px;
+  background:#C94B3C; color:#F7F3EB; font-size:17px; letter-spacing:.12em;
+  font-family:"ZCOOL KuaiLe","Xiaolai",sans-serif; text-decoration:none;
+  box-shadow:0 2px 8px rgba(140,50,45,.24);
+}
+.note{font-size:12.5px;color:#8C8880;letter-spacing:.06em;margin-top:16px;line-height:1.9}
+/* 微信里点不了商店链接，只能引导去浏览器。默认藏着，检测到微信才亮。 */
+#wx{display:none;position:fixed;inset:0;background:rgba(37,36,33,.72);z-index:9;
+    padding:22px;color:#F7F3EB;text-align:right}
+#wx .arrow{font-size:40px;line-height:1;margin:2px 10px 0 0}
+#wx .tip{font-family:"LXGW WenKai",serif;font-size:17px;line-height:2;margin-top:6px;
+         letter-spacing:.06em;text-align:right}
+#wx .close{margin-top:26px;font-size:13px;color:#C9C3B7;text-align:center;letter-spacing:.1em}
+</style>
+</head>
+<body>
+  <!-- 小确幸那枚章（App 图标就是它），路径直接内嵌，不额外请求 -->
+  <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
+    <path d="M50,6 Q56,34 82,42 Q56,50 50,80 Q44,50 18,42 Q44,34 50,6 Z" fill="#C94B3C" opacity=".92"/>
+    <path d="M76,58 Q79,70 90,73 Q79,76 76,88 Q73,76 62,73 Q73,70 76,58 Z" fill="#C94B3C" opacity=".78"/>
+    <path d="M22,66 Q24,73 31,75 Q24,77 22,84 Q20,77 13,75 Q20,73 22,66 Z" fill="#C94B3C" opacity=".62"/>
+  </svg>
+
+  <h1>戳了么</h1>
+  <div class="sub" id="sub">用一枚章，把今天的小事留下来。</div>
+  <a class="cta" id="cta" href="../">先在网页里试试</a>
+  <div class="note" id="note">iPhone 和安卓的 App 正在上架，还没好。</div>
+
+  <div id="wx">
+    <div class="arrow">↗</div>
+    <div class="tip">点右上角 ···<br>选「在浏览器打开」</div>
+    <div class="close">（碰一下别处关掉）</div>
+  </div>
+
+<script>
+(function () {
+  // ==== 上架之后只改这一块 ====
+  // 把 ready 改成 true，并填上真实地址；已经发出去的分享卡全部自动生效。
+  var STORE = {
+    ready: false,
+    ios: '',                       // 例：https://apps.apple.com/cn/app/id6805745519
+    android: '',                   // 例：https://www.tybbtech.com/lifestamps/app-release.apk
+  };
+  var WEB = '../';                 // 网页版：上架前所有平台都先来这儿
+
+  var ua = navigator.userAgent || '';
+  var isWx = /MicroMessenger/i.test(ua);
+  var isIOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  var isAndroid = /Android/i.test(ua);
+  var isMobile = isIOS || isAndroid || /Mobile/i.test(ua);
+
+  var cta = document.getElementById('cta');
+  var note = document.getElementById('note');
+  var sub = document.getElementById('sub');
+
+  if (STORE.ready) {
+    if (isIOS && STORE.ios) { cta.href = STORE.ios; cta.textContent = '去 App Store'; note.textContent = ''; }
+    else if (isAndroid && STORE.android) { cta.href = STORE.android; cta.textContent = '下载安装包'; note.textContent = ''; }
+    else { cta.href = WEB; cta.textContent = '在网页里打开'; note.textContent = '手机上装 App 更好用。'; }
+  } else {
+    // ⚠️ 还没上架就别写「下载 App」——那是文案说了代码没做的事。
+    cta.href = WEB;
+    cta.textContent = '先在网页里试试';
+    note.textContent = 'iPhone 和安卓的 App 正在上架，还没好。';
+  }
+
+  if (!isMobile) {
+    sub.textContent = '用一枚章，把今天的小事留下来。';
+    note.textContent = '手机上打开更合适 —— 它本来就是给手机做的。';
+  }
+
+  // 微信内打不开应用商店，只能引导去浏览器。
+  // ⚠️ 上架前按钮指的是网页版，微信里点得开，所以这层只在**真要跳商店**时才亮。
+  if (isWx && STORE.ready && (isIOS || isAndroid)) {
+    var wx = document.getElementById('wx');
+    wx.style.display = 'block';
+    wx.addEventListener('click', function () { wx.style.display = 'none'; });
+  }
+})();
+</script>
+</body>
+</html>

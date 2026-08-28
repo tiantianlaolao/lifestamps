@@ -8,7 +8,8 @@ import { defsMarkup, stampSVG, WEATHER, weatherSVG } from './stamp.js';
 import { store, dateKey } from './store.js';
 import { verdictOf } from './verdict.js';
 import { COPY } from './i18n.js';
-import { isNative, shareImage } from './native.js';
+import { isNative, shareImage, shareText } from './native.js';
+import { createShare, shareURL, codeForDay } from './net.js';
 
 // 保存/分享那颗键：浏览器下载，原生壳走系统分享面板
 // 🔴 原生里**绝不回落到 <a download>**——WKWebView 里它是死的，用户点了毫无反应（静默失败最难查）
@@ -330,6 +331,62 @@ export function buildDayCard(dk, weather) {
 </svg>`;
 }
 
+// 「发个链接给朋友」：把这一天存到服务端换一个短码，再把链接交出去。
+//
+// 跟「保存图片」是两件事，别合并：
+//   图 = 只能看；链接 = 对方能在网页里给你留一枚封蜡，而那 6 枚**只能靠别人送**。
+// 🔴 微信收到「图 + 链接」时只认图、把链接吞掉，所以原生里分享文字是单独一次调用。
+// 🔴 同一天只生成一个短码（codeForDay）：发两次会生成两个码，
+//    收到的赠礼分散在两边，A 看到的比例就是错的。
+function bindLinkBtn(dk) {
+  const btn = document.getElementById('sh-link');
+  const box = document.getElementById('sh-linkbox');
+  if (!btn || !box) return;
+
+  const already = codeForDay(dk);
+  if (already) showLink(shareURL(already.code), false);
+
+  btn.onclick = async () => {
+    const recs = store.recordsOf(dk);
+    if (!recs.length) { box.textContent = '这一天还是空的。'; return; }
+    btn.disabled = true;
+    btn.textContent = '正在生成…';
+    const rec = await createShare(dk, recs, verdictOf(recs), store.dayNoteOf(dk) || '');
+    btn.disabled = false;
+    btn.textContent = '发个链接给朋友';
+    if (!rec) { box.textContent = '没能生成，检查一下网络再试。'; return; }
+    const url = shareURL(rec.code);
+    // 原生：直接拉起系统分享面板，一步发出去
+    if (isNative()) {
+      try { if (await shareText(`我今天的样子 ${url}`, '戳了么')) { showLink(url, false); return; } }
+      catch (e) { if (/cancel/i.test(String(e && e.message))) { showLink(url, false); return; } }
+    }
+    showLink(url, true);
+  };
+
+  function showLink(url, justMade) {
+    box.innerHTML = `<div class="sh-url">${xesc(url)}</div>
+      <button class="ov-btn ghost sh-copy" id="sh-copy">复制链接</button>
+      <div class="sh-tip">${justMade ? '发给朋友，他们能给你留一枚封蜡。' : '这一天已经有链接了，发同一个。'}
+        七天后自动收起来。</div>`;
+    const cp = document.getElementById('sh-copy');
+    cp.onclick = async () => {
+      // 🔴 clipboard API 在微信内置浏览器和一部分安卓 WebView 里会直接失败，
+      //    所以留一条"选中文字自己长按复制"的后路，不能只有一条路。
+      try {
+        await navigator.clipboard.writeText(url);
+        cp.textContent = '复制好了';
+      } catch (_) {
+        const el = box.querySelector('.sh-url');
+        const r = document.createRange(); r.selectNodeContents(el);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+        cp.textContent = '长按上面这行复制';
+      }
+      setTimeout(() => { cp.textContent = '复制链接'; }, 2400);
+    };
+  }
+}
+
 export async function openShareDay(dk) {
   const ov = document.getElementById('ov-share');
   let weather = store.weatherOf(dk);
@@ -349,6 +406,8 @@ export async function openShareDay(dk) {
                placeholder="想在卡上写一句话？">
       </div>
       <button class="ov-btn" id="sh-save" style="margin-top:8px">保存图片</button>
+      <button class="ov-btn ghost" id="sh-link">发个链接给朋友</button>
+      <div class="sh-linkbox" id="sh-linkbox"></div>
       <button class="ov-btn ghost" id="sh-close">关闭</button>`;
     ov.querySelectorAll('.wbtn').forEach(b => b.onclick = () => {
       weather = weather === b.dataset.w ? null : b.dataset.w;
@@ -364,6 +423,7 @@ export async function openShareDay(dk) {
       draw();
     };
     bindSaveBtn(document.getElementById('sh-save'), dataUrl, `今日手账-${dk}.png`);
+    bindLinkBtn(dk);
     document.getElementById('sh-close').onclick = () => ov.classList.remove('show');
   }
   try { await draw(); } catch (e) {

@@ -1,0 +1,47 @@
+<!doctype html><meta charset="utf-8"><title>发链接·端到端</title>
+<style>html,body{margin:0;font:12px monospace}iframe{border:0;display:block}pre{padding:8px}</style>
+<iframe id="f" src="/?skipob=1&book=open&demo=1&open=shareday" width="430" height="900"></iframe>
+<pre id="out">跑中…</pre>
+<script>
+// 端到端：在真浏览器里点一次「发个链接给朋友」，看短码有没有真的生成、
+// 链接指向对不对、再发一次是不是复用同一个码。
+// 🔴 无头 Chrome 点不了按钮，所以从父页面直接调 iframe 里的 DOM。
+const out = document.getElementById('out'); const lines = [];
+const log = t => { lines.push(t); out.textContent = lines.join('\n'); };
+document.getElementById('f').addEventListener('load', async () => {
+  const w = document.getElementById('f').contentWindow;
+  const d = w.document;
+  const wait = (fn, ms = 6000) => new Promise((res, rej) => {
+    const t0 = Date.now();
+    (function loop() {
+      const v = fn(); if (v) return res(v);
+      if (Date.now() - t0 > ms) return rej(new Error('等超时'));
+      setTimeout(loop, 120);
+    })();
+  });
+  try {
+    const btn = await wait(() => d.getElementById('sh-link'));
+    log('① 分享弹层里有「' + btn.textContent + '」按钮');
+    btn.click();
+    const url = await wait(() => { const e = d.querySelector('.sh-url'); return e && e.textContent; });
+    log('② 点了之后拿到链接：' + url);
+    log('   指向生产站？ ' + (url.startsWith('https://www.tybbtech.com/lifestamps/s/?c=') ? '是' : '❌ 否'));
+    const code = url.split('c=')[1];
+    log('   短码格式对？ ' + (/^[a-z2-9]{6}$/.test(code) ? '是 ' + code : '❌ 否 ' + code));
+    const shares = JSON.parse(w.localStorage.getItem('lifestamps_shares') || '[]');
+    log('③ 本地存下了 ' + shares.length + ' 条分享，code=' + (shares[0] && shares[0].code));
+    log('   跟链接里的一致？ ' + (shares[0] && shares[0].code === code ? '是' : '❌ 否'));
+    // 再点一次，必须复用同一个码
+    btn.click();
+    await new Promise(r => setTimeout(r, 900));
+    const url2 = d.querySelector('.sh-url').textContent;
+    log('④ 再点一次 → ' + (url2 === url ? '复用同一个码 ✅' : '❌ 生成了新码 ' + url2));
+    const s2 = JSON.parse(w.localStorage.getItem('lifestamps_shares') || '[]');
+    log('   本地还是 ' + s2.length + ' 条 ' + (s2.length === 1 ? '✅' : '❌'));
+    // 服务端真的存下了吗
+    const r = await fetch('/api/share/' + code);
+    const j = await r.json();
+    log('⑤ 服务端读得回来：' + r.status + ' 章数=' + (j.stamps ? j.stamps.length : '-') + ' 判词=' + j.verdict);
+  } catch (e) { log('❌ ' + e.message); }
+});
+</script>

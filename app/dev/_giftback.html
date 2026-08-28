@@ -1,0 +1,59 @@
+<!doctype html><meta charset="utf-8"><title>赠礼回流·端到端</title>
+<style>html,body{margin:0;font:12px monospace}iframe{border:0;display:block}pre{padding:8px}</style>
+<pre id="out">跑中…</pre>
+<iframe id="f" width="430" height="900"></iframe>
+<script>
+// A 发链接 → B 送一枚 → A 回来收到。整条链路一次跑完。
+const out = document.getElementById('out'); const lines = [];
+const log = t => { lines.push(t); out.textContent = lines.join('\n'); };
+const f = document.getElementById('f');
+const wait = (fn, ms = 8000) => new Promise((res, rej) => {
+  const t0 = Date.now();
+  (function loop() { const v = fn(); if (v) return res(v);
+    if (Date.now() - t0 > ms) return rej(new Error('等超时')); setTimeout(loop, 120); })();
+});
+(async () => {
+ try {
+  // ---- 第一程：A 在 App 里发链接 ----
+  f.src = '/?skipob=1&book=open&demo=1&open=shareday';
+  await new Promise(r => f.addEventListener('load', r, { once: true }));
+  let w = f.contentWindow, d = w.document;
+  const btn = await wait(() => d.getElementById('sh-link'));
+  btn.click();
+  const url = await wait(() => { const e = d.querySelector('.sh-url'); return e && e.textContent; });
+  const code = url.split('c=')[1];
+  log('① A 发出链接，短码 ' + code);
+  const before = JSON.parse(w.localStorage.getItem('lifestamps_hidden') || '{}');
+  log('   此刻 A 手上的赠礼章：' + (Object.keys(before).filter(k => k.startsWith('g_')).join(',') || '（一枚没有）'));
+
+  // ---- 第二程：B 匿名送一枚 ----
+  const r = await fetch('/api/share/' + code + '/gift',
+    { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ seal: 'g_umbrella' }) });
+  log('② B 送了「带把伞吧」 → HTTP ' + r.status);
+
+  // ---- 第三程：A 重新打开 App ----
+  f.src = '/?skipob=1&book=open';
+  await new Promise(rr => f.addEventListener('load', rr, { once: true }));
+  w = f.contentWindow; d = w.document;
+  const ov = await wait(() => {
+    const e = d.getElementById('ov-hidden');
+    return e && e.classList.contains('show') ? e : null;
+  }, 9000);
+  const name = ov.querySelector('.ov-name').textContent;
+  const spark = ov.querySelector('.ov-spark').textContent;
+  const sub = ov.querySelector('.ov-sub').textContent;
+  log('③ A 一打开就弹出：「' + spark + '」 / ' + name + ' / ' + sub);
+  log('   话对不对？ ' + (spark.includes('有人给你') ? '✅ 说的是「别人给的」不是「你解开了」' : '❌ 说错了'));
+  const after = JSON.parse(w.localStorage.getItem('lifestamps_hidden') || '{}');
+  log('④ 收进抽屉了？ ' + (after.g_umbrella ? '✅ g_umbrella 已入库' : '❌ 没入库'));
+
+  // ---- 第四程：再打开一次，不能重复弹 ----
+  f.src = '/?skipob=1&book=open';
+  await new Promise(rr => f.addEventListener('load', rr, { once: true }));
+  await new Promise(rr => setTimeout(rr, 3000));
+  const ov2 = f.contentDocument.getElementById('ov-hidden');
+  log('⑤ 再打开一次会不会重复弹？ ' + (ov2.classList.contains('show') ? '❌ 又弹了' : '✅ 不弹了'));
+ } catch (e) { log('❌ ' + e.message); }
+})();
+</script>

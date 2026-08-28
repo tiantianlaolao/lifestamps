@@ -1,9 +1,10 @@
 // ============================================================
 // 戳了么 · 主逻辑（V1.2：手账翻书 / 印泥消耗 / 2.5D 盖章）
 // ============================================================
-import { STAMPS, GLYPHS, isGlyph, HIDDEN, CATEGORIES, INKS, COPY, stampById, hiddenById, monthPersona, lockedMaterial, seriesById } from './data.js';
+import { STAMPS, GLYPHS, isGlyph, HIDDEN, GIFTS, GIFT_WAX, CATEGORIES, INKS, COPY, stampById, hiddenById, monthPersona, lockedMaterial, seriesById } from './data.js';
 import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint, inkMainColor, inkCSS, darken, seedOf, weatherSVG } from './stamp.js';
-import { store, dateKey, fmtTime } from './store.js';
+import { store, dateKey, fmtTime, posOf } from './store.js';
+import { collectGifts } from './net.js';
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked } from './hidden.js';
 import { verdictOf } from './verdict.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
@@ -202,6 +203,13 @@ function init() {
       for (const st of STAMPS) store.unlockStamp(st.id);
     } else { store.unlocked = {}; store.persist(); }
   }
+  // dev：?gift=1 假装朋友把 6 枚赠礼章都送过了（后端还没有，只能这么看效果）；
+  //      ?gift=0 收回，看回"只能由朋友送给你"的未收到态
+  if (params.get('gift')) {
+    const on = params.get('gift') === '1';
+    for (const g of GIFTS) { if (on) store.hidden[g.id] = Date.now(); else delete store.hidden[g.id]; }
+    store.persist();
+  }
   if (params.get('chip')) CHIP = +params.get('chip');        // dev：纸上章的基准尺寸
   if (params.get('thin')) setThin(+params.get('thin'));      // dev：章的线宽系数
   if (params.get('book') === 'open') { store.bookClosed = false; store.persist(); }  // dev：跳过封面直接摊开
@@ -238,6 +246,14 @@ function init() {
   store.lastSeen = Date.now(); store.persist();
 
   switchTab(params.get('tab') || 'today');
+
+  // 回来看看朋友送了什么。
+  // 🔴 放在渲染之后、且不 await：网络慢/不通都不能挡住首屏 ——
+  //    这个 App 的核心动作（盖章）从来不需要联网。
+  // ⚠️ 引导页还没走完时不弹，别把新用户的第一屏抢了。
+  if (store.settings.onboarded) {
+    collectGifts().then(got => { if (got.length) showGiftQueue(got); }).catch(() => {});
+  }
   if (devPage) openFlip(devPage);
   if (params.get('noopen') === '1') noOpening = true;   // dev：一律不出封面
   if (params.get('opening') === '1') playOpening(true);  // dev：强制再演一次
@@ -1228,7 +1244,13 @@ function noteHint(rid) {
   if (!chip) return;
   const tip = document.createElement('button');
   tip.className = 'note-hint';
-  tip.textContent = COPY.noteHint;
+  // 🔴 这里不能用纯文字的铅笔符号：✎(U+270E) 三款字体里一个都没有，
+  //    掉到系统字体会渲染成**彩色 emoji 铅笔**，在手绘水墨界面里非常突兀
+  //    （iOS 上更花）。所以画成内联 SVG —— 跟界面同源，且不依赖任何字体。
+  tip.innerHTML = `<svg class="nh-pen" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 20 L5.6 15.4 L16.2 4.8 L19.2 7.8 L8.6 18.4 Z"/>
+      <path d="M15 6 L18 9"/><path d="M4.4 19.6 L7.4 18.6"/>
+    </svg>${COPY.noteHint}`;
   tip.style.left = chip.style.left;
   tip.style.top = chip.style.top;
   tip.addEventListener('click', e => { e.stopPropagation(); tip.remove(); openNote(rid); });
@@ -1384,11 +1406,7 @@ function renderSupply() {
   bindProCard($('#supply-list'), renderSupply);
 }
 
-function posOf(r) {
-  if (r.px != null) return { x: r.px, y: r.py };
-  let h = 0; for (const c of r.id) h = (h * 31 + c.charCodeAt(0)) | 0; h = Math.abs(h);
-  return { x: 12 + (h % 73), y: 14 + ((h >> 4) % 66) };
-}
+// posOf 已挪到 store.js —— 分享给朋友的那份数据也要用同一个算法
 
 // ============================================================
 // 印章操作（长按）
@@ -1433,8 +1451,31 @@ function openActions(rid) {
 }
 
 // ============================================================
-// 隐藏章发现
+// 隐藏章发现 / 收到赠礼
 // ============================================================
+// 收到朋友送的封蜡。
+// 🔴 跟隐藏章共用覆盖层，但**话必须不一样**：隐藏章是"你解开了"，
+//    赠礼是"有人给了你" —— 说成前者，这枚章存在的全部意义就没了。
+// 🔴 不说是谁送的（也确实不知道）：匿名是这套机制的地基，不是妥协。
+function showGiftQueue(ids) {
+  const [id, ...rest] = ids; if (!id) return;
+  const g = GIFTS.find(x => x.id === id); if (!g) return showGiftQueue(rest);
+  const ov = $('#ov-hidden');
+  ov.innerHTML = `
+    <div class="ov-spark">${COPY.giftGotSpark}</div>
+    <div class="ov-badge">${stampSVG({ ...g, kind: 'seal' }, { size: 168, rot: -2 })}</div>
+    <div class="ov-name">${g.name}</div>
+    <div class="ov-sub">${g.say}</div>
+    <button class="ov-btn" id="hid-ok">${COPY.ovPutAway}</button>`;
+  ov.classList.add('show');
+  haptic();
+  $('#hid-ok').onclick = () => {
+    ov.classList.remove('show');
+    if (rest.length) showGiftQueue(rest); else render();
+  };
+}
+
+
 function showHiddenQueue(list) {
   const [h, ...rest] = list; if (!h) return;
   const ov = $('#ov-hidden');
@@ -1515,9 +1556,11 @@ function drawerStamps(used, cnt) {
   const cell = (s2, key) => {
     const got = key === 'hid' ? store.hidden[s2.id] : store.discovered[s2.id];
     const n = cnt[s2.id] || 0;
+    // 赠礼章不吃印泥，名字用封蜡自己的墨绿；普通章跟着它当前的印泥色。
+    const nameColor = s2.kind === 'seal' ? GIFT_WAX : inkMainColor(s2.ink);
     return got
-      ? `<div class="dk-cell" data-${key === 'hid' ? 'hid' : 'sid'}="${s2.id}" style="color:${inkMainColor(s2.ink)}">
-          <span class="face inked">${stampSVG(s2, { size: 34 })}</span>
+      ? `<div class="dk-cell" data-${key === 'hid' ? 'hid' : 'sid'}="${s2.id}" style="color:${nameColor}">
+          <span class="face inked${s2.kind === 'seal' ? ' seal' : ''}">${stampSVG(s2, { size: 34 })}</span>
           <span class="nm">${s2.name}</span>
           ${key === 'hid' ? '' : `<span class="ct">${n >= 100 ? COPY.stampWorn : '×' + n}</span>`}</div>`
       : `<div class="dk-cell raw">
@@ -1529,6 +1572,7 @@ function drawerStamps(used, cnt) {
   const inCat = s2 => drawerCat === 'all' || s2.cat === drawerCat;
   const mine = STAMPS.filter(s2 => store.discovered[s2.id] && inCat(s2));
   const hidGot = HIDDEN.filter(h => store.hidden[h.id]).length;
+  const giftGot = GIFTS.filter(g => store.hidden[g.id]).length;   // 收到的赠礼章也记在 store.hidden 里
   // 还没解锁的（真的不在托盘里的那些）。⚠️ 跟"没盖过"不是一回事：
   // 解锁了但还没盖过的章在托盘里摆着，属于「我盖过的」那折的空缺，不属于这儿。
   const locked = STAMPS.filter(s2 => !isUnlocked(s2.id) && inCat(s2));
@@ -1604,8 +1648,12 @@ function drawerStamps(used, cnt) {
     ${locked.length ? fold('lock', COPY.drawerLocked,
       (unlockedCnt + ' / ' + (unlockedCnt + locked.length)), drawerLockOpen,
       `<div class="dk-grid">${locked.map(s2 => cell(s2, 'sid')).join('')}</div>`) : ''}
-    ${fold('hid', COPY.drawerHidden, hidGot + ' / ' + HIDDEN.length, drawerHidOpen,
-      `<div class="dk-grid">${HIDDEN.map(h => cell(h, 'hid')).join('')}</div>`)}`;
+    ${/* 隐藏章那一栏现在装两类：条件解锁的隐藏章 + 只能被朋友送的封蜡（8-28 用户拍板）。
+         两者同族——都是买不到、要靠遇到的东西。 */''}
+    ${fold('hid', COPY.drawerHidden,
+      (hidGot + giftGot) + ' / ' + (HIDDEN.length + GIFTS.length), drawerHidOpen,
+      `<div class="dk-grid">${HIDDEN.map(h => cell(h, 'hid')).join('')
+        + GIFTS.map(g => cell({ ...g, kind: 'seal', hint: COPY.giftOnlyHint }, 'hid')).join('')}</div>`)}`;
 }
 
 function drawerInks() {

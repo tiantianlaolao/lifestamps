@@ -1,0 +1,50 @@
+<!doctype html><meta charset="utf-8"><title>赠礼章·生产渲染路径</title>
+<link rel="stylesheet" href="../css/app.css">
+<style>
+ body{margin:0;background:#DDD8CC;font:13px/1.7 "Xiaolai",system-ui;color:#252421;padding:20px}
+ .wrap{max-width:1000px;margin:0 auto}
+ h2{font-family:"LXGW WenKai",serif;font-size:16px;letter-spacing:.12em;margin:0 0 4px;color:#5A544A}
+ .sub{color:#6B655C;font-size:12px;margin-bottom:14px}
+ .box{background:#FBF8F1;border-radius:10px;padding:14px 18px 12px;margin-bottom:12px;
+      background-image:radial-gradient(circle at 3px 3px,#D3CDBE 2.2px,transparent 2.6px);background-size:26px 26px}
+ .bt{font-size:12px;letter-spacing:.1em;color:#8C8880;margin-bottom:10px}
+ .bt b{color:#252421;font-weight:400;font-family:"LXGW WenKai",serif;font-size:14.5px}
+ .line{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+ .cell{text-align:center;width:100px}
+ .cell .nm{font-family:"LXGW WenKai",serif;font-size:12.5px;margin-top:2px}
+ .cell .sy{font-size:10.5px;color:#8C8880;line-height:1.5}
+</style>
+<div class="wrap">
+  <h2>赠礼章 · 走生产渲染路径（data.js + stamp.js，不是方案页那份临时代码）</h2>
+  <div class="sub">这一页验证的是真的会上线的那条路：stampSVG 的 seal 分支。</div>
+  <div id="out"></div>
+</div>
+<script type="module">
+import { GIFTS, stampById } from '../js/data.js';
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+document.body.insertAdjacentHTML('afterbegin',
+  `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+const S = id => stampById[id];
+let h = '';
+h += `<div class="box"><div class="bt"><b>纸上尺寸 56</b></div><div class="line">`;
+for (const g of GIFTS) h += `<div class="cell">${stampSVG(S(g.id), { size: 56, rot: -3 })}
+  <div class="nm">${g.name}</div><div class="sy">${g.say}</div></div>`;
+h += `</div></div>`;
+h += `<div class="box"><div class="bt"><b>抽屉格子 34</b>　← 最小尺寸，糖之前在这儿会顶到蜡边</div><div class="line">`;
+for (const g of GIFTS) h += stampSVG(S(g.id), { size: 34 });
+h += `</div></div>`;
+h += `<div class="box"><div class="bt"><b>还没收到（carve 态）34</b></div><div class="line">`;
+for (const g of GIFTS) h += stampSVG(S(g.id), { size: 34, carve: true });
+h += `</div></div>`;
+h += `<div class="box"><div class="bt"><b>混在纸上</b>　左三=自己盖的线稿章，右三=朋友送的封蜡</div><div class="line">`;
+for (const id of ['milktea','work','stayup']) h += stampSVG(S(id), { size: 56, ink:'zhu', mat:'r', seed:3 });
+h += `<span style="width:18px"></span>`;
+for (const g of GIFTS.slice(0,3)) h += stampSVG(S(g.id), { size: 56, rot: 4 });
+h += `</div></div>`;
+h += `<div class="box"><div class="bt"><b>各尺寸</b>　托盘30 / 月视图22 / 抽屉34 / 纸上56 / 分享卡120</div><div class="line">`;
+for (const s of [30,22,34,56,120]) h += stampSVG(S('g_candy'), { size: s });
+h += `<span style="width:18px"></span>`;
+for (const s of [30,22,34,56,120]) h += stampSVG(S('g_coat'), { size: s });
+h += `</div></div>`;
+document.getElementById('out').innerHTML = h;
+</script>

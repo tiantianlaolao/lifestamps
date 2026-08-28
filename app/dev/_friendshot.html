@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8"><title>朋友端·验收</title>
+<style>html,body{margin:0}iframe{border:0;display:block}</style>
+<iframe id="f" width="430" height="1300"></iframe>
+<script>
+// 🔴 无头 Chrome 不发 rAF 帧：.f-bf 的 transition:width 会永远停在起始的 0，
+//    截图上比例条全是空的 —— 那是量具的问题，不是页面的问题。
+//    这一页把 iframe 里的动画全关掉再截。
+document.getElementById('f').addEventListener('load', () => {
+  const d = document.getElementById('f').contentDocument;
+  const st = d.createElement('style');
+  st.textContent = '*{animation:none!important;transition:none!important}';
+  d.head.appendChild(st);
+});
+</script>
+<script>
+// 短码从本页 URL 的 ?c= 取 —— 别把某次跑出来的临时短码写死在文件里，
+// 提交进仓之后那就是个死链接。用法：本页 ?c=短码
+document.getElementById('f').src = '/s/?c=' + (new URLSearchParams(location.search).get('c') || '');
+</script>

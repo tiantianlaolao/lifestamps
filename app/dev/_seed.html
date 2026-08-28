@@ -1,0 +1,8 @@
+<!doctype html><meta charset="utf-8"><title>seed</title>
+<script>
+// dev 跳板：无头 Chrome 没法点按钮，也没法预置 localStorage。
+// 这一页同源，先写好"这台设备已经送过 X"，再跳到朋友端看"送完之后"那一屏。
+var p = new URLSearchParams(location.search);
+localStorage.setItem('lifestamps_sent_' + p.get('c'), p.get('seal'));
+location.replace('../s/?c=' + p.get('c'));
+</script>

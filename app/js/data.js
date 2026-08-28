@@ -490,6 +490,51 @@ export const UNLOCK = {
   rainbowsky: { type: 'total', n: 60 },                     // 最稀有的一枚，得攒
 };
 
+// ---------- 赠礼章（封蜡印）----------
+// 🔴 只能被朋友送。商店买不到、自己得不到、条件也解锁不了 —— 这是它们全部价值的来源。
+// 🔴 **不吃印泥**：永远是封蜡自己的墨绿，你换什么印泥它都不变，因为那不是你的墨。
+//    也因此它们不参与高级印泥盒那套付费 —— 价值来自"只能被送"，不该再跟钱扯上关系。
+// ⚠️ 形态是**封蜡**不是线稿章：跟印章同源（都是压印）但一眼可辨，
+//    这样纸上就分得出哪些是自己盖的、哪些是别人给的。
+//    渲染走 stamp.js 的 seal 分支（实心蜡饼 + 图案挖空成纸色），不走 CC 印泥替换。
+// 归属：列在抽屉的「隐藏章」那一栏（8-28 用户拍板）—— 跟隐藏章同族，
+//       都是买不到、要靠遇到的东西。
+export const GIFT_WAX = '#4E6B52';
+export const GIFT_SEAL_PATH = 'M50,7 Q68,6 79,17 Q92,27 93,45 Q95,64 83,77 Q71,92 51,93 Q31,94 18,82 Q5,70 6,50 Q5,30 18,18 Q31,6 50,7 Z';
+export const GIFTS = [
+{ id:'g_candy', name:'一颗糖', say:'给你点甜的', d:`
+<g transform="translate(50,50) scale(0.86) translate(-50,-50)">
+<path d="M34,36 Q30,36 30,40 L30,60 Q30,64 34,64 L66,64 Q70,64 70,60 L70,40 Q70,36 66,36 Z"/>
+<path d="M28,38 L15,28 Q12,26 13,30 L16,50 L13,70 Q12,74 15,72 L28,62 Z"/>
+<path d="M72,38 L85,28 Q88,26 87,30 L84,50 L87,70 Q88,74 85,72 L72,62 Z"/>
+<path d="M40,44 L40,56 M50,44 L50,56 M60,44 L60,56" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/>
+</g>`},
+{ id:'g_lamp', name:'给你留了盏灯', say:'回来还亮着', d:`
+<path d="M50,20 Q35,20 30,34 Q26,45 33,53 L67,56 Q75,49 72,37 Q68,22 50,20 Z"/>
+<path d="M36,60 L66,63 Q69,63 68,67 L67,72 Q66,75 63,75 L38,72 Q35,72 35,68 L35,63 Q35,60 36,60 Z"/>
+<path d="M44,79 L60,81 Q63,81 62,84 L61,87 Q60,90 57,89 L45,88 Q42,88 42,85 L42,81 Q42,79 44,79 Z"/>`},
+{ id:'g_umbrella', name:'带把伞吧', say:'我看今天要下雨', d:`
+<path d="M50,14 Q26,15 15,38 Q13,43 18,42 Q26,38 33,42 Q40,46 46,42 Q50,39 54,42
+Q61,46 68,42 Q75,38 83,42 Q88,44 86,39 Q76,16 50,14 Z"/>
+<path d="M45,44 L55,44 L56,74 Q56,88 44,88 Q33,88 32,77 Q31,72 36,72 Q41,72 41,77 Q42,81 46,80 Z"/>`},
+{ id:'g_hotcup', name:'喝点热的', say:'不问是什么，热的就行', d:`
+<path d="M27,42 Q25,39 29,39 L66,41 Q70,41 69,45 L66,72 Q65,80 57,81 L38,80 Q30,79 29,71 Z"/>
+<path d="M70,48 Q84,46 84,57 Q84,68 68,67 L69,61 Q77,61 77,57 Q77,53 69,54 Z"/>
+<path d="M40,31 Q36,24 41,18 M53,31 Q49,23 54,17" fill="none" stroke-width="5" stroke-linecap="round"/>`},
+{ id:'g_coat', name:'天冷了', say:'外套给你放这儿', d:`
+<path d="M37,20 L50,31 L63,20 Q79,25 84,42 L75,49 L73,44 L74,82 Q62,87 50,87 Q38,87 26,82
+L27,44 L25,49 L16,42 Q21,25 37,20 Z"/>
+<path d="M50,33 L50,86" fill="none" stroke="#fff" stroke-width="3.6"/>
+<path d="M38,21 Q44,32 50,32 Q56,32 62,21" fill="none" stroke="#fff" stroke-width="4.4" stroke-linejoin="round"/>
+<path d="M42,50 L42,58 M58,50 L58,58" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/>`},
+{ id:'g_paw', name:'路过，给你留个印', say:'（不说是谁）', d:`
+<path d="M50,44 Q64,44 68,58 Q71,70 61,75 Q50,79 39,75 Q29,70 32,58 Q36,44 50,44 Z"/>
+<ellipse cx="33" cy="33" rx="8" ry="10" transform="rotate(-16 33 33)"/>
+<ellipse cx="50" cy="26" rx="8" ry="10.5"/>
+<ellipse cx="67" cy="33" rx="8" ry="10" transform="rotate(16 67 33)"/>
+<ellipse cx="79" cy="49" rx="7" ry="9" transform="rotate(28 79 49)"/>`},
+];
+
 // ---------- 文案 ----------
 // ---------- 系列（一盒章）----------
 // 系列 = 按盒卖、按盒收纳的单位，和「分类」正交：奶茶的分类是「吃喝」，系列是「基础章」。
@@ -552,7 +597,8 @@ export const GLYPHS = [
 ];
 
 // 记录里可能引用字形章，所以查表要把它们算上（但统计口径不算，见上面红字）
-export const stampById = Object.fromEntries([...STAMPS, ...GLYPHS].map(s => [s.id, s]));
+// 赠礼章也进来 —— 记录里会引用它们的 id
+export const stampById = Object.fromEntries([...STAMPS, ...GLYPHS, ...GIFTS.map(g => ({ ...g, kind: 'seal' }))].map(s => [s.id, s]));
 export const isGlyph = id => stampById[id]?.kind === 'glyph';
 export const hiddenById = Object.fromEntries(HIDDEN.map(h => [h.id, h]));
 export const TOTAL_COLLECTIBLE = STAMPS.length + HIDDEN.length;

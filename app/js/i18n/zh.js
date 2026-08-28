@@ -63,7 +63,7 @@ export const ZH = {
   drawerSegInks: '印泥盒',
   stampUnused: '还没盖过',
   notePlaceholder: '写一句…',
-  noteHint: '✎ 写一句',
+  noteHint: '写一句',   // 前面那支铅笔现在是内联 SVG（见 main.js:noteHint），别再往文案里塞符号
   catGlyph: '字',
   glyphBox: '数字和字母',
   glyphSub: '数字、字母、星期、标点——这些是工具，不算收集',
@@ -113,6 +113,10 @@ export const ZH = {
   //    迁移时我一度换成了完整日期，等于纯重构里偷改了界面，逐像素对拍抓到的。
   dayOnly: '{d} 日',
   drawerHidden: '隐藏章',
+  // 赠礼章在抽屉里的谜面位置：不写解锁条件（它没有条件），只说清怎么来的
+  giftOnlyHint: '只能由朋友送给你',
+  // 收到赠礼那一屏。⚠️ 不能写成「解开了」——那是隐藏章的话；这枚是别人给的
+  giftGotSpark: '✦ 有人给你留了东西',
   drawerMineMore: '还有 {n} 枚 ›',
   drawerMineLess: '只看常盖的 ‹',
   // ⚠️「盖多少次都行」被测试者点名说不对（听着像在吹）。只说事实：它自带油、不耗印泥盒。

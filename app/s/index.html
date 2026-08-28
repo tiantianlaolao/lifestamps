@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F6F2EA">
+<title>戳了么</title>
+<meta name="robots" content="noindex">
+<!-- 朋友端。A 在 App 里点「发个链接」→ 这一页 → B 匿名送一枚封蜡 → A 收到。
+     🔴 全程无账号、无登录、无身份。B 是谁，这一页自己都不知道 ——
+        备案口径「匿名投票不是社交」的地基在这儿，别往里加任何身份采集。
+     🔴 微信内置浏览器要能跑：不用弹窗、不用下载、不用剪贴板权限。 -->
+<link rel="stylesheet" href="../css/app.css">
+<style>
+  /* 🔴 必须有：.f-cta 是块级 <a> 又带左右 padding，没有 border-box 会撑出
+     100% + 68px，把整个 #main 拉宽，比例条和按钮一起溢出屏幕右边。
+     （8-28 截图抓到的，纯看代码看不出来。）*/
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100dvh; background:var(--desk,#DDD8CC); color:var(--ink,#252421);
+    font-family:var(--f-ui,"Xiaolai","PingFang SC",sans-serif);
+    display:flex; flex-direction:column; align-items:center;
+    padding:26px 18px 40px;
+  }
+  .f-wrap{width:100%; max-width:392px}
+  .f-hdr{text-align:center; margin-bottom:14px}
+  .f-hdr .f-who{font-family:var(--f-title,"ZCOOL KuaiLe"); font-size:19px; letter-spacing:.1em}
+  .f-hdr .f-dt{font-size:12.5px; color:var(--sub,#6B655C); margin-top:5px; letter-spacing:.08em}
+
+  /* 纸。刻意跟 App 里的纸同一套底色和点阵，B 一眼认得出是同一个东西 */
+  .f-paper{
+    position:relative; width:100%; aspect-ratio:366/430; border-radius:3px;
+    background:var(--paper,#F7F3EB);
+    background-image:radial-gradient(circle at 3px 3px, rgba(120,105,85,.16) 1.5px, transparent 1.8px);
+    background-size:22px 22px;
+    box-shadow:0 1px 0 rgba(63,53,48,.10), 0 8px 22px rgba(63,53,48,.13);
+    overflow:hidden;
+  }
+  .f-chip{position:absolute; transform:translate(-50%,-50%); display:flex;
+        flex-direction:column; align-items:center; pointer-events:none}
+  .f-chip .f-tm{font-size:8px; color:var(--sub,#6B655C); opacity:.75; margin-top:-3px}
+  .f-chip .f-nt{font-family:var(--f-hand,"LXGW WenKai",serif); font-size:11px;
+            max-width:120px; text-align:center; line-height:1.5; margin-top:1px}
+  /* 落下来的封蜡：B 送完就贴在纸上，让"送到了"这件事看得见 */
+  .f-chip.f-wax{animation:waxdrop .5s cubic-bezier(.2,1.4,.4,1) both}
+  @keyframes waxdrop{from{opacity:0; transform:translate(-50%,-50%) scale(2.1)}
+                     to{opacity:1; transform:translate(-50%,-50%) scale(1)}}
+
+  .f-verdict{font-family:var(--f-hand,"LXGW WenKai",serif); font-size:15px; text-align:center;
+           color:var(--ink,#252421); margin:16px 4px 0; line-height:1.9; letter-spacing:.04em}
+  .f-sect{margin-top:26px}
+  .f-sect-t{font-size:12.5px; color:var(--sub,#6B655C); letter-spacing:.1em;
+          text-align:center; margin-bottom:14px}
+
+  /* 已经留过时只剩一枚，那就居中摆着，别还占着三列网格的左上角 */
+  .f-seals{display:grid; grid-template-columns:repeat(3,1fr); gap:8px 6px; justify-items:center}
+  .f-seals:has(> :only-child){grid-template-columns:1fr}
+  /* min-width:0 是防御性的：grid 项默认 min-width:auto，名字再长一点就会顶宽轨道
+     而不是换行。现在 6 个名字都还没到那个临界点，加着是为了以后加章时不用再想。
+     ⚠️ 8-28 我一度以为「路过，给你留个印」被切了，其实是**截图方法错了**：
+        headless Chrome 最小窗宽约 500px，--window-size=430 截出来的是
+        "按 500 渲染再裁到 430"，右边那截是被截图裁的。验收要套 430px 的 iframe
+        （见 dev/_prodshot.html），别直接开小窗。 */
+  .f-seal{background:none; border:none; padding:9px 2px 8px; border-radius:10px; cursor:pointer;
+        display:flex; flex-direction:column; align-items:center; gap:5px; min-width:0;
+        -webkit-tap-highlight-color:transparent; transition:background .16s}
+  .f-seal:active{background:rgba(120,105,85,.10)}
+  .f-seal .f-nm{font-family:var(--f-hand,"LXGW WenKai",serif); font-size:12px; line-height:1.35;
+            color:var(--ink,#252421); text-align:center}
+  .f-seal .f-sy{font-size:10px; color:var(--sub,#6B655C); line-height:1.4; text-align:center}
+  .f-seal[disabled]{opacity:.34; cursor:default}
+  /* 已经留过时剩下那一枚是「展示」不是「不能点」，别再灰着 —— 灰的会被读成坏了 */
+  .f-seals:has(> :only-child) .f-seal[disabled]{opacity:1}
+
+  .f-bars{display:flex; flex-direction:column; gap:9px; margin-top:2px}
+  .f-bar{display:flex; align-items:center; gap:9px; font-size:12.5px}
+  /* ⚠️ 宽度要留够：app.css 给全站加了 letter-spacing，中文名字和百分数都比
+     按字号估出来的宽。给死 flex 基数又不留余量，右边那个 % 会被挤出屏幕外
+     ——8-28 截图抓到的，光看代码完全看不出来。 */
+  .f-bar .f-bn{flex:0 0 6.4em; font-family:var(--f-hand,"LXGW WenKai",serif);
+           text-align:right; color:var(--ink,#252421); line-height:1.4}
+  /* 🔴 这两条的 display:block 不能省：它们是 <span>，行内元素的 width / height /
+     overflow 统统不生效，绿色填充会是 0 宽——页面不报错，比例条就是空的。 */
+  .f-bar .f-bt{display:block; flex:1; height:9px; border-radius:999px;
+           background:rgba(120,105,85,.13); overflow:hidden}
+  .f-bar .f-bf{display:block; height:100%; border-radius:999px; background:#4E6B52;
+           transition:width .5s var(--ease-out,ease)}
+  .f-bar .f-bp{flex:0 0 3.1em; color:var(--sub,#6B655C); font-size:11.5px;
+           text-align:right; white-space:nowrap; letter-spacing:0}
+  .f-bar.f-mine .f-bn{color:#4E6B52}
+
+  .f-thanks{font-family:var(--f-hand,"LXGW WenKai",serif); font-size:14.5px; text-align:center;
+          color:var(--ink,#252421); line-height:1.95; margin-bottom:14px}
+  .f-cta{display:block; margin:22px auto 0; padding:14px 34px; border:none; border-radius:10px;
+       background:var(--accent,#C94B3C); color:#F7F3EB; font-size:16px; letter-spacing:.12em;
+       font-family:var(--f-title,"ZCOOL KuaiLe",sans-serif); text-decoration:none; text-align:center;
+       box-shadow:0 2px 8px rgba(140,50,45,.24); cursor:pointer}
+  .f-foot{font-size:11.5px; color:var(--faint,#8C8880); text-align:center;
+        margin-top:16px; line-height:1.9; letter-spacing:.05em}
+  .f-state{text-align:center; padding:90px 20px; color:var(--sub,#6B655C);
+         font-family:var(--f-hand,"LXGW WenKai",serif); font-size:15px; line-height:2}
+  .f-hide{display:none}
+</style>
+</head>
+<body>
+<div class="f-wrap" id="wrap">
+  <div class="f-state" id="state">正在打开……</div>
+  <div id="main" class="f-hide"></div>
+</div>
+
+<script type="module">
+import { stampById, GIFTS, INKS } from '../js/data.js';
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+import { setLang, detectLang, t, monthDay, weekName } from '../js/i18n.js';
+
+setLang(detectLang());
+document.body.insertAdjacentHTML('afterbegin',
+  `<svg width="0" height="0" style="position:absolute" aria-hidden="true">${defsMarkup()}</svg>`);
+
+const API = '../api';
+const code = (new URLSearchParams(location.search).get('c') || '').toLowerCase();
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// 这台设备给这个码送过没有。纯自律 —— 服务端不认识设备，也不该认识。
+// 🔴 用 try/catch 包住：微信里、无痕窗口里、被拦截的浏览器里 localStorage 会直接抛。
+const SENT_KEY = 'lifestamps_sent_' + code;
+function sentSeal() { try { return localStorage.getItem(SENT_KEY); } catch (_) { return null; } }
+function markSent(id) { try { localStorage.setItem(SENT_KEY, id); } catch (_) { /* 存不下就算了 */ } }
+
+function fmtTime(ts) {
+  const d = new Date(ts);
+  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function dead(msg, sub) {
+  $('#state').innerHTML = esc(msg) + (sub ? `<br><span style="font-size:12.5px;opacity:.7">${esc(sub)}</span>` : '')
+    + `<a class="f-cta" href="../get/" style="max-width:220px">看看这是什么</a>`;
+  $('#state').classList.remove('f-hide');
+  $('#main').classList.add('f-hide');
+}
+
+// 🔴 兜底：这一页任何一处抛异常，B 看到的就是一片空白 —— 最坏的失败形态，
+//    而且 B 是陌生人，不会来告诉你。所以宁可给一句人话 + 一条出路。
+//    ?debug=1 时把真实错误显示出来（自己排查用，普通人不会带这个参数）。
+const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
+window.addEventListener('error', e => {
+  if (DEBUG) return dead('出错了', String((e.error && e.error.stack) || e.message).slice(0, 400));
+  dead('这一页没能打开。', '换个浏览器或者稍后再试。');
+});
+
+let data = null;
+
+function render() {
+  const d = new Date(data.day + 'T12:00:00');
+  const already = sentSeal();
+
+  // 纸：把 A 那天的章按原位摆回去
+  const chips = data.stamps.map(s => {
+    const def = stampById[s.id];
+    if (!def) return '';
+    return `<div class="f-chip" style="left:${s.x}%;top:${s.y}%">
+      ${stampSVG(def, { size: Math.round(50 * (s.sc || 1)), ink: s.ink, rot: s.rot,
+                        opacity: s.op, mat: s.mat, seed: s.seed })}
+      ${s.ts ? `<span class="f-tm">${fmtTime(s.ts)}</span>` : ''}</div>`;
+  }).join('');
+
+  const verdict = data.verdict ? t(data.verdict) : '';
+
+  $('#main').innerHTML = `
+    <div class="f-hdr">
+      <div class="f-who">有人把这一天发给你了</div>
+      <div class="f-dt">${esc(monthDay(d))} · ${esc(weekName(d))} · 盖了 ${data.stamps.length} 枚章</div>
+    </div>
+    <div class="f-paper" id="paper">${chips}</div>
+    ${verdict ? `<div class="f-verdict">${esc(verdict)}</div>` : ''}
+    ${data.note ? `<div class="f-verdict" style="opacity:.75;font-size:13.5px">「${esc(data.note)}」</div>` : ''}
+
+    <div class="f-sect" id="give">
+      <div class="f-sect-t">给 TA 留一枚</div>
+      ${/* 已经留过就只摆自己那一枚。把 6 枚全灰着列出来，看起来像页面坏了，
+           而且 B 这时候关心的只有"我留的是哪个"。 */''}
+      <div class="f-seals">${(already ? GIFTS.filter(g => g.id === already) : GIFTS).map(g => `
+        <button class="f-seal" data-seal="${g.id}" ${already ? 'disabled' : ''}>
+          ${stampSVG({ ...g, kind: 'seal' }, { size: 46 })}
+          <span class="f-nm">${esc(g.name)}</span>
+          <span class="f-sy">${esc(g.say)}</span>
+        </button>`).join('')}</div>
+    </div>
+
+    <div class="f-sect f-hide" id="after"></div>
+
+    <div class="f-foot">
+      不用登录，也不会知道你是谁。<br>
+      这一天 ${Math.max(1, Math.ceil((data.expires - Date.now()) / 86400000))} 天后自动收起来。
+    </div>`;
+
+  $('#state').classList.add('f-hide');
+  $('#main').classList.remove('f-hide');
+
+  if (already) showAfter(already, false);
+  else $('#give').addEventListener('click', onPick);
+}
+
+async function onPick(e) {
+  const btn = e.target.closest('[data-seal]');
+  if (!btn || btn.disabled) return;
+  const id = btn.dataset.seal;
+  $('#give').querySelectorAll('.f-seal').forEach(b => { b.disabled = true; });
+  try {
+    const r = await fetch(`${API}/share/${code}/gift`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ seal: id }),
+    });
+    if (!r.ok) throw new Error(String(r.status));
+    const j = await r.json();
+    data.gifts = j.gifts; data.total = j.total;
+    markSent(id);
+    dropWax(id);
+    showAfter(id, true);
+  } catch (_) {
+    $('#give').querySelectorAll('.f-seal').forEach(b => { b.disabled = false; });
+    $('#give').querySelector('.f-sect-t').textContent = '没送出去，再点一下试试';
+  }
+}
+
+// 把送出的那枚封蜡贴到纸上 —— "送到了"这件事得看得见，光弹个提示太轻了
+function dropWax(id) {
+  const g = GIFTS.find(x => x.id === id);
+  if (!g) return;
+  const el = document.createElement('div');
+  el.className = 'f-chip f-wax';
+  el.style.left = (26 + Math.random() * 48) + '%';
+  el.style.top = (58 + Math.random() * 26) + '%';
+  el.innerHTML = stampSVG({ ...g, kind: 'seal' }, { size: 56, rot: -6 + Math.random() * 12 });
+  $('#paper').appendChild(el);
+}
+
+function showAfter(mine, justNow) {
+  const total = data.total || 0;
+  const rows = GIFTS
+    .map(g => ({ g, n: data.gifts[g.id] || 0 }))
+    .filter(r => r.n > 0)
+    .sort((a, b) => b.n - a.n);
+  const bars = rows.map(r => `
+    <div class="f-bar ${r.g.id === mine ? 'f-mine' : ''}">
+      <span class="f-bn">${esc(r.g.name)}</span>
+      <span class="f-bt"><span class="f-bf" style="width:${Math.round(r.n / total * 100)}%"></span></span>
+      <span class="f-bp">${Math.round(r.n / total * 100)}%</span>
+    </div>`).join('');
+
+  const me = GIFTS.find(g => g.id === mine);
+  $('#after').innerHTML = `
+    <div class="f-thanks">${justNow
+      ? `「${esc(me ? me.say : '')}」<br>送到了。TA 下次打开就能收到。`
+      : `你留的是「${esc(me ? me.name : '')}」。`}</div>
+    ${total > 1 ? `<div class="f-sect-t">这一天一共收到 ${total} 枚</div><div class="f-bars">${bars}</div>` : ''}
+    <div class="f-sect-t" style="margin-top:28px">那你的今天呢？</div>
+    <a class="f-cta" href="../get/">也开始记你的</a>`;
+  $('#after').classList.remove('f-hide');
+  $('#give').querySelector('.f-sect-t').textContent = '你留下的';
+  // 送完立刻把其余五枚收走，跟刷新后回来看到的是同一屏
+  $('#give').querySelectorAll(`.f-seal:not([data-seal="${mine}"])`).forEach(b => b.remove());
+}
+
+(async () => {
+  if (!/^[a-z2-9]{6}$/.test(code)) return dead('这个链接不太对。', '再问对方要一次吧。');
+  try {
+    const r = await fetch(`${API}/share/${code}`);
+    if (r.status === 410) return dead('这一天已经收起来了。', '分享出去的日子只留七天。');
+    if (!r.ok) throw new Error(String(r.status));
+    data = await r.json();
+    if (!data.stamps || !data.stamps.length) return dead('这一天是空的。');
+    render();
+  } catch (err) {
+    // ⚠️ 这个 catch 会把"网络问题"和"渲染代码有 bug"混成同一句话，
+    //    排查时非常误导。debug=1 时把真错误露出来。
+    if (DEBUG) return dead('出错了', String(err && (err.stack || err.message)).slice(0, 400));
+    dead('没能打开。', '换个网络再试一次。');
+  }
+})();
+</script>
+</body>
+</html>

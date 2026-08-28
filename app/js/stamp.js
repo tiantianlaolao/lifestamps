@@ -1,7 +1,7 @@
 // ============================================================
 // 印章渲染：滤镜 defs + SVG 工厂（材质：橡皮/木质/光敏）
 // ============================================================
-import { INKS } from './data.js';
+import { INKS, GIFT_WAX, GIFT_SEAL_PATH } from './data.js';
 
 // 线条粗细系数。1.0 = 样张原始线宽。
 // ⚠️ 这个数被改过三次，历史都记在这儿，别再来回拉：
@@ -106,7 +106,35 @@ function hash(str) { let h = 0; for (const c of str) h = (h * 31 + c.charCodeAt(
 // 刻痕色：一块刻好了但还没蘸过墨的橡皮，图案只剩浅浅的凹痕
 export const CARVE_INK = '#CE9C87';
 
+// 赠礼章（封蜡印）的渲染：实心蜡饼 + 图案挖空成纸色。
+// ⚠️ 跟普通章是**两条路**：普通章是线稿 + CC 印泥替换 + THIN 线宽系数；
+//    封蜡是实心 fill，不吃印泥、不受 THIN 管 —— 那是它"不是你的墨"的体现。
+// ⚠️ mask 的 id 必须每次唯一：同一页会同时出现好几枚封蜡，重名会互相串。
+let _sealSeq = 0;
+function sealSVG(def, opts = {}) {
+  const size = opts.size ?? 48;
+  const rot = opts.rot ?? 0;
+  const mid = 'ls-seal' + (_sealSeq++);
+  // 抽屉里还没收到的那格：只留一圈蜡的轮廓（不填），跟普通章的"刻痕态"一个意思——
+  // 看得出有这么一枚，看不出它长什么样。
+  if (opts.carve) {
+    return `<svg class="${opts.cls || ''}" width="${size}" height="${size}" viewBox="0 0 100 100">`
+      + `<path d="${GIFT_SEAL_PATH}" fill="none" stroke="#B9B2A4" stroke-width="3"`
+      + ` stroke-dasharray="7 5" opacity=".85"/></svg>`;
+  }
+  return `<svg class="${opts.cls || ''}" width="${size}" height="${size}" viewBox="0 0 100 100"`
+    + ` style="transform:rotate(${rot}deg);${opts.gray ? 'filter:grayscale(1);opacity:.35;' : ''}"`
+    + ` aria-label="${def.name}">`
+    + `<defs><mask id="${mid}">`
+    + `<path d="${GIFT_SEAL_PATH}" fill="#fff"/>`
+    + `<g fill="#000" stroke="#000">${def.d}</g>`
+    + `</mask></defs>`
+    + `<g filter="url(#ls-w1)"><path d="${GIFT_SEAL_PATH}" fill="${GIFT_WAX}"`
+    + ` mask="url(#${mid})" opacity="${opts.opacity ?? 0.94}"/></g></svg>`;
+}
+
 export function stampSVG(def, opts = {}) {
+  if (def && def.kind === 'seal') return sealSVG(def, opts);
   const size = opts.size ?? 48;
   const mat = opts.mat || 'r';
   const inkId = mat === 'p' ? 'zhu' : (opts.ink ?? def.ink);

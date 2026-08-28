@@ -1,0 +1,105 @@
+<!doctype html><meta charset="utf-8"><title>赠礼章方案</title>
+<link rel="stylesheet" href="../css/app.css">
+<style>
+ body{margin:0;background:#DDD8CC;font:13px/1.7 "Xiaolai",system-ui;color:#252421;padding:22px}
+ .wrap{max-width:1060px;margin:0 auto}
+ h2{font-family:"LXGW WenKai",serif;font-size:16px;letter-spacing:.12em;margin:0 0 6px;color:#5A544A}
+ .sub{color:#6B655C;font-size:12px;margin-bottom:16px;max-width:840px}
+ .box{background:#FBF8F1;border-radius:10px;padding:14px 18px 12px;margin-bottom:13px;
+      background-image:radial-gradient(circle at 3px 3px,#D3CDBE 2.2px,transparent 2.6px);
+      background-size:26px 26px}
+ .bt{font-size:12px;letter-spacing:.1em;color:#8C8880;margin-bottom:10px}
+ .bt b{color:#252421;font-weight:400;font-family:"LXGW WenKai",serif;font-size:14.5px}
+ .line{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap}
+ .cell{text-align:center;width:104px}
+ .cell .nm{font-family:"LXGW WenKai",serif;font-size:13px;color:#252421;margin-top:2px}
+ .cell .sy{font-size:10.5px;color:#8C8880;line-height:1.5;margin-top:1px}
+ .mix{display:flex;gap:14px;align-items:center}
+</style>
+<div class="wrap">
+  <h2>赠礼章：封蜡印方案</h2>
+  <div class="sub">6 枚只能被朋友送的章。⛔ 商店买不到、自己得不到、不吃印泥（永远是封蜡自己的颜色，
+    因为那不是你的墨）。形态用封蜡而不是线稿章 —— 跟印章同源（都是压印）但一眼可辨，
+    这样纸上就分得出哪些是自己盖的、哪些是别人给的。</div>
+  <div id="out"></div>
+</div>
+<script type="module">
+import { stampById } from '../js/data.js';
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+document.body.insertAdjacentHTML('afterbegin',
+  `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+
+// 封蜡的底：一个边缘不规则的圆饼（手压出来的那种不圆）
+const WAX = `M50,7 Q68,6 79,17 Q92,27 93,45 Q95,64 83,77 Q71,92 51,93 Q31,94 18,82
+             Q5,70 6,50 Q5,30 18,18 Q31,6 50,7 Z`;
+
+// 图案是从蜡里**挖空**的（纸色），所以不管什么底色都读得出来
+const GIFTS = [
+  ['candy', '一颗糖', '给你点甜的',
+   `<path d="M34,36 Q30,36 30,40 L30,60 Q30,64 34,64 L66,64 Q70,64 70,60 L70,40 Q70,36 66,36 Z"/>
+    <path d="M28,38 L15,28 Q12,26 13,30 L16,50 L13,70 Q12,74 15,72 L28,62 Z"/>
+    <path d="M72,38 L85,28 Q88,26 87,30 L84,50 L87,70 Q88,74 85,72 L72,62 Z"/>
+    <path d="M40,44 L40,56 M50,44 L50,56 M60,44 L60,56" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>`],
+  ['lamp', '给你留了盏灯', '回来还亮着',
+   `<path d="M50,20 Q35,20 30,34 Q26,45 33,53 L67,56 Q75,49 72,37 Q68,22 50,20 Z"/>
+    <path d="M36,60 L66,63 Q69,63 68,67 L67,72 Q66,75 63,75 L38,72 Q35,72 35,68 L35,63 Q35,60 36,60 Z"/>
+    <path d="M44,79 L60,81 Q63,81 62,84 L61,87 Q60,90 57,89 L45,88 Q42,88 42,85 L42,81 Q42,79 44,79 Z"/>`],
+  ['umbrella', '带把伞吧', '我看今天要下雨',
+   `<path d="M50,14 Q26,15 15,38 Q13,43 18,42 Q26,38 33,42 Q40,46 46,42 Q50,39 54,42
+             Q61,46 68,42 Q75,38 83,42 Q88,44 86,39 Q76,16 50,14 Z"/>
+    <path d="M45,44 L55,44 L56,74 Q56,88 44,88 Q33,88 32,77 Q31,72 36,72 Q41,72 41,77 Q42,81 46,80 Z"/>`],
+  ['hotcup', '喝点热的', '不问是什么，热的就行',
+   `<path d="M27,42 Q25,39 29,39 L66,41 Q70,41 69,45 L66,72 Q65,80 57,81 L38,80 Q30,79 29,71 Z"/>
+    <path d="M70,48 Q84,46 84,57 Q84,68 68,67 L69,61 Q77,61 77,57 Q77,53 69,54 Z"/>
+    <path d="M40,31 Q36,24 41,18 M53,31 Q49,23 54,17" fill="none" stroke-width="5" stroke-linecap="round"/>`],
+  ['coat', '天冷了', '外套给你放这儿',
+   `<path d="M37,20 L50,31 L63,20 Q79,25 84,42 L75,49 L73,44 L74,82 Q62,87 50,87 Q38,87 26,82
+             L27,44 L25,49 L16,42 Q21,25 37,20 Z"/>
+    <path d="M50,33 L50,86" fill="none" stroke="#fff" stroke-width="3.6"/>
+    <path d="M38,21 Q44,32 50,32 Q56,32 62,21" fill="none" stroke="#fff" stroke-width="4.4" stroke-linejoin="round"/>
+    <path d="M42,50 L42,58 M58,50 L58,58" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/>`],
+  ['paw', '路过，给你留个印', '（不说是谁）',
+   `<path d="M50,44 Q64,44 68,58 Q71,70 61,75 Q50,79 39,75 Q29,70 32,58 Q36,44 50,44 Z"/>
+    <ellipse cx="33" cy="33" rx="8" ry="10" transform="rotate(-16 33 33)"/>
+    <ellipse cx="50" cy="26" rx="8" ry="10.5"/>
+    <ellipse cx="67" cy="33" rx="8" ry="10" transform="rotate(16 67 33)"/>
+    <ellipse cx="79" cy="49" rx="7" ry="9" transform="rotate(28 79 49)"/>`],
+];
+
+const COLORS = [
+  ['#4E6B52', '墨绿 ← 定稿'],
+];
+
+function seal(gift, color, size) {
+  const id = 'g' + Math.random().toString(36).slice(2, 8);
+  return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" style="transform:rotate(${-4 + (size % 5)}deg)">
+    <defs><mask id="${id}">
+      <path d="${WAX}" fill="#fff"/>
+      <g fill="#000" stroke="#000">${gift}</g>
+    </mask></defs>
+    <g filter="url(#ls-w1)"><path d="${WAX}" fill="${color}" mask="url(#${id})" opacity=".94"/></g>
+  </svg>`;
+}
+
+let h = '';
+// 三种蜡色
+for (const [c, cn] of COLORS) {
+  h += `<div class="box"><div class="bt"><b>${cn} ${c}</b>　纸上真实尺寸 56px</div><div class="line">`;
+  for (const [, name, say, gift] of GIFTS) {
+    h += `<div class="cell">${seal(gift, c, 56)}<div class="nm">${name}</div><div class="sy">${say}</div></div>`;
+  }
+  h += '</div></div>';
+}
+// 跟普通章混在一张纸上，看区分度
+h += `<div class="box"><div class="bt"><b>混在纸上</b>　左三枚=自己盖的普通章，右三枚=朋友送的封蜡</div>
+  <div class="line mix">`;
+for (const id of ['milktea', 'work', 'stayup']) h += stampSVG(stampById[id], { size: 56, ink: 'zhu', mat: 'r', seed: 3 });
+h += `<span style="width:20px"></span>`;
+for (const g of GIFTS.slice(0, 3)) h += seal(g[3], '#4E6B52', 56);
+h += `</div></div>`;
+// 各尺寸
+h += `<div class="box"><div class="bt"><b>各尺寸</b>　托盘 30 / 月视图 42 / 纸上 56 / 分享卡 120</div><div class="line mix">`;
+for (const s of [30, 42, 56, 120]) h += seal(GIFTS[1][3], '#4E6B52', s);
+h += `</div></div>`;
+document.getElementById('out').innerHTML = h;
+</script>

@@ -15,6 +15,16 @@ export function fmtTime(ts) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+// 一条记录在纸上的位置（百分比）。
+// 老记录没存过坐标，就按 id 哈希出一个稳定位置 —— 同一条记录每次都落同一处。
+// 🔴 分享出去的那份数据也要用它（js/net.js），所以放在这儿而不是 main.js：
+//    抄成两份，哪天改了一边，朋友看到的纸就跟 A 自己看到的不一样。
+export function posOf(r) {
+  if (r.px != null) return { x: r.px, y: r.py };
+  let h = 0; for (const c of r.id) h = (h * 31 + c.charCodeAt(0)) | 0; h = Math.abs(h);
+  return { x: 12 + (h % 73), y: 14 + ((h >> 4) % 66) };
+}
+
 export const store = {
   records: load('records', []),        // {id, stampId, ink, ts, rot, sc, op, dx, dy}
   discovered: load('discovered', {}),  // stampId -> firstTs（基础章：盖过=已发现）
@@ -32,6 +42,10 @@ export const store = {
   trialUsed: load('trialUsed', 0),// 那天已经蘸过几次付费色
   proDeclined: load('proDeclined', 0), // 上次点「暂时不用」的时间戳（7 天内不再主动提）
   unlocked: load('unlocked', {}),      // 基础章 stampId -> 解锁时间。初始 12 枚不写进来，见 INIT_STAMPS
+  // 我发出去的分享。[{code, day, expires, seen:{sealId:已收到的枚数}}]
+  // 🔴 这就是 A 的全部"身份" —— 服务端不认识任何人，谁拿着短码谁能看。
+  //    清了本地数据 = 这些分享再也收不回来，这是匿名换来的代价，写在这儿别忘。
+  shares: load('shares', []),
 
   persist() {
     save('records', this.records);
@@ -50,6 +64,7 @@ export const store = {
     save('trialUsed', this.trialUsed);
     save('proDeclined', this.proDeclined);
     save('unlocked', this.unlocked);
+    save('shares', this.shares);
   },
 
   // ---- 印泥盒库存 ----
@@ -198,6 +213,8 @@ export const store = {
   },
   wipe() {
     this.records = []; this.discovered = {}; this.hidden = {};
+    // 发出去的分享一并忘掉：留着也没用了（里面记的是"哪一天"，那些天已经不存在）
+    this.shares = [];
     this.persist();
   },
 };

@@ -1,0 +1,17 @@
+<!doctype html><meta charset="utf-8"><title>发链接·截图</title>
+<style>html,body{margin:0}iframe{border:0;display:block}</style>
+<iframe id="f" src="/?skipob=1&book=open&demo=1&open=shareday" width="430" height="1000"></iframe>
+<script>
+document.getElementById('f').addEventListener('load', () => {
+  const d = document.getElementById('f').contentDocument;
+  const st = d.createElement('style');
+  st.textContent = '*{animation:none!important;transition:none!important}';
+  d.head.appendChild(st);
+  const t0 = Date.now();
+  (function loop(){
+    const b = d.getElementById('sh-link');
+    if (b) { b.click(); return; }
+    if (Date.now()-t0 < 8000) setTimeout(loop, 120);
+  })();
+});
+</script>

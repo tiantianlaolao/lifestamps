@@ -1,0 +1,38 @@
+<!doctype html><meta charset="utf-8"><title>量宽度</title>
+<body style="margin:0">
+<iframe id="f" style="width:430px;height:1600px;border:0"></iframe>
+<pre id="out" style="font:12px monospace;padding:10px"></pre>
+<script>
+// 无头 Chrome 只会给我截图，截图上量不出"谁把谁撑宽了"。直接读 offsetWidth。
+document.getElementById('f').addEventListener('load', () => {
+  setTimeout(() => {
+    const d = document.getElementById('f').contentDocument;
+    const rows = [];
+    const add = (label, el) => {
+      if (!el) return rows.push(label + '  <缺>');
+      const r = el.getBoundingClientRect();
+      rows.push(label.padEnd(22) + ' w=' + Math.round(r.width).toString().padStart(4)
+        + '  left=' + Math.round(r.left).toString().padStart(4)
+        + '  right=' + Math.round(r.right).toString().padStart(4));
+    };
+    add('html', d.documentElement); add('body', d.body);
+    add('.f-wrap', d.querySelector('.f-wrap'));
+    add('#main', d.getElementById('main'));
+    add('#after', d.getElementById('after'));
+    add('.f-bars', d.querySelector('.f-bars'));
+    add('.f-bar (第1条)', d.querySelector('.f-bar'));
+    add('  .f-bn', d.querySelector('.f-bar .f-bn'));
+    add('  .f-bt', d.querySelector('.f-bar .f-bt'));
+    add('  .f-bf', d.querySelector('.f-bar .f-bf'));
+    add('  .f-bp', d.querySelector('.f-bar .f-bp'));
+    add('.f-cta', d.querySelector('.f-cta'));
+    rows.push('body.scrollWidth = ' + d.body.scrollWidth);
+    document.getElementById('out').textContent = rows.join('\n');
+  }, 1200);
+});
+</script>
+<script>
+// 短码从本页 URL 的 ?c= 取 —— 别把某次跑出来的临时短码写死在文件里，
+// 提交进仓之后那就是个死链接。用法：本页 ?c=短码
+document.getElementById('f').src = '/s/?c=' + (new URLSearchParams(location.search).get('c') || '');
+</script>

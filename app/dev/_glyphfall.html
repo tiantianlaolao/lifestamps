@@ -1,0 +1,26 @@
+<!doctype html><meta charset="utf-8"><title>缺字回退实况</title>
+<link rel="stylesheet" href="../css/app.css">
+<style>
+ body{background:#F6F2EA;color:#252421;padding:24px;font:14px/2 system-ui;margin:0}
+ table{border-collapse:collapse;background:#FBF8F1}
+ td,th{border:1px solid #DCD5C6;padding:8px 14px;text-align:center}
+ th{font:12px/1.6 system-ui;color:#8C8880;font-weight:400}
+ .z{font-family:"ZCOOL KuaiLe";font-size:30px}
+ .x{font-family:"Xiaolai";font-size:30px}
+ .l{font-family:"LXGW WenKai";font-size:30px}
+ .lbl{font:12px system-ui;color:#8C8880}
+ h3{font:13px system-ui;color:#5A544A;margin:22px 0 8px}
+</style>
+<h3>五个字在三款字体里实际渲染成什么（字体没有 → 掉到系统字体，风格对不上但不是豆腐块）</h3>
+<table id="t"></table>
+<h3>放到真实用处里</h3>
+<div style="font-family:'ZCOOL KuaiLe';font-size:19px;background:#FBF8F1;padding:14px 18px;display:inline-block;border-radius:8px">
+ ‹ 8月　|　明天 ›　|　✎ 写一句　|　✦ 新发现　|　咦？发现新章。
+</div>
+<script>
+const CH = ['‹','›','✎','✦','咦','›','章'];
+const rows = [['ZCOOL KuaiLe','z'],['Xiaolai','x'],['LXGW WenKai','l']];
+let h = '<tr><th>字体</th>' + CH.map(c=>`<th>${c}<br><span class="lbl">U+${c.codePointAt(0).toString(16).toUpperCase()}</span></th>`).join('') + '</tr>';
+for (const [n,c] of rows) h += `<tr><td class="lbl">${n}</td>` + CH.map(x=>`<td class="${c}">${x}</td>`).join('') + '</tr>';
+document.getElementById('t').innerHTML = h;
+</script>

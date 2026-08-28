@@ -297,6 +297,11 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   box-shadow:0 1px 0 rgba(63,53,48,.16);
 }
 .dk-cell .face.inked{background:var(--card); border:1.5px solid currentColor}
+/* 赠礼章是封蜡，不是装在木柄上的橡皮章 —— 没有那圈章面的框，直接躺在格子里。 */
+.dk-cell .face.inked.seal{background:none; border:none}
+/* 「写一句」前面那支笔：内联 SVG，跟章一样是线稿，不受字体缺字影响 */
+.note-hint .nh-pen{width:1em; height:1em; vertical-align:-.13em; margin-right:.32em;
+  fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round}
 /* 刻好还没蘸过墨的橡皮：图案只剩浅浅的凹痕 */
 .dk-cell .face.carved{
   background:linear-gradient(180deg,var(--carve-hi),var(--carve-mid));
@@ -1876,3 +1881,15 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   letter-spacing:.1em;
 }
 .mine-more:active{color:var(--ink)}
+
+/* ---- 分享弹层里的「发个链接给朋友」---- */
+.sh-linkbox:empty{display:none}
+.sh-linkbox{margin-top:10px; width:100%; max-width:300px}
+.sh-linkbox .sh-url{
+  font-size:11.5px; letter-spacing:0; color:var(--sub); word-break:break-all;
+  background:rgba(120,105,85,.09); border-radius:8px; padding:9px 11px; line-height:1.6;
+  /* 复制失败时要能让用户自己长按选中，所以这里必须可选中 */
+  user-select:text; -webkit-user-select:text;
+}
+.sh-linkbox .sh-copy{margin-top:8px}
+.sh-linkbox .sh-tip{font-size:11px; color:var(--faint); line-height:1.8; margin-top:8px; letter-spacing:.04em}

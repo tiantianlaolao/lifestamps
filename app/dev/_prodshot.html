@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><title>线上朋友端·截图</title>
+<style>html,body{margin:0;background:#DDD8CC}iframe{border:0;display:block}</style>
+<!-- 🔴 必须套 iframe：headless Chrome 最小窗宽约 500px，
+     直接 --window-size=430 截出来的是"按 500 渲染再裁到 430"，
+     右边会假装被切掉 —— 8-28 我就是这么误判了一次。 -->
+<iframe id="frame" width="430" height="1150"></iframe>
+<script>
+// 短码从本页 URL 的 ?c= 取 —— 别把某次跑出来的临时短码写死在文件里，
+// 提交进仓之后那就是个死链接。用法：本页 ?c=短码
+document.getElementById('frame').src = 'https://www.tybbtech.com/lifestamps/s/?c=' + (new URLSearchParams(location.search).get('c') || '');
+</script>

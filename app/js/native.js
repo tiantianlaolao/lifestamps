@@ -38,3 +38,16 @@ export async function shareImage(dataUrl, filename) {
   await p.Share.share({ files: [uri] });
   return true;
 }
+
+/**
+ * 把一段文字（这里是分享链接）交给系统分享面板。
+ * 🔴 跟 shareImage 分开而不是合并：微信收到「图 + 链接」时只认图，链接会被吞掉，
+ *    发出去就变成一张点不动的图片 —— 那正好把这个功能废掉。所以分两次发。
+ * 返回 false = 这儿没有原生桥，调用方自己回落到复制链接。
+ */
+export async function shareText(text, title) {
+  const p = P();
+  if (!p || !p.Share) return false;
+  await p.Share.share({ title: title || '戳了么', text, dialogTitle: title || '发给朋友' });
+  return true;
+}

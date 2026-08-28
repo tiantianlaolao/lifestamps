@@ -1,0 +1,39 @@
+<!doctype html><meta charset="utf-8"><title>初始 12 枚</title>
+<link rel="stylesheet" href="../css/app.css">
+<style>
+ body{margin:0;background:#DDD8CC;font:13px/1.7 "Xiaolai",system-ui;color:#252421;padding:22px}
+ .wrap{max-width:900px;margin:0 auto}
+ h2{font-family:"LXGW WenKai",serif;font-size:15px;letter-spacing:.14em;margin:0 0 12px;color:#5A544A}
+ .box{background:#F6F2EA;border-radius:12px;padding:16px 18px}
+ .grp{margin-bottom:14px}
+ .gt{font-size:11px;letter-spacing:.16em;color:#8C8880;margin-bottom:6px}
+ .row{display:flex;gap:12px;flex-wrap:wrap}
+ .cell{width:96px;text-align:center;padding:8px 0 6px;border:1px dashed rgba(37,36,33,.12);border-radius:10px}
+ .cell .nm{font-size:11px;color:#252421;margin-top:2px}
+ .cell.locked{opacity:.28}
+ .note{color:#6B655C;font-size:12px;margin:10px 0 0}
+</style>
+<div class="wrap"><h2>初始 12 枚（实色）／ 其余 30 枚条件解锁（灰）</h2><div class="box" id="out"></div></div>
+<script type="module">
+import { STAMPS, CATEGORIES } from '../js/data.js';
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+document.body.insertAdjacentHTML('afterbegin',
+  `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+
+// 选取原则：一个普通的一天（起床→出门→吃→工作→喝水→摸鱼→追剧→熬夜）要能记全，
+// 且 7 个分类一个都不空——空分类会让用户以为那一栏坏了。
+const INIT12 = ['milktea','takeout','water','goout','series','work','read','lie','stayup','happy','tired','sparkle'];
+
+let h = '';
+for (const c of CATEGORIES) {
+  const list = STAMPS.filter(s => s.cat === c.id);
+  const n = list.filter(s => INIT12.includes(s.id)).length;
+  h += `<div class="grp"><div class="gt">${c.name} · 初始 ${n} / 共 ${list.length}</div><div class="row">`;
+  for (const s of list) {
+    const on = INIT12.includes(s.id);
+    h += `<div class="cell ${on ? '' : 'locked'}">${stampSVG(s, { size: 54, ink: on ? s.ink : 'mo', mat: 'r', seed: 3 })}<div class="nm">${s.name}</div></div>`;
+  }
+  h += '</div></div>';
+}
+document.getElementById('out').innerHTML = h;
+</script>

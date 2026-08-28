@@ -27,6 +27,11 @@ export const store = {
   supplyDay: load('supplyDay', ''), // 最近一次领每日补给的 dateKey
   bookClosed: load('bookClosed', true),  // 本子现在是合着的吗（决定下次打开是不是封面态）
   titles: load('titles', {}),     // 'YYYY-MM' -> {title,line} 已经定格的往月称号（当月不存，实时算）
+  pro: load('pro', false),        // 买断了「高级印泥盒」没有（10 款付费色永久解锁）
+  trialDay: load('trialDay', ''), // 试用额度记在哪一天
+  trialUsed: load('trialUsed', 0),// 那天已经蘸过几次付费色
+  proDeclined: load('proDeclined', 0), // 上次点「暂时不用」的时间戳（7 天内不再主动提）
+  unlocked: load('unlocked', {}),      // 基础章 stampId -> 解锁时间。初始 12 枚不写进来，见 INIT_STAMPS
 
   persist() {
     save('records', this.records);
@@ -40,6 +45,11 @@ export const store = {
     save('bookClosed', this.bookClosed);
     save('stickers', this.stickers);
     save('titles', this.titles);
+    save('pro', this.pro);
+    save('trialDay', this.trialDay);
+    save('trialUsed', this.trialUsed);
+    save('proDeclined', this.proDeclined);
+    save('unlocked', this.unlocked);
   },
 
   // ---- 印泥盒库存 ----
@@ -52,6 +62,32 @@ export const store = {
     return true;
   },
   refillPad(inkId, cap) { this.pads[inkId] = cap; this.persist(); },
+
+  // ---- 高级印泥盒（一次性内购）----
+  // pro = 买断了没有。买断之后 10 款付费色永久可用、跟免费三款一样不限量。
+  isPro() { return !!this.pro; },
+  setPro(v) { this.pro = !!v; this.persist(); },
+  // 拒绝之后 7 天内不主动提 —— 文档拍板：不追问、不倒计时、不红点。
+  // 只是"不主动弹"，用户自己进印泥盒时该看到的还是看得到。
+  declinePro() { this.proDeclined = Date.now(); this.persist(); },
+  proQuiet() { return this.proDeclined && Date.now() - this.proDeclined < 7 * 864e5; },
+
+  // 没买断时，每天可以蘸几次付费色 —— 这不是"限制"，是试用额度：
+  // 让人天天用得上彩色、形成习惯，撞到边界时再决定买不买，
+  // 比"点一下锁弹个预览"有效得多。免费三款永远不走这条路。
+  trialLeft(dkey, quota) {
+    if (this.isPro()) return Infinity;
+    return this.trialDay === dkey ? (this.trialUsed >= quota ? 0 : quota - this.trialUsed) : quota;
+  },
+  useTrial(dkey, quota) {
+    if (this.isPro()) return true;
+    if (this.trialDay !== dkey) { this.trialDay = dkey; this.trialUsed = 0; }
+    if (this.trialUsed >= quota) return false;
+    this.trialUsed += 1;
+    this.persist();
+    return true;
+  },
+
   claimedSupply(dkey) { return this.supplyDay === dkey; },
   claimSupply(inkId, cap, dkey) {
     this.pads[inkId] = cap;
@@ -88,6 +124,14 @@ export const store = {
     return this.records.filter(r => dateKey(r.ts).startsWith(p)).sort((a, b) => a.ts - b.ts);
   },
   daysWithRecords() { return new Set(this.records.map(r => dateKey(r.ts))).size; },
+
+  // 基础章解锁（不花钱，靠用出来）
+  unlockStamp(id) {
+    if (this.unlocked[id]) return false;
+    this.unlocked[id] = Date.now();
+    this.persist();
+    return true;
+  },
 
   unlockHidden(hid) {
     if (this.hidden[hid]) return false;

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#F6F2EA">
-<title>戳了么</title>
+<title>戳了么</title><!-- i18n-exempt: 品牌名，不翻 -->
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
@@ -28,22 +28,22 @@
     <button data-tab="today">
       <!-- 今日 = 一枚章正落在纸上（把「戳一下」这个动作画进去） -->
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><g transform="rotate(-2 12 12)"><path d="M4.6,20.4 Q12,19.6 19.4,20.4"/><path d="M10.0,3.6 Q12,3.0 14.0,3.7 Q14.6,6.3 14.2,8.9 Q12,9.6 9.9,8.9 Q9.4,6.2 10.0,3.6 Z"/><path d="M6.2,10.0 Q12,9.2 17.8,10.1 Q18.3,13.0 17.7,15.9 Q12,16.7 6.3,15.9 Q5.7,13.0 6.2,10.0 Z"/></g></svg>
-      今日
+      今日<!-- i18n-exempt: 由 renderTabLabels() 按语言覆盖，这里是无 JS 兜底 -->
     </button>
     <button data-tab="memories">
       <!-- 本子 = 还是原来那本（封面 + 左侧鼓起来的书脊 + 中缝），形状没变，只把三条直线/正圆角改成起伏的曲线 -->
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><g transform="rotate(1.5 12 12)"><path d="M6.1,3.7 Q12.3,3.0 17.9,3.9 Q19.3,4.1 19.2,5.5 Q18.8,9.5 18.9,13.3 Q19.0,17.1 18.8,19.3 Q18.7,20.5 17.3,20.4 Q11.7,21.0 6.2,20.4"/><path d="M6.1,3.7 Q3.7,3.8 3.5,6.2 Q3.2,10.1 3.3,13.9 Q3.3,17.4 3.5,18.3 Q3.9,20.3 6.2,20.4"/><path d="M6.1,3.7 Q5.7,8.2 5.8,12.4 Q5.9,16.7 6.2,20.4"/></g></svg>
-      本子
+      本子<!-- i18n-exempt: 由 renderTabLabels() 按语言覆盖，这里是无 JS 兜底 -->
     </button>
     <button data-tab="collection">
       <!-- 抽屉 = 两层柜 + 两个圆把手（把手左右各偏 0.2，别对得太齐） -->
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><g transform="rotate(-1.6 12 12)"><path d="M4.2,5.5 Q12,4.5 19.8,5.5 Q20.3,8.8 19.9,12.1 Q19.5,15.6 19.6,18.6 Q12,19.5 4.4,18.6 Q4.0,15.5 3.9,12.1 Q3.8,8.7 4.2,5.5 Z"/><path d="M4.3,12.0 Q12,11.3 19.7,12.2"/><circle cx="11.8" cy="8.6" r="1.2" fill="currentColor" stroke="none"/><circle cx="12.2" cy="15.7" r="1.2" fill="currentColor" stroke="none"/></g></svg>
-      抽屉
+      抽屉<!-- i18n-exempt: 由 renderTabLabels() 按语言覆盖，这里是无 JS 兜底 -->
     </button>
     <button data-tab="me">
       <!-- 我的 = 一枚圆印痕，里面一张脸（「物件有脸」那条风格线） -->
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><g transform="rotate(-2 12 12)"><path d="M12,4.4 Q19.6,4.6 19.5,12.0 Q19.4,19.4 12,19.6 Q4.6,19.4 4.5,12.0 Q4.4,4.6 12,4.4 Z"/><circle cx="9.7" cy="10.6" r=".95" fill="currentColor" stroke="none"/><circle cx="14.3" cy="10.7" r=".95" fill="currentColor" stroke="none"/><path d="M9.8,13.9 Q12,16.3 14.2,13.9"/></g></svg>
-      我的
+      我的<!-- i18n-exempt: 由 renderTabLabels() 按语言覆盖，这里是无 JS 兜底 -->
     </button>
   </nav>
 
@@ -59,10 +59,10 @@
   <!-- 印泥盒（库存 + 每日补给） -->
   <div class="sheet" id="sheet-supply">
     <div class="sheet-grab"></div>
-    <div class="sheet-title">印 泥 盒</div>
+    <div class="sheet-title" id="supply-title">印 泥 盒</div><!-- i18n-exempt: 由 renderTabLabels() 按语言覆盖，这里是无 JS 兜底 -->
     <div class="supply-note" id="supply-note"></div>
     <div class="supply-list" id="supply-list"></div>
-    <div class="supply-foot">新的印泥会陆续上架</div>
+    <div class="supply-foot" id="supply-foot">新的印泥会陆续上架</div><!-- i18n-exempt: 同上 -->
   </div>
 
   <!-- 隐藏章发现 -->
@@ -81,14 +81,30 @@
 <script>
 // 内测期：JS 挂了就把错误显示出来，别只剩一条 tab 栏让人干瞪眼
 (function () {
+  // ⚠️ 这段跑在 ES 模块加载**之前**，用不了 js/i18n.js —— 那时候它还没下载完，
+  //    而这段的全部意义就是"模块没跑起来时还能说句话"。所以这里内联一份迷你三语，
+  //    只有这三条，不要往里加东西；正经文案一律进 js/i18n/。
+  /* i18n-exempt:start */
+  var L = (navigator.language || '').toLowerCase();
+  var T = L.indexOf('ja') === 0
+    ? { head: 'エラーが発生し、画面を表示できませんでした：\n',
+        tail: '\n\n（このままスクリーンショットを送ってください）',
+        dead: 'モジュールが実行されませんでした（キャッシュのバージョン違いの可能性）。' }
+    : L.indexOf('zh') === 0 || !L
+      ? { head: '出错了，页面没能渲染出来：\n',
+          tail: '\n\n（把这段截图发出来就行）',
+          dead: '模块没有执行（多半是缓存串了版本）。' }
+      : { head: 'Something broke and the page could not render:\n',
+          tail: '\n\n(Just send a screenshot of this.)',
+          dead: 'Modules never ran (most likely a stale cached version).' };
+  /* i18n-exempt:end */
   var shown = false;
   function boom(msg) {
     if (shown) return; shown = true;
     var d = document.createElement('div');
     d.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:9999;background:#C93B3B;color:#fff;'
       + 'font:12px/1.6 monospace;padding:10px 12px;white-space:pre-wrap;word-break:break-all';
-    d.textContent = '出错了，页面没能渲染出来：\n' + msg
-      + '\n\n（把这段截图发出来就行）';
+    d.textContent = T.head + msg + T.tail;
     (document.body || document.documentElement).appendChild(d);
   }
   window.addEventListener('error', function (e) {
@@ -106,7 +122,7 @@
     // 看当前打开的那一页，不能写死今日页——从 ?tab= 直接开到别的页时今日页本来就是空的
     var t = document.querySelector('.page.active');
     if (t && t.innerHTML.trim()) { clearInterval(probe); return; }
-    if (++tries >= 25) { clearInterval(probe); boom('模块没有执行（多半是缓存串了版本）。'); }
+    if (++tries >= 25) { clearInterval(probe); boom(T.dead); }
   }, 400);
 })();
 </script>

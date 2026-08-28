@@ -1,0 +1,153 @@
+<!doctype html><meta charset="utf-8"><title>Tab 图标比稿</title>
+<link rel="stylesheet" href="../css/app.css">
+<style>
+ /* ⚠️ 别用 .bar 当类名——app.css 里 .bar 是进度条（height:3px），会把整条预览压没 */
+ body{margin:0;background:#DDD8CC;font:13px/1.6 "Xiaolai",system-ui;color:#252421;padding:22px}
+ h2{font-family:"LXGW WenKai",serif;font-size:15px;letter-spacing:.14em;margin:24px 0 10px;color:#5A544A}
+ .wrap{max-width:1000px;margin:0 auto}
+ .big{background:#F6F2EA;border-radius:12px;padding:14px 16px 8px;margin-bottom:12px}
+ .big .rowname{font-size:11px;letter-spacing:.16em;color:#8C8880;margin-bottom:6px}
+ .big .line{display:flex;gap:10px}
+ .cell{flex:1;text-align:center;padding:6px 0 8px;border:1px dashed rgba(37,36,33,.12);border-radius:10px}
+ .cell svg{width:72px;height:72px;color:#252421}
+ .cell .cap{font-size:10.5px;color:#8C8880;letter-spacing:.1em;margin-top:2px}
+ .tbarbox{max-width:430px;margin:0 0 14px}
+ .tbarname{font-size:11px;letter-spacing:.16em;color:#5A544A;margin-bottom:4px}
+ .tbar{display:flex;border-top:1px solid rgba(37,36,33,.12);background:#F6F2EA;
+      border-radius:0 0 10px 10px;box-shadow:0 1px 6px rgba(0,0,0,.08)}
+ .tbar button{flex:1;padding:9px 0 7px;background:none;border:none;color:#8C8880;
+      font-size:10.5px;letter-spacing:.1em;display:flex;flex-direction:column;align-items:center;gap:3px;
+      font-family:"Xiaolai",system-ui}
+ .tbar button.active{color:#252421}
+ .tbar svg{width:21px;height:21px}
+</style>
+<div class="wrap"><div id="out"></div></div>
+<script>
+// 统一语气：viewBox 24、圆头圆角、**一条真正的直线都没有**（边都是二次曲线，左右不对称）、整体轻微歪。
+// 参照 data.js 里 41 枚章的画法：线会轻微起伏、两边不对称、物件可以有脸。
+const SW = 1.75;
+function ico(inner, rot = -1.5, sw = SW) {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}"
+    stroke-linecap="round" stroke-linejoin="round"><g transform="rotate(${rot} 12 12)">${inner}</g></svg>`;
+}
+
+// —— 零件（各版之间复用）——
+// 一张纸：四条边各自起伏，左右不对称
+const PAPER = `<path d="M6.3,3.9 Q12.1,3.1 17.7,4.1 Q18.4,8.5 17.9,12.6 Q17.4,16.5 17.6,20.1
+  Q12,20.9 6.4,20.0 Q6.1,16.2 6.0,12.4 Q5.9,8.2 6.3,3.9 Z"/>`;
+// 落在纸上的一枚小印（四角星＝小确幸那枚章）
+const MARK = `<path d="M14.7,13.7 Q15.2,15.5 16.9,16.0 Q15.2,16.5 14.7,18.3 Q14.2,16.5 12.5,16.0
+  Q14.2,15.5 14.7,13.7 Z" fill="currentColor" stroke="none"/>`;
+
+const CUR = {
+  今日: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v16H5z"/><path d="M8.5 9.5h7M8.5 13h4.5"/></svg>`,
+  本子: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h12a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H6"/><path d="M6 3.5A2.5 2.5 0 0 0 3.5 6v12A2.5 2.5 0 0 0 6 20.5"/><path d="M6 3.5v17"/></svg>`,
+  抽屉: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="6" rx="1.2"/><rect x="3.5" y="13" width="17" height="6" rx="1.2"/><path d="M10.5 8h3M10.5 16h3"/></svg>`,
+  我的: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="9" r="3.6"/><path d="M5.5 20c1.2-3.4 3.6-5 6.5-5s5.3 1.6 6.5 5"/></svg>`,
+};
+
+// —— 各页的候选 ——
+const TODAY = {
+  // a：今天这张纸，已经落了一枚印
+  a: ico(PAPER + `<path d="M8.9,8.8 Q12.3,8.2 15.4,8.9"/><path d="M8.8,12.2 Q10.8,11.8 12.9,12.3"/>` + MARK, -2),
+  // b：翻开的今天，右下角卷起来（就是翻页那个动作）
+  b: ico(`<path d="M6.3,3.9 Q12.1,3.1 17.7,4.1 Q18.4,8.6 17.9,12.4 Q17.7,14.8 17.4,16.6
+      Q15.4,19.0 13.0,20.5 Q9.6,20.8 6.4,20.0 Q6.1,16.2 6.0,12.4 Q5.9,8.2 6.3,3.9 Z"/>
+    <path d="M17.4,16.6 Q14.4,16.2 13.1,17.6 Q12.8,19.1 13.0,20.5"/>
+    <path d="M8.9,8.8 Q12.3,8.2 15.4,8.9"/><path d="M8.8,12.2 Q11.0,11.8 13.1,12.3"/>`, -2),
+  // c：一枚章正落在纸上（把「戳一下」这个动作画进去）
+  c: ico(`<path d="M4.6,20.4 Q12,19.6 19.4,20.4"/>
+    <path d="M10.0,3.6 Q12,3.0 14.0,3.7 Q14.6,6.3 14.2,8.9 Q12,9.6 9.9,8.9 Q9.4,6.2 10.0,3.6 Z"/>
+    <path d="M6.2,10.0 Q12,9.2 17.8,10.1 Q18.3,13.0 17.7,15.9 Q12,16.7 6.3,15.9 Q5.7,13.0 6.2,10.0 Z"/>`, -2),
+};
+
+const BOOK = {
+  // a：合着的本子 + 一条松紧带（跟今日页封面那本一模一样）
+  a: ico(`<path d="M5.4,4.1 Q12,3.2 18.6,4.2 Q19.2,8.6 18.7,12.5 Q18.2,16.5 18.4,20.0
+      Q12,20.9 5.6,20.0 Q5.2,16.3 5.1,12.4 Q5.0,8.3 5.4,4.1 Z"/>
+    <path d="M8.2,3.7 Q7.7,8.4 7.8,12.6 Q7.9,16.6 8.1,20.5" stroke-width="1.5"/>
+    <path d="M16.3,3.7 Q16.0,8.5 16.1,12.6 Q16.2,16.7 16.4,20.6" stroke-width="2.9"/>`, 1.6),
+  // b：月视图那一页（一格一天）
+  b: ico(`<path d="M5.6,4.4 Q12,3.6 18.4,4.5 Q19.0,8.7 18.5,12.5 Q18.0,16.4 18.2,19.9
+      Q12,20.7 5.8,19.9 Q5.4,16.2 5.3,12.4 Q5.2,8.4 5.6,4.4 Z"/>
+    <path d="M5.9,8.6 Q12,8.0 18.1,8.7"/>
+    <circle cx="8.9" cy="12.3" r="1.05" fill="currentColor" stroke="none"/>
+    <circle cx="12.0" cy="12.0" r="1.05" fill="currentColor" stroke="none"/>
+    <circle cx="15.1" cy="12.3" r="1.05" fill="currentColor" stroke="none"/>
+    <circle cx="8.9" cy="16.3" r="1.05" fill="currentColor" stroke="none"/>
+    <circle cx="12.0" cy="16.0" r="1.05" fill="currentColor" stroke="none"/>
+    <circle cx="15.1" cy="16.3" r="1.05" fill="currentColor" stroke="none"/>`, 1.6),
+  // c：叠起来的两本（"这个月 / 上个月"，有厚度）
+  c: ico(`<path d="M7.6,6.6 Q13.4,5.7 19.6,6.7 Q20.1,10.4 19.7,13.8 Q19.3,17.0 19.5,20.0
+      Q13.4,20.9 7.8,20.0 Q7.4,16.7 7.3,13.6 Q7.2,10.1 7.6,6.6 Z"/>
+    <path d="M10.3,6.3 Q9.9,10.3 10.0,13.7 Q10.1,17.1 10.2,20.4"/>
+    <path d="M5.2,16.9 Q4.8,13.0 4.9,9.4 Q5.0,6.0 5.4,3.4 Q10.9,2.6 16.6,3.5"/>`, -1.4),
+};
+
+const DRAWER = {
+  // a：两层柜子 + 圆把手
+  a: ico(`<path d="M4.2,5.5 Q12,4.5 19.8,5.5 Q20.3,8.8 19.9,12.1 Q19.5,15.6 19.6,18.6
+      Q12,19.5 4.4,18.6 Q4.0,15.5 3.9,12.1 Q3.8,8.7 4.2,5.5 Z"/>
+    <path d="M4.3,12.0 Q12,11.3 19.7,12.2"/>
+    <circle cx="11.8" cy="8.6" r="1.2" fill="currentColor" stroke="none"/>
+    <circle cx="12.2" cy="15.7" r="1.2" fill="currentColor" stroke="none"/>`, -1.6),
+  // b：三层柜子 + 横把手
+  b: ico(`<path d="M4.2,5.1 Q12,4.1 19.8,5.2 Q20.3,8.4 19.9,11.6 Q19.5,15.4 19.6,18.9
+      Q12,19.9 4.4,18.9 Q4.0,15.4 3.9,11.6 Q3.8,8.3 4.2,5.1 Z"/>
+    <path d="M4.3,9.9 Q12,9.2 19.7,10.0"/><path d="M4.2,14.5 Q12,13.8 19.8,14.6"/>
+    <path d="M10.3,7.5 Q12,7.2 13.7,7.6"/><path d="M10.3,12.2 Q12,11.9 13.7,12.3"/>
+    <path d="M10.3,16.9 Q12,16.6 13.7,17.0"/>`, -1.6),
+  // （"上层拉开一条缝"那版画出来读成带盖子的盒子，废了；C 版直接复用两层柜）
+};
+
+// d：就是现在生产上那本（封面 + 左侧鼓起来的书脊 + 中缝），
+//    形状一模一样，只把三条硬邦邦的直线/正圆角改成起伏的二次曲线。
+BOOK.d = ico(`<path d="M6.1,3.7 Q12.3,3.0 17.9,3.9 Q19.3,4.1 19.2,5.5 Q18.8,9.5 18.9,13.3
+    Q19.0,17.1 18.8,19.3 Q18.7,20.5 17.3,20.4 Q11.7,21.0 6.2,20.4"/>
+  <path d="M6.1,3.7 Q3.7,3.8 3.5,6.2 Q3.2,10.1 3.3,13.9 Q3.3,17.4 3.5,18.3 Q3.9,20.3 6.2,20.4"/>
+  <path d="M6.1,3.7 Q5.7,8.2 5.8,12.4 Q5.9,16.7 6.2,20.4"/>`, 1.5);
+
+const ME = {
+  // a：歪着的小人（头和肩都不对称）
+  a: ico(`<path d="M11.9,5.2 Q15.4,5.1 15.2,8.3 Q15.0,11.6 11.8,11.5 Q8.6,11.4 8.8,8.1
+      Q9.0,5.3 11.9,5.2 Z"/>
+    <path d="M11.6,5.2 Q11.9,3.9 13.2,3.4"/>
+    <path d="M4.9,19.9 Q5.6,14.3 11.9,13.7 Q18.2,14.2 19.0,19.4"/>`, -2),
+  // b：一枚立着的章（木柄 + 橡皮底），跟 2.5D 章体同源
+  b: ico(`<path d="M9.9,3.9 Q12,3.2 14.1,4.0 Q14.7,6.6 14.2,9.3 Q12,10.0 9.8,9.3
+      Q9.3,6.5 9.9,3.9 Z"/>
+    <path d="M6.2,10.4 Q12,9.6 17.8,10.5 Q18.4,13.6 17.7,16.6 Q12,17.4 6.3,16.6
+      Q5.7,13.5 6.2,10.4 Z"/>
+    <path d="M4.8,19.7 Q12,19.0 19.2,19.7"/>`, -2),
+  // c：一枚圆印痕，里面一张脸（"物件有脸"那条风格线）
+  c: ico(`<path d="M12,4.4 Q19.6,4.6 19.5,12.0 Q19.4,19.4 12,19.6 Q4.6,19.4 4.5,12.0
+      Q4.4,4.6 12,4.4 Z"/>
+    <circle cx="9.7" cy="10.6" r=".95" fill="currentColor" stroke="none"/>
+    <circle cx="14.3" cy="10.7" r=".95" fill="currentColor" stroke="none"/>
+    <path d="M9.8,13.9 Q12,16.3 14.2,13.9"/>`, -2),
+};
+
+const SETS = {
+  '现在（通用线框）': CUR,
+  'A 版 · 纸 / 本子＋松紧带 / 两层柜 / 小人':      { 今日: TODAY.a, 本子: BOOK.a, 抽屉: DRAWER.a, 我的: ME.a },
+  'B 版 · 卷角纸 / 月历页 / 三层柜 / 章':          { 今日: TODAY.b, 本子: BOOK.b, 抽屉: DRAWER.b, 我的: ME.b },
+  'C 版 · 落章 / 叠起来的本 / 两层柜 / 小脸章': { 今日: TODAY.c, 本子: BOOK.c, 抽屉: DRAWER.a, 我的: ME.c },
+  '★ 定稿 · C 版但本子=现生产那本改手绘': { 今日: TODAY.c, 本子: BOOK.d, 抽屉: DRAWER.a, 我的: ME.c },
+  '（对照）现在生产上的本子':              { 今日: CUR.今日, 本子: CUR.本子, 抽屉: CUR.抽屉, 我的: CUR.我的 },
+};
+
+const NAMES = ['今日', '本子', '抽屉', '我的'];
+let h = '<h2>放大看（72px）</h2>';
+for (const [k, set] of Object.entries(SETS)) {
+  h += `<div class="big"><div class="rowname">${k}</div><div class="line">`;
+  for (const n of NAMES) h += `<div class="cell">${set[n]}<div class="cap">${n}</div></div>`;
+  h += '</div></div>';
+}
+h += '<h2>真实尺寸（21px，手机上就这么大）</h2>';
+for (const [k, set] of Object.entries(SETS)) {
+  h += `<div class="tbarbox"><div class="tbarname">${k}</div><div class="tbar">`;
+  NAMES.forEach((n, i) => { h += `<button class="${i === 0 ? 'active' : ''}">${set[n]}${n}</button>`; });
+  h += '</div></div>';
+}
+document.getElementById('out').innerHTML = h;
+</script>

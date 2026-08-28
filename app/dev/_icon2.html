@@ -1,0 +1,137 @@
+<!doctype html><meta charset="utf-8"><title>App 图标比稿 · 第二轮（戳了么）</title>
+<link rel="stylesheet" href="../css/app.css">
+<style>
+ body{margin:0;background:#DDD8CC;font:13px/1.6 "Xiaolai",system-ui;color:#252421;padding:24px}
+ .wrap{max-width:1180px;margin:0 auto}
+ h2{font-family:"LXGW WenKai",serif;font-size:15px;letter-spacing:.14em;margin:0 0 14px;color:#5A544A}
+ .row{display:flex;gap:20px;flex-wrap:wrap}
+ .box{width:216px}
+ /* iOS 圆角比例：248/1024 ≈ 24.2%（超椭圆近似成大圆角就够比稿用了） */
+ .ico{width:216px;height:216px;border-radius:52px;overflow:hidden;position:relative;
+      display:flex;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(0,0,0,.14)}
+ .cap{text-align:center;margin-top:8px;color:#5A544A;font-size:12px;letter-spacing:.06em}
+ .sub{text-align:center;color:#8C8880;font-size:10.5px;letter-spacing:.04em;margin-top:1px}
+ .mini{display:flex;gap:10px;justify-content:flex-start;align-items:flex-end;margin-top:12px}
+ .mini span{display:block;flex:none;border-radius:23%;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.18);position:relative}
+ .mini .m1{width:120px;height:120px}   /* 主屏大图标 */
+ .mini .m2{width:60px;height:60px}     /* 设置/搜索里的小图标 */
+ .mini .m3{width:29px;height:29px}     /* 通知里那个最小的 */
+ /* .in 铺满整块图标，绝对定位的零件（松紧带/章体）才有参照 */
+ .in{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;line-height:0}
+
+ /* 底：碎花桌布 / 亚麻 / 点点格纸 */
+ .bg-floral{background-color:#F6F2EA;background-image:var(--floral);background-size:78px 78px}
+ .bg-linen{background:#EDE7DA}
+ .bg-dot{background-color:#FBF8F1;
+   background-image:radial-gradient(circle at 3px 3px,#D3CDBE 2.4px,transparent 2.8px);
+   background-size:26px 26px}
+ .bg-paper{background:#F6F2EA}
+ /* 布面封皮（跟 .op-cover.cover-rose 同一套织纹） */
+ .bg-cloth{background:
+     repeating-linear-gradient(0deg,rgba(255,255,255,.05) 0 1px,transparent 1px 3px),
+     repeating-linear-gradient(90deg,rgba(0,0,0,.03) 0 1px,transparent 1px 3px),
+     var(--cover-rose)}
+ .cloth-band{position:absolute;top:0;bottom:0;left:79%;width:15px;background:var(--cover-rose-band);opacity:.9}
+ /* 一张小纸（贴在桌布上） */
+ .sheet2{background-color:#FBF8F1;border-radius:6px;
+   box-shadow:0 2px 5px rgba(63,53,48,.16);position:relative;
+   background-image:radial-gradient(circle at 3px 3px,#D3CDBE 2.2px,transparent 2.6px);
+   background-size:24px 24px}
+ .chuo{font-family:"LXGW WenKai",serif;color:#FBF8F1;line-height:1;
+   /* ⚠️「戳」17 画，快乐体在小尺寸糊成黑坨（8-27 踩过），标题类一律文楷 */}
+</style>
+<div class="wrap">
+  <h2>App 图标 · 第二轮（改名「戳了么」之后，按现在的封皮 / 桌布 / 纸重画）</h2>
+  <div class="row" id="row"></div>
+</div>
+<script type="module">
+import { stampById } from '../js/data.js';
+import { defsMarkup, stampSVG, stampBodySVG } from '../js/stamp.js';
+document.body.insertAdjacentHTML('afterbegin',
+  `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+
+const sp = stampById['sparkle'];   // 小确幸——41 枚里最适合当门脸的一枚
+const hp = stampById['happy'];
+
+const VARIANTS = [
+  { id: 'A', cap: 'A · 正在盖下去', sub: '碎花桌布 + 一张纸 + 章落下来',
+    bg: 'bg-floral', html: () => `
+      <div class="sheet2" style="width:134px;height:134px;transform:rotate(-3deg)">
+        <div style="position:absolute;left:4px;top:76px;transform:rotate(7deg);opacity:.88">
+          ${stampSVG(sp, { size: 50, ink: 'zhu', mat: 'r', seed: 5 })}</div>
+      </div>
+      <div style="position:absolute;left:50%;top:50%;transform:translate(-44%,-60%) rotate(4deg)">
+        ${stampBodySVG(sp, { size: 94, ink: 'zhu', charge: 3 })}</div>` },
+
+  { id: 'B', cap: 'B · 封皮上的一枚章', sub: '藕粉布面 + 松紧带（就是首页那本）',
+    bg: 'bg-cloth', html: () => `
+      <div class="cloth-band"></div>
+      <div style="position:absolute;left:50%;top:50%;transform:translate(-58%,-50%) rotate(-5deg)">
+        ${stampSVG(sp, { size: 122, ink: 'zhu', mat: 'r', seed: 3 })}</div>` },
+
+  { id: 'C', cap: 'C · 一枚朱红印痕', sub: '碎花桌布底（旧 B 版换成现在的桌布）',
+    bg: 'bg-floral', html: () => `
+      <div style="transform:rotate(-6deg)">${stampSVG(sp, { size: 156, ink: 'zhu', mat: 'r', seed: 3 })}</div>` },
+
+  { id: 'D', cap: 'D · 「戳」字印', sub: '朱红方印 + 文楷，最直给',
+    bg: 'bg-paper', html: () => `
+      <div style="width:150px;height:150px;border-radius:20px;background:#C0453F;
+                  display:flex;align-items:center;justify-content:center;transform:rotate(-3deg);
+                  box-shadow:0 2px 8px rgba(140,50,45,.28)">
+        <span class="chuo" style="font-size:104px;margin-top:-4px">戳</span>
+      </div>` },
+
+  { id: 'E', cap: 'E · 章 + 已经盖好的印', sub: '亚麻底，一个动作两个结果',
+    bg: 'bg-linen', html: () => `
+      <div style="position:absolute;left:20px;bottom:26px;transform:rotate(-8deg);opacity:.9">
+        ${stampSVG(sp, { size: 72, ink: 'zhu', mat: 'r', seed: 5 })}</div>
+      <div style="position:absolute;right:14px;top:16px;transform:rotate(7deg)">
+        ${stampBodySVG(sp, { size: 100, ink: 'zhu', charge: 3 })}</div>` },
+
+  { id: 'F', cap: 'F · 一张笑脸印', sub: '换成「开心」那枚章，情绪更直接',
+    bg: 'bg-dot', html: () => `
+      <div style="transform:rotate(-5deg)">${stampSVG(hp, { size: 152, ink: 'zhu', mat: 'r', seed: 2 })}</div>` },
+
+  { id: 'G', cap: 'G · 「戳」印痕', sub: '不加实心方框，用章的斑驳质感直接盖上去',
+    bg: 'bg-dot', html: () => `
+      <svg width="176" height="176" viewBox="0 0 100 100" style="transform:rotate(-4deg)">
+        <g filter="url(#ls-w1)" opacity=".93">
+          <text x="50" y="50" text-anchor="middle" dominant-baseline="central"
+                font-family="LXGW WenKai, serif" font-size="82" fill="#C94B3C">戳</text>
+        </g>
+      </svg>` },
+
+  { id: 'H', cap: 'H · 「戳」+ 手绘方框', sub: '把日付印那圈歪框套上，仍是印痕不是实心块',
+    bg: 'bg-paper', html: () => `
+      <svg width="180" height="180" viewBox="0 0 100 100" style="transform:rotate(-3deg)">
+        <g filter="url(#ls-w1)" opacity=".93">
+          <path d="M12,10 Q50,7.6 88,10.2 Q90.6,50 88.2,89.6 Q50,92.2 11.8,89.8 Q9.4,50 12,10 Z"
+                fill="none" stroke="#C94B3C" stroke-width="5.2" stroke-linejoin="round"/>
+          <text x="50.5" y="52" text-anchor="middle" dominant-baseline="central"
+                font-family="LXGW WenKai, serif" font-size="62" fill="#C94B3C">戳</text>
+        </g>
+      </svg>` },
+];
+
+let h = '';
+for (const v of VARIANTS) {
+  h += `<div class="box">
+    <div class="ico ${v.bg}" id="ic-${v.id}"><div class="in">${v.html()}</div></div>
+    <div class="cap">${v.cap}</div><div class="sub">${v.sub}</div>
+    <div class="mini"><span class="m1" data-src="${v.id}"></span>
+      <span class="m2" data-src="${v.id}"></span><span class="m3" data-src="${v.id}"></span></div>
+  </div>`;
+}
+document.getElementById('row').innerHTML = h;
+
+// 小尺寸预览：整块等比缩下来，看的就是"主屏上到底认不认得出"
+for (const el of document.querySelectorAll('.mini span')) {
+  const src = document.getElementById('ic-' + el.dataset.src);
+  const scale = el.offsetWidth / 216;
+  const clone = src.cloneNode(true);
+  clone.removeAttribute('id');
+  clone.style.cssText += `;transform:scale(${scale});transform-origin:0 0;box-shadow:none;
+    border-radius:${52 * scale}px;position:absolute;left:0;top:0`;
+  el.appendChild(clone);
+}
+</script>

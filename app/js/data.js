@@ -4,25 +4,30 @@
 // ============================================================
 
 // ---------- 印泥 ----------
+// free:true 的三款（朱红/墨色/松绿）是免费档，不耗印泥盒、随便盖 —— 这是
+// 「付费永不碰记录能力」那条红线的兜底。其余 10 款进「高级印泥盒」（一次性内购）。
+// near = 没解锁时回落到哪一款：暖色→朱红、深色→墨色、冷色→松绿。
+// 🔴 8-28 拍板去掉了「默」：它原来盖的是每枚章自己的满饱和色、还不耗盒，
+//    等于颜色本来就是免费的，付费墙从第一天就是漏的。
 export const INKS = {
   zhu:     { name: '朱红', type: 'solid',    color: '#C94B3C', free: true },
   mo:      { name: '墨色', type: 'solid',    color: '#4A463E', free: true },
   song:    { name: '松绿', type: 'solid',    color: '#668878', free: true },
-  jie:     { name: '芥末', type: 'solid',    color: '#D4A63A', free: true },
-  wu:      { name: '雾蓝', type: 'solid',    color: '#7593A6', free: true },
-  ou:      { name: '藕粉', type: 'solid',    color: '#C78D91', free: true },
-  tao:     { name: '陶棕', type: 'solid',    color: '#8C6C55', free: true },
-  teng:    { name: '藤紫', type: 'solid',    color: '#91839A', free: true },
-  rainbow: { name: '彩虹', type: 'gradient', free: true,
+  jie:     { name: '芥末', type: 'solid',    color: '#D4A63A', free: false, near: 'zhu' },
+  wu:      { name: '雾蓝', type: 'solid',    color: '#7593A6', free: false, near: 'song' },
+  ou:      { name: '藕粉', type: 'solid',    color: '#C78D91', free: false, near: 'zhu' },
+  tao:     { name: '陶棕', type: 'solid',    color: '#8C6C55', free: false, near: 'mo' },
+  teng:    { name: '藤紫', type: 'solid',    color: '#91839A', free: false, near: 'mo' },
+  rainbow: { name: '彩虹', type: 'gradient', free: false, near: 'zhu',
              stops: [['0','#D96C8A'],['.28','#E09A5A'],['.52','#D4B04A'],['.76','#7BA37A'],['1','#6E8FB5']],
              x1: 0, y1: 0, x2: 100, y2: 90 },
-  dusk:    { name: '暮色', type: 'gradient', free: true,
+  dusk:    { name: '暮色', type: 'gradient', free: false, near: 'mo',
              stops: [['0','#C78D91'],['1','#8378A6']], x1: 0, y1: 0, x2: 90, y2: 100 },
-  sunset:  { name: '晚霞', type: 'gradient', free: true,
+  sunset:  { name: '晚霞', type: 'gradient', free: false, near: 'zhu',
              stops: [['0','#D96C4A'],['1','#C7798F']], x1: 0, y1: 0, x2: 70, y2: 100 },
-  matcha:  { name: '抹茶', type: 'gradient', free: true,
+  matcha:  { name: '抹茶', type: 'gradient', free: false, near: 'song',
              stops: [['0','#8FAE7E'],['1','#5F8C7A']], x1: 0, y1: 0, x2: 80, y2: 100 },
-  dot:     { name: '水玉', type: 'pattern',  free: true, kind: 'dots',
+  dot:     { name: '水玉', type: 'pattern',  free: false, near: 'zhu', kind: 'dots',
              bg: '#F0E3C0', c1: '#D4A63A', c2: '#C78D91' },
 };
 
@@ -413,6 +418,76 @@ export function monthPersona(countsByCat, total) {
   return map[topCat] || { title: '认真生活的普通人类', line: '普通的一个月，也值得纪念。', seal: '认真生活' };
 }
 
+// ---------- 初始 12 枚 + 其余 30 枚的解锁条件 ----------
+// 🔴 为什么要收：42 枚一开始全给，核心奖励「发现新章」从第一天起就不存在。
+//    8-27 抽屉里「还没遇到的」整段被删掉，理由是"那些章全在托盘里摆着，说没遇到是假的"——
+//    那是同一个病根的症状。收到 12 枚之后，"还没遇到"重新变成真话。
+// ⛔ 不花钱：解锁全靠用，付费只卖新增的主题章包，这 42 枚一枚都不卖。
+// ⚠️ 守禁词表：这不是任务清单，UI 上永远不显示"还差几枚"，只在达成那一刻说一句"发现新章"。
+export const INIT_STAMPS = [
+  'milktea', 'takeout',      // 吃喝
+  'water', 'goout',          // 日常
+  'series',                  // 娱乐
+  'read', 'work',            // 学习
+  'lie', 'stayup',           // 摆烂
+  'happy', 'tired',          // 情绪
+  'sparkle',                 // 遇见
+];
+
+// 条件类型（都是**累计**的，跟隐藏章那套"当日"判据分开）：
+//   catTotal   {cat,n}   累计盖过某分类 n 枚
+//   stampTotal {id,n}    累计盖过某一枚章 n 次
+//   comboTotal {need}    累计盖过这几枚各 n 次
+//   hourTotal  {from,to,n} 累计在某时段盖过 n 次
+//   total      {n}       累计总数
+// 每一条都要跟那枚章本身对得上，解锁的一刻得有"原来如此"，
+// 而不是"又完成了一个指标"。
+export const UNLOCK = {
+  // ===== 吃喝：本来就有奶茶和外卖 =====
+  coffee:     { type: 'catTotal', cat: 'food', n: 3 },      // 最早的一枚奖励
+  hotpot:     { type: 'catTotal', cat: 'food', n: 8 },
+  burger:     { type: 'catTotal', cat: 'food', n: 12 },
+  dessert:    { type: 'stampTotal', id: 'milktea', n: 3 },  // 甜的东西是连着来的
+  fruit:      { type: 'stampTotal', id: 'water', n: 5 },    // 都是"对身体好"那一挂
+  nightsnack: { type: 'hourTotal', from: 23, to: 4, n: 2 }, // 半夜还醒着，才会遇到夜宵
+
+  // ===== 日常：本来就有喝水和出门 =====
+  shower:     { type: 'catTotal', cat: 'daily', n: 3 },
+  laundry:    { type: 'catTotal', cat: 'daily', n: 6 },
+  cook:       { type: 'stampTotal', id: 'takeout', n: 5 },  // 外卖吃腻了才想起做饭
+  clean:      { type: 'catTotal', cat: 'daily', n: 10 },
+
+  // ===== 娱乐：本来就有追剧 =====
+  game:       { type: 'catTotal', cat: 'fun', n: 3 },
+  browse:     { type: 'comboTotal', need: { milktea: 3, dessert: 1 } },  // 消费欲是连坐的
+  movie:      { type: 'catTotal', cat: 'fun', n: 6 },
+  music:      { type: 'catTotal', cat: 'fun', n: 9 },
+
+  // ===== 学习：本来就有阅读和工作 =====
+  study:      { type: 'catTotal', cat: 'grow', n: 3 },
+  write:      { type: 'stampTotal', id: 'read', n: 5 },     // 读得多了就想写
+  meeting:    { type: 'stampTotal', id: 'work', n: 8 },
+
+  // ===== 摆烂：本来就有躺平和熬夜 =====
+  daze:       { type: 'catTotal', cat: 'chill', n: 3 },
+  phone:      { type: 'catTotal', cat: 'chill', n: 6 },
+  sleepin:    { type: 'stampTotal', id: 'stayup', n: 3 },   // 熬夜的后果
+
+  // ===== 情绪：本来就有开心和疲惫 =====
+  angry:      { type: 'catTotal', cat: 'mood', n: 3 },
+  emo:        { type: 'catTotal', cat: 'mood', n: 6 },
+  cry:        { type: 'stampTotal', id: 'emo', n: 3 },
+  love:       { type: 'catTotal', cat: 'mood', n: 9 },
+
+  // ===== 遇见：本来只有小确幸 =====
+  cat:        { type: 'stampTotal', id: 'goout', n: 3 },    // 出了门才遇得到
+  dog:        { type: 'stampTotal', id: 'goout', n: 6 },
+  bird:       { type: 'catTotal', cat: 'meet', n: 4 },
+  flower:     { type: 'catTotal', cat: 'meet', n: 6 },
+  sunset:     { type: 'hourTotal', from: 17, to: 19, n: 2 },// 傍晚才看得见
+  rainbowsky: { type: 'total', n: 60 },                     // 最稀有的一枚，得攒
+};
+
 // ---------- 文案 ----------
 // ---------- 系列（一盒章）----------
 // 系列 = 按盒卖、按盒收纳的单位，和「分类」正交：奶茶的分类是「吃喝」，系列是「基础章」。
@@ -441,86 +516,12 @@ export function seriesOf(stampId) { return seriesById[_seriesOfStamp[stampId]] |
 // 这枚章的材质是否被它所属的系列锁死；null = 没锁，用户可选
 export function lockedMaterial(stampId) { return seriesOf(stampId)?.material ?? null; }
 
-export const COPY = {
-  cta: '＋ 戳一下',
-  emptyToday: '今天还没有留下任何生活痕迹。',
-  emptyHint: '选一枚章，拖到纸上盖下来。',
-  dipped: '蘸好墨了。',
-  noInk: '墨干了，蘸一下印泥再盖。',
-  // 蘸墨状态：用话说，不出现「还剩 N 次」
-  inkFull: '印泥还很足',
-  inkMid: '印泥还够用一阵',
-  inkLow: '印泥剩一点点了，盖出来会发虚',
-  inkOut: '章上的墨用完了，蘸一下印泥',
-  // ⛔ 后半句「还有 {rest} 枚没盖过」跟着「还没遇到的」那一段一起删了（8-27 用户）：
-  //    那些章全在托盘里摆着，说"没盖过"就是把可用清单说成待办清单。
-  stampsSummary: '已经盖过 {used} 枚',
-  stampWorn: '用旧了',
-  // 印泥盒余量：一律用话说
-  padFull: '还很足',
-  padMid: '还够用一阵',
-  padLow: '剩一点点了',
-  padDry: '这盒干了',
-  padRefill: '补一盒',
-  baseInkDesc: '不用蘸，也不消耗',
-  drawerSegStamps: '我盖过的',
-  drawerSegInks: '印泥盒',
-  stampUnused: '还没盖过',
-  notePlaceholder: '写一句…',
-  noteHint: '✎ 写一句',
-  catGlyph: '字',
-  glyphBox: '数字和字母',
-  glyphSub: '数字、字母、星期、标点——这些是工具，不算收集',
-  undo: '撤销',
-  undone: '撤销',
-  // 一眼能扫的三个数，不是一句陈述句（8-27 用户："改成清晰表述，一目了然"）
-  statMarks: '枚印记', statDays: '天有记录', statHidden: '隐藏章',
-  meTitleLabel: '这个月的称号',
-  addStampHere: '补一枚章',
-  shareMonthBtn: '本月都戳了什么',
-  drawerMine: '我盖过的',
-  drawerMineMore: '还有 {n} 枚 ›',
-  drawerMineLess: '只看常盖的 ‹',
-  // ⚠️「盖多少次都行」被测试者点名说不对（听着像在吹）。只说事实：它自带油、不耗印泥盒。
-  matPhotoNote: '自带印油，可以连着盖',
-  meTitlePast: '以前的',
-  wipeConfirm: '所有的纸都会被撕掉，确定吗？',
-  notebookMonthSub: '盖了 {n} 枚 · 留白 {m} 天',
-  notebookFlip: '翻到这一天',
-  notebookBooklet: '这个月……',
-  notebookBooklet2: '有 {m} 天什么都没留下，也挺好',
-  notebookQuiet: '这个月还很安静。',
-  weekQuiet: '这一周还很安静。',
-  weekSum: '这一周盖了 {n} 枚',
-  padEmpty: '这盒印泥见底了，去「印泥盒」看看。',
-  supplyReady: '今天的补给还没领——每天可以把一盒补满。',
-  supplyClaimed: '今天的补给领过了，明天还有。',
-  emptyPast: '这一天留白着，也很好。',
-  emptyPastHint: '想补一枚章，也可以。',
-  backfilled: '补上了，记在那一天。',
-  dayNoteHint: '这天想说的一句话',
-  openHint: '碰一下，翻开今天',
-  closeBook: '合上',
-  weatherAsk: '今天天气？',
-  deckMore: '更多 ›',
-  deckLess: '收起 ‹',
-  emptyFuture: '这一页还没到。',
-  futureStamp: '这一天还没到呢。',
-  supplyShort: '补给还没领',
-  supplyClaimedShort: '补给领过了',
-  yesterdayEdge: '昨天那一页',
-  erased: '擦掉了。',
-  firstStamp: '啪！收到了。',
-  repeatStamp: '又来一个。',
-  hiddenFound: '咦？发现新章。',
-  welcomeBack: '欢迎回来，生活还在继续。',
-  dayDone: '今天收集得不错。',
-  onboarding: [
-    { title: '把生活盖下来。', body: '喝奶茶、摸鱼、遇见一只猫，\n都可以变成一枚小章。', stamps: ['milktea', 'takeout', 'cat', 'read'] },
-    { title: '每天的小事，\n都值得留下。', body: '不是任务，不用坚持，\n什么都没做的一天也可以是空白的一页。', stamps: ['lie', 'stayup', 'sunset'] },
-    { title: '开始收集你的生活。', body: '', stamps: [], cta: '戳一下' },
-  ],
-};
+// ---------- 文案 ----------
+// 🔴 词条本体已经搬到 js/i18n/zh.js（三语的基准）。这里只做转出，
+//    好让所有 `import { COPY } from './data.js'` 一行都不用改。
+//    COPY 是个代理：读 COPY.xxx 等于按当前语言 t('xxx')，中文返回值逐字不变。
+export { COPY } from './i18n.js';
+
 
 // ---------- 工具 ----------
 // ---------- 字形章（数字 / 字母 / 星期 / 标点）----------

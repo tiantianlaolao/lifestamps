@@ -1,0 +1,191 @@
+<!doctype html><meta charset="utf-8"><title>解锁条件断言</title>
+<style>body{font-family:Consolas,monospace;font-size:13px;padding:16px;background:#fff}
+.p{color:#177245}.f{color:#C00;font-weight:bold}</style>
+<div id="out">running...</div>
+<script type="module">
+// 直接喂记录给条件引擎，不点界面 —— 这层是纯函数，界面测不出边界。
+import { STAMPS, INIT_STAMPS, UNLOCK, stampById } from '../js/data.js';
+import { store } from '../js/store.js';
+import { checkUnlocks, isUnlocked } from '../js/hidden.js';
+
+const out = [];
+const ok = (n, c, extra = '') => out.push(`<div class="${c ? 'p' : 'f'}">${c ? 'PASS' : 'FAIL'} ${n} ${extra}</div>`);
+
+// 造一条记录。hour 用来测时段类条件
+let seq = 0;
+function rec(stampId, hour = 12, dayOffset = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() - dayOffset);
+  d.setHours(hour, 0, 0, 0);
+  return { id: 'r' + (seq++), stampId, ink: 'zhu', ts: d.getTime(), rot: 0, sc: 1, op: .9 };
+}
+function reset(records) {
+  store.records = records;
+  store.unlocked = {};
+}
+
+// ---- 覆盖性：42 枚章，要么在初始里，要么有解锁条件，不能重不能漏 ----
+{
+  const ids = STAMPS.map(s => s.id);
+  const both = ids.filter(i => INIT_STAMPS.includes(i) && UNLOCK[i]);
+  const none = ids.filter(i => !INIT_STAMPS.includes(i) && !UNLOCK[i]);
+  ok('42 枚章全部有归属', none.length === 0, none.join(','));
+  ok('没有既初始又要解锁的', both.length === 0, both.join(','));
+  ok('初始正好 12 枚', INIT_STAMPS.length === 12, 'got ' + INIT_STAMPS.length);
+  ok('解锁表正好 30 条', Object.keys(UNLOCK).length === 30, 'got ' + Object.keys(UNLOCK).length);
+  ok('解锁表里没有初始那 12 枚', !INIT_STAMPS.some(i => UNLOCK[i]));
+}
+
+// ---- 初始 12 枚一开始就能用，其余一枚都不能 ----
+{
+  reset([]);
+  ok('初始 12 枚开局可用', INIT_STAMPS.every(i => isUnlocked(i)));
+  ok('其余 30 枚开局都不可用', Object.keys(UNLOCK).every(i => !isUnlocked(i)));
+}
+
+// ---- catTotal：盖 3 枚吃喝 → 咖啡 ----
+{
+  reset([rec('milktea', 12, 0), rec('takeout', 12, 0)]);
+  ok('同一天吃喝 2 种：咖啡还没解锁', checkUnlocks().every(s => s.id !== 'coffee'));
+  // 🔴 同一天再多盖也没用 —— 这就是新规矩
+  reset([rec('milktea', 12, 0), rec('takeout', 12, 0),
+         rec('milktea', 13, 0), rec('takeout', 14, 0), rec('milktea', 15, 0)]);
+  ok('同一天狂盖 5 次仍然只算 2：咖啡还是不解锁',
+     checkUnlocks().every(s => s.id !== 'coffee'));
+  reset([rec('milktea', 12, 0), rec('takeout', 12, 0), rec('milktea', 12, 1)]);
+  const got = checkUnlocks().map(s => s.id);
+  ok('跨到第二天凑够 3：解锁咖啡', got.includes('coffee'), got.join(','));
+  // 只盖一种章也行，多等几天就是了（不逼人换章）
+  reset([rec('milktea', 12, 0), rec('milktea', 12, 1), rec('milktea', 12, 2)]);
+  ok('连着 3 天只盖奶茶也能解锁咖啡（不逼换章）',
+     checkUnlocks().some(s => s.id === 'coffee'));
+}
+
+// ---- stampTotal：奶茶 3 次 → 甜品 ----
+{
+  reset([rec('milktea', 9, 0), rec('milktea', 15, 0), rec('milktea', 21, 0)]);
+  ok('同一天喝 3 次奶茶只算 1 天：甜品不解锁', !checkUnlocks().some(s => s.id === 'dessert'));
+  reset([rec('milktea', 12, 0), rec('milktea', 12, 1), rec('milktea', 12, 2)]);
+  ok('三个不同的日子各一次：解锁甜品', checkUnlocks().some(s => s.id === 'dessert'));
+}
+
+// ---- hourTotal 跨零点：23 点后 2 次 → 夜宵 ----
+{
+  reset([rec('stayup', 23, 0), rec('lie', 23, 1)]);
+  ok('两个不同的夜晚：解锁夜宵', checkUnlocks().some(s => s.id === 'nightsnack'));
+  reset([rec('stayup', 23, 0), rec('lie', 23, 0), rec('daze', 1, 0)]);
+  ok('同一个夜晚盖 3 枚不同的章只算 1 夜：夜宵不解锁',
+     !checkUnlocks().some(s => s.id === 'nightsnack'));
+  reset([rec('stayup', 23)]);
+  ok('深夜只 1 次：夜宵不解锁', !checkUnlocks().some(s => s.id === 'nightsnack'));
+  reset([rec('stayup', 20), rec('lie', 21)]);
+  ok('晚上但没到 23 点：夜宵不解锁', !checkUnlocks().some(s => s.id === 'nightsnack'));
+}
+
+// ---- hourTotal 普通区间：17~19 点 2 次 → 晚霞 ----
+{
+  reset([rec('goout', 17, 0), rec('goout', 19, 1)]);
+  ok('两个不同的傍晚：解锁晚霞', checkUnlocks().some(s => s.id === 'sunset'));
+  reset([rec('goout', 16), rec('goout', 20)]);
+  ok('16 点和 20 点不算傍晚：晚霞不解锁', !checkUnlocks().some(s => s.id === 'sunset'));
+}
+
+// ---- comboTotal：奶茶 3 + 甜品 1 → 种草 ----
+{
+  reset([rec('milktea', 12, 0), rec('milktea', 12, 1), rec('milktea', 12, 2)]);
+  ok('只有奶茶：种草不解锁', !checkUnlocks().some(s => s.id === 'browse'));
+  reset([rec('milktea', 12, 0), rec('milktea', 12, 1), rec('milktea', 12, 2), rec('dessert', 12, 0)]);
+  ok('奶茶 3 天 + 甜品 1 天：解锁种草', checkUnlocks().some(s => s.id === 'browse'));
+}
+
+// ---- total：60 枚 → 彩虹（最稀有的一枚）----
+{
+  reset(Array.from({ length: 200 }, (_, i) => rec('water', 12, 0)));
+  ok('同一天盖 200 次只算 1：彩虹不解锁', !checkUnlocks().some(s => s.id === 'rainbowsky'));
+  // 60 个 (章,日) 组合：5 枚章 × 12 天
+  {
+    const r = [];
+    for (let day = 0; day < 12; day++)
+      for (const id of ['water', 'milktea', 'takeout', 'read', 'work']) r.push(rec(id, 12, day));
+    reset(r);
+    ok('5 枚章 × 12 天 = 60 个组合：解锁彩虹', checkUnlocks().some(s => s.id === 'rainbowsky'));
+  }
+}
+
+// ---- 解锁是持久的：条件不再满足也不会收回去 ----
+{
+  reset([rec('milktea', 12, 0), rec('milktea', 12, 1), rec('milktea', 12, 2)]);
+  checkUnlocks();
+  const had = isUnlocked('dessert');
+  store.records = [];                       // 记录清空（比如用户删了）
+  ok('解锁过就不会被收回', had && isUnlocked('dessert'));
+}
+
+// ---- 每一条解锁条件都真的能被达成（不能有写死了却永远触发不了的）----
+{
+  const dead = [];
+  for (const [id, c] of Object.entries(UNLOCK)) {
+    // ⚠️ 新规矩下必须**跨天**造数据：同一枚章同一天只算一次
+    let recs = [];
+    if (c.type === 'total') recs = Array.from({ length: c.n }, (_, i) => rec('water', 12, i));
+    else if (c.type === 'catTotal') {
+      const pool = STAMPS.filter(s => s.cat === c.cat);
+      recs = Array.from({ length: c.n }, (_, i) => rec(pool[i % pool.length].id, 12, Math.floor(i / pool.length)));
+    } else if (c.type === 'stampTotal') recs = Array.from({ length: c.n }, (_, i) => rec(c.id, 12, i));
+    else if (c.type === 'comboTotal') {
+      for (const [sid, n] of Object.entries(c.need)) for (let i = 0; i < n; i++) recs.push(rec(sid, 12, i));
+    } else if (c.type === 'hourTotal') {
+      recs = Array.from({ length: c.n }, (_, i) => rec('water', c.from, i));
+    }
+    reset(recs);
+    if (!checkUnlocks().some(s => s.id === id)) dead.push(id + '(' + c.type + ')');
+  }
+  ok('30 条解锁条件全都能达成', dead.length === 0, dead.join(' '));
+}
+
+// ---- 防刷：一直盖同一枚章，能刷出多少枚？----
+// 用户 8-28 问的："我如果一直盖咖啡，会一直出新章吗？"
+// 结论要写在断言里，不然改条件时没人知道破没破。
+{
+  const grind = (sid, n) => { reset(Array.from({ length: n }, () => rec(sid, 12))); return checkUnlocks().map(s => s.id); };
+  const c12 = grind('coffee', 12);
+  const c60 = grind('coffee', 60);
+  out.push(`<div class="p">— 一直盖咖啡 ×12 解锁: ${c12.join(',') || '无'}</div>`);
+  out.push(`<div class="p">— 一直盖咖啡 ×60 解锁: ${c60.join(',') || '无'}</div>`);
+  // ✅ 8-28 加了「同章同日只算一次」之后，刷不动了。
+  //    grind() 造的记录全在同一天，所以不管刷多少次都只算 1 次。
+  ok('同一天刷咖啡 ×12：一枚都解锁不了', c12.length === 0, c12.join(','));
+  ok('同一天刷咖啡 ×60：一枚都解锁不了', c60.length === 0, c60.join(','));
+  // 逐枚章刷 60 次，看最多能刷出几枚
+  let worst = 0, worstId = '';
+  for (const st of STAMPS) {
+    const got = grind(st.id, 60);
+    if (got.length > worst) { worst = got.length; worstId = st.id; }
+  }
+  out.push(`<div class="p">— 最能刷的一枚是 ${worstId}，×60 能刷出 ${worst} 枚</div>`);
+  ok('没有任何一枚章能靠同一天猛刷解锁', worst === 0, `${worstId} 刷出 ${worst}`);
+}
+
+// ---- 真天花板：把 12 枚初始章全都猛刷一遍，30 枚里能解锁多少？----
+// 只刷一枚是 6 枚，但用户手上有 12 枚初始章，全刷才是真正的上限。
+{
+  const spamAll = (times, hour = 12) => {
+    const recs = [];
+    for (const id of INIT_STAMPS) for (let i = 0; i < times; i++) recs.push(rec(id, hour));
+    reset(recs); return checkUnlocks().map(s => s.id);
+  };
+  const g10 = spamAll(10);
+  const g30 = spamAll(30);
+  out.push(`<div class="p">— 12 枚初始章各刷 10 次（共 120 枚）解锁 ${g10.length}/30: ${g10.join(',')}</div>`);
+  out.push(`<div class="p">— 12 枚初始章各刷 30 次（共 360 枚）解锁 ${g30.length}/30: ${g30.join(',')}</div>`);
+  const never = Object.keys(UNLOCK).filter(i => !g30.includes(i));
+  out.push(`<div class="p">— 光靠刷永远拿不到的 ${never.length} 枚: ${never.join(',')}</div>`);
+  ok('同一天把 12 枚初始章各刷 30 次：一枚都解锁不了', g30.length === 0, `拿到 ${g30.length}`);
+}
+
+// 跑完把 store 清干净，别把造的假数据留在 localStorage 里
+store.records = []; store.unlocked = {};
+const bad = out.filter(o => o.includes('class="f"')).length;
+document.getElementById('out').innerHTML =
+  `<h3>${bad ? bad + ' 条失败' : '全部通过'}（共 ${out.length} 条）</h3>` + out.join('');
+</script>

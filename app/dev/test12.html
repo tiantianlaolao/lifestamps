@@ -21,7 +21,10 @@ function clickAt(el, fx=0.5, fy=0.5){
 
 (async () => {
   localStorage.clear();
-  f.src = '../index.html?skipob=1&sel=milktea&noopen=1';   // 开场层会挡在最上面，测交互时关掉
+  // ⚠️ unlockall=1：下面那批版式判据（条带铺满 / 一排 6 个 / 能纵向滚）是对着**满托盘**写的。
+  //    8-28 起新用户只有 12 枚，一屏就放得下、不需要滚 —— 那是设计如此，不是回归。
+  //    新用户只有 12 枚这件事由后面单独一条断言守着。
+  f.src = '../index.html?skipob=1&sel=milktea&noopen=1&unlockall=1';   // 开场层会挡在最上面，测交互时关掉
   await new Promise(r => f.onload = r);
   // ⚠️ 页面里抛的异常必须单独收——盖章的后半程在 setTimeout 里跑，
   //    那里抛错不会让任何断言失败（8-26 就是这么漏掉一个 ReferenceError 的，用户先撞上的）。
@@ -31,13 +34,13 @@ function clickAt(el, fx=0.5, fy=0.5){
   await sleep(250);
   const D = () => f.contentDocument;
 
-  // 1. 初始：印泥盒默认满（pads 空对象 = 满）
-  ok('初始 pads 为空(=默认满盒)', !LS('pads') || Object.keys(LS('pads')).length === 0);
-
-  // 2. 蘸朱红 → 扣一格
+  // 1~2. 付费分档（8-28 改）：免费三款（朱红/墨色/松绿）不消耗任何东西。
+  //      ⚠️ 旧断言测的是"蘸朱红扣一格 pads.zhu=11" —— 那套库存跟着「默」一起退场了。
+  ok('初始没有买断', LS('pro') !== true);
   D().querySelector('#deck-inks .dk-ink[data-ink="zhu"]').click();
   await sleep(120);
-  ok('蘸一次朱红后 pads.zhu=11', LS('pads')?.zhu === 11, 'got '+LS('pads')?.zhu);
+  ok('蘸免费色不消耗试用额度', !LS('trialUsed'), 'trialUsed=' + LS('trialUsed'));
+  ok('蘸免费色不动印泥盒库存', !LS('pads') || Object.keys(LS('pads')).length === 0);
 
   // 3. 连盖三下 → 浓度递减，第4下被挡（落章在按压接触瞬间 ~300ms 后入账）
   clickAt(D().querySelector('#today-canvas'), .3, .3); await sleep(550);
@@ -51,15 +54,17 @@ function clickAt(el, fx=0.5, fy=0.5){
   clickAt(D().querySelector('#today-canvas'), .7, .6); await sleep(550);
   ok('没墨后第4下被挡', (LS('records')||[]).length === 3);
 
-  // 4. 印泥盒：领今日补给 → 补满 + 记领取日；同日不能再领
-  D().querySelector('#tray-supply').click(); await sleep(150);   // 入口从纸外卡片挪进了托盘那行小字
-  D().querySelector('[data-refill="zhu"]').click(); await sleep(120);
-  ok('补满后 pads.zhu=12', LS('pads')?.zhu === 12, 'got '+LS('pads')?.zhu);
-  const today = new Date(), dk = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
-  ok('supplyDay=今天', LS('supplyDay') === dk, 'got '+LS('supplyDay'));
-  D().querySelector('#deck-inks .dk-ink[data-ink="song"]').click(); await sleep(100); // 松绿用掉一格
-  const anyEnabled = [...D().querySelectorAll('#supply-list [data-refill]')].some(b => !b.disabled);
-  ok('已领过：所有补满按钮禁用', !anyEnabled);
+  // 4. 付费色的每日试用额度（TRIAL_DIPS=2）。⛔ 每日补给那套 8-28 退场了，旧断言删掉。
+  //    这里是付费墙的核心：免费三款随便用，付费十款每天只能蘸 2 次。
+  D().querySelector('#deck-inks .dk-ink[data-ink="wu"]').click(); await sleep(120);
+  ok('蘸付费色扣 1 次试用额度', LS('trialUsed') === 1, 'got ' + LS('trialUsed'));
+  D().querySelector('#deck-inks .dk-ink[data-ink="teng"]').click(); await sleep(120);
+  ok('再蘸一次付费色 → 用满 2 次', LS('trialUsed') === 2, 'got ' + LS('trialUsed'));
+  const inkBefore = LS('records')?.length;
+  D().querySelector('#deck-inks .dk-ink[data-ink="jie"]').click(); await sleep(200);
+  ok('额度用完后第 3 次蘸付费色被挡', LS('trialUsed') === 2, 'got ' + LS('trialUsed'));
+  D().querySelector('#deck-inks .dk-ink[data-ink="zhu"]').click(); await sleep(120);
+  ok('额度用完了免费色照样能蘸（记录能力没被碰）', LS('trialUsed') === 2);
 
   // 🔴 V1.15 埋过一个会把 App 用死的雷，这几条是它的防线：
   //    applyLook() 把设置写成 <html data-font/data-desk>，而「我的」页用
@@ -241,10 +246,12 @@ function clickAt(el, fx=0.5, fy=0.5){
     ok('展开态选完章托盘保持展开（不自动收）', D().querySelector('#deck').classList.contains('open'));
     ok('选完之后纸进入待盖状态', !!D().querySelector('#today-canvas.armed'));
     // 换印泥不需要展开：收起态点整排里的另一盒，选中的就该换过去
+    // ⚠️ 这里必须用**免费色**（松绿）。原来用的雾蓝是付费色，而前面第 4 段已经把当天
+    //    试用额度用光了，点它会被挡下来 —— 这条断言测的是托盘交互，不该被付费状态干扰。
     D().querySelector('#deck-more').click(); await sleep(320);
-    D().querySelector('#deck-inks .dk-ink[data-ink="wu"]')?.click(); await sleep(150);
+    D().querySelector('#deck-inks .dk-ink[data-ink="song"]')?.click(); await sleep(150);
     ok('收起态直接换印泥（不用展开）', !D().querySelector('#deck').classList.contains('open') &&
-       !!D().querySelector('#deck-inks .dk-ink[data-ink="wu"].sel'));
+       !!D().querySelector('#deck-inks .dk-ink[data-ink="song"].sel'));
   }
   if (D().querySelector('#deck').classList.contains('open')) { D().querySelector('#deck-grab').click(); await sleep(320); }
   {
@@ -342,10 +349,32 @@ function clickAt(el, fx=0.5, fy=0.5){
     ok(`点「${t}」只显示这一页`, vis.length === 1 && vis[0] === 'page-' + t, 'got [' + vis.join(',') + ']');
   }
 
-  // 6. 「默」薄墨不耗盒
-  const padsBefore = JSON.stringify(LS('pads'));
-  D().querySelector('#deck-inks .dk-ink[data-ink=""]').click(); await sleep(100);
-  ok('蘸「默」不扣任何盒', JSON.stringify(LS('pads')) === padsBefore);
+  // 6. 选章时颜色自动跟着章走（这是原来「默」的行为，8-28 由 pickStamp() 接管）
+  //    ⛔ 旧断言点的是 [data-ink=""]，那个「默」格子已经不存在了 —— 它是"颜色本来就免费"的根源。
+  {
+    // 奶茶自带陶棕（付费），没买断时必须回落到墨色；喝水自带雾蓝（付费）→ 松绿
+    // ⚠️ **选中**的那一格显示的是当前蘸的墨（所见即所得），不是它自己的回落色。
+    //    所以逐枚核对时必须跳过选中格，否则会拿到用户手动选的颜色。
+    const cell = id => D().querySelector(`#deck-strip .dk-stamp[data-sid="${id}"]:not(.sel)`);
+    const colorOf = id => cell(id) && cell(id).getAttribute('style');
+    if (cell('milktea')) ok('免费用户：奶茶(陶棕)回落成墨色', /4A463E/i.test(colorOf('milktea')), colorOf('milktea'));
+    if (cell('water')) ok('免费用户：喝水(雾蓝)回落成松绿', /668878/i.test(colorOf('water')), colorOf('water'));
+    ok('免费用户：托盘里一枚付费色都不该出现',
+      !['D4A63A', '7593A6', 'C78D91', '8C6C55', '91839A'].some(c =>
+        [...D().querySelectorAll('#deck-strip .dk-stamp')].some(e => (e.getAttribute('style') || '').toUpperCase().includes(c))));
+  }
+
+  // 8. 新用户只有初始 12 枚（上面整段是 unlockall=1 跑的，这里单独换一个干净的开局）
+  {
+    localStorage.removeItem('lifestamps_unlocked');
+    localStorage.removeItem('lifestamps_records');
+    f.src = '../index.html?skipob=1&noopen=1&band=day&book=open&deck=open&unlockall=0';
+    await sleep(900);
+    const ids = [...D().querySelectorAll('#deck-strip .dk-stamp')].map(e => e.dataset.sid);
+    ok('新用户托盘里正好 12 枚', ids.length === 12, 'got ' + ids.length + ': ' + ids.join(','));
+    ok('新用户托盘里没有要解锁的章', !ids.some(i => ['coffee', 'cat', 'music', 'rainbowsky'].includes(i)),
+       ids.join(','));
+  }
 
   ok('全程页面没抛异常', errs.length === 0, errs.join(' | '));
   // 7. 本子页底部「这一天」不能被章的数量撑长

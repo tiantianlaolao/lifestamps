@@ -1,0 +1,41 @@
+<!doctype html><meta charset="utf-8"><title>App 图标 E · 1024 出图</title>
+<link rel="stylesheet" href="../css/app.css">
+<style>
+ /* 出图专用：整页就是一块 1024×1024 的图标画布。
+    🔴 App Store 图标必须**满幅方图、无圆角、无透明通道**——圆角由 iOS 自己套，
+       我们画圆角的话会在系统蒙版里出现双重圆角的深色边。 */
+ html,body{margin:0;padding:0;background:#EDE7DA}
+ #ico{width:1024px;height:1024px;position:relative;overflow:hidden;background:#EDE7DA}
+ /* iOS 蒙版安全区参考线：?guide=1 打开，出正式图时关掉 */
+ #guide{position:absolute;inset:0;border-radius:229px;box-shadow:0 0 0 9999px rgba(200,60,60,.28);
+        pointer-events:none;display:none}
+ body.g #guide{display:block}
+</style>
+<div id="ico"><div id="guide"></div></div>
+<script type="module">
+import { stampById } from '../js/data.js';
+import { defsMarkup, stampSVG, stampBodySVG } from '../js/stamp.js';
+document.body.insertAdjacentHTML('afterbegin',
+  `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+
+const q = new URLSearchParams(location.search);
+if (q.get('guide')) document.body.classList.add('g');
+
+// 比稿页上 E 版是在 216px 画布里量的，这里整体等比放大到 1024
+const K = 1024 / 216;
+const px = v => Math.round(v * K) + 'px';
+const sp = stampById['sparkle'];
+// ?tight=1 收紧版：两个元素各放大约 28%、往中间收，减掉中间那片空白
+const T = q.get('tight');
+const P = T ? { bs: 124, br: 10, bt: 22, ms: 92, ml: 18, mb: 30 }
+            : { bs: 100, br: 14, bt: 16, ms: 72, ml: 20, mb: 26 };
+
+document.getElementById('ico').insertAdjacentHTML('afterbegin', `
+  <div style="position:absolute;left:${px(P.ml)};bottom:${px(P.mb)};transform:rotate(-8deg);opacity:.9;line-height:0">
+    ${stampSVG(sp, { size: Math.round(P.ms * K), ink: 'zhu', mat: 'r', seed: 5 })}
+  </div>
+  <div style="position:absolute;right:${px(P.br)};top:${px(P.bt)};transform:rotate(7deg);line-height:0">
+    ${stampBodySVG(sp, { size: Math.round(P.bs * K), ink: 'zhu', charge: 3 })}
+  </div>
+`);
+</script>

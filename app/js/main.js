@@ -4,17 +4,27 @@
 import { STAMPS, GLYPHS, isGlyph, HIDDEN, CATEGORIES, INKS, COPY, stampById, hiddenById, monthPersona, lockedMaterial, seriesById } from './data.js';
 import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint, inkMainColor, inkCSS, darken, seedOf, weatherSVG } from './stamp.js';
 import { store, dateKey, fmtTime } from './store.js';
-import { checkHidden, dailySecret } from './hidden.js';
+import { checkHidden, dailySecret, checkUnlocks, isUnlocked } from './hidden.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
 import { openShare, openShareDay } from './share.js';
 import { attachCurl } from './curl.js';
 import { initDiag } from './diag.js';
+import { setLang, getLang, detectLang, weekName, LANGS } from './i18n.js';
 
 const $ = s => document.querySelector(s);
-const WEEK = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
-const WEEK_S = ['日','一','二','三','四','五','六'];
+// 星期改走 Intl（i18n.js 的 weekName）。中文输出跟原来的两个数组逐字相同：
+// long → 「星期五」、short → 「周五」，所以中文界面一个像素都不会变。
+// ⚠️ 原来的写法是「星期」+ WEEK_S 拼出来的，Intl 已经把前缀带上了，别再拼。
 const INK_USES = 3;              // 蘸一次墨能盖几下（8-25 拍板：三下由浓到淡）
-const PAD_CAP = 12;              // 一盒印泥能蘸几次
+// 没买「高级印泥盒」时，每天可以蘸几次付费色。
+// 🔴 这是**试用额度**不是限制：目标是多数日子够用、每周撞墙一两次才有购买动机，
+//    天天撞是折磨。上线后按真实盖章频次调，别当定值。
+//    免费三款（朱红/墨色/松绿）永远不走这条路，记录能力一次都没被碰。
+const TRIAL_DIPS = 2;
+// ⛔ PAD_CAP / store.pads / 每日补给 8-28 一起退场：去掉「默」并把付费分档做进来之后，
+//    免费三款和买断之后的十款都不消耗，"一盒还剩几次"对它们没有意义；
+//    只有"没买断的付费色"还有余量的概念，那是 TRIAL_DIPS 管的每日试用额度。
+//    store 里的 pads/supplyDay 字段先留着不删——老数据读得到，等确定不回头再清。
 const DEPTH = { 3: 0.95, 2: 0.52, 1: 0.18 };  // 蘸墨后第 1/2/3 下的浓度
 const UNDO_MS = 10000;            // 撤销窗口：只撤最近一枚，10 秒
 function undoAlive() {
@@ -46,7 +56,11 @@ let curTab = 'today';
 
 // ---- 操作台状态 ----
 let selStamp = null;             // 选中的章 id
-let selInk = null;               // null = 章自带的薄墨（不耗盒，保底能记录）
+// 当前蘸着的印泥。**始终是一个具体的印泥 id**，不再有 null。
+// 🔴 8-28 去掉了「默」：它盖的是每枚章自己的满饱和色、还不耗印泥盒，
+//    等于颜色本来就是免费的 —— 付费墙从第一天就是漏的，消耗系统也能被整个绕开。
+//    「默」原来那个"跟着章走"的效果由 pickStamp() 的自动跟随接管，观感不变。
+let selInk = 'zhu';
 let selMat = 'r';                // 'r' 橡皮 | 'w' 木质 | 'p' 光敏
 let inkLeft = INK_USES;          // 当前这次蘸墨还能盖几下（光敏不消耗）
 let eraser = false;              // 橡皮擦模式
@@ -161,6 +175,23 @@ function init() {
   if (params.get('font')) store.settings.font = params.get('font');   // dev：字体 hand|plain
   if (params.get('desk')) store.settings.desk = params.get('desk');   // dev：桌布 floral|plain|grid
   if (params.get('paper')) store.settings.paper = params.get('paper'); // dev：纸 dot|plain
+  // dev：付费状态。购买 UI 还没做，先靠这两个参数看两边长什么样。
+  //   ?pro=1 / ?pro=0   买断 / 没买断
+  //   ?trial=N          把今天的试用额度改成还剩 N 次（?trial=0 看撞墙）
+  if (params.get('pro')) { store.setPro(params.get('pro') === '1'); }
+  if (params.get('trial') !== null && params.get('trial') !== undefined) {
+    const n = Math.max(0, Math.min(TRIAL_DIPS, +params.get('trial') || 0));
+    store.trialDay = dateKey(Date.now());
+    store.trialUsed = TRIAL_DIPS - n;
+    store.persist();
+  }
+  // dev：?unlockall=1 解锁全部 42 枚（断言页里那些"满托盘"的版式判据要用），
+  //      ?unlockall=0 退回初始 12 枚
+  if (params.get('unlockall')) {
+    if (params.get('unlockall') === '1') {
+      for (const st of STAMPS) store.unlockStamp(st.id);
+    } else { store.unlocked = {}; store.persist(); }
+  }
   if (params.get('chip')) CHIP = +params.get('chip');        // dev：纸上章的基准尺寸
   if (params.get('thin')) setThin(+params.get('thin'));      // dev：章的线宽系数
   if (params.get('book') === 'open') { store.bookClosed = false; store.persist(); }  // dev：跳过封面直接摊开
@@ -169,6 +200,19 @@ function init() {
   if (params.get('cat')) deckCat = params.get('cat');       // dev：托盘直接停在某个分类
   if (params.get('slowopen')) slowOpen = Math.min(20, +params.get('slowopen') || 1);  // dev：开场慢放
 
+  // 🔴 语言必须在任何渲染之前定下来：COPY 是按当前语言取词的代理，
+  //    定晚了首屏会先渲染成中文再闪一下。
+  //    优先级：dev 参数 ?lang= > 用户在「我的」里选过的 > 跟随系统。
+  if (params.get('lang')) store.settings.lang = params.get('lang');
+  setLang(store.settings.lang || detectLang());
+
+  // 开机静默对账：解锁判据是累计的，只在"盖章之后"判会漏掉两种情况 ——
+  // 演示数据、以及以后从别处恢复回来的记录（它们的条件早就满足了）。
+  // ⚠️ 这里**不弹提示**：开机一次性冒出十几条"发现新章"是噪音，
+  //    宣布留给盖章那一刻，开机只把状态补齐。
+  checkUnlocks();
+
+  renderTabLabels();
   initDiag();               // 真机诊断面板：「我的」页版本号连点 5 下
   applyLook();
   applyBand(false);
@@ -255,7 +299,6 @@ function renderToday() {
   const pd = new Date(pageDk + 'T12:00:00');
   const recs = store.recordsOf(pageDk);
   const secret = dailySecret();
-  const supplied = store.claimedSupply(todayDk);
 
   const chips = chipsHTML(recs);
 
@@ -277,7 +320,7 @@ function renderToday() {
       <div class="canvas bookpage ${eraser ? 'erase-mode' : ''} ${selStamp && !eraser ? 'armed' : ''}" id="today-canvas">
         <div class="datestamp" style="transform:rotate(${dateStampRot(pageDk)}deg);--ds-rot:${dateStampRot(pageDk)}deg">
           <span class="d">${pd.getMonth() + 1} · ${pd.getDate()}</span>
-          <span class="w">星期${WEEK_S[pd.getDay()]}</span>
+          <span class="w">${weekName(pd)}</span>
         </div>
         ${recs.length ? `<div class="paper-count">${isToday ? '今天' : '这天'} ${recs.length} 枚</div>` : ''}
         ${weatherHTML(pageDk, !isFuture)}
@@ -530,7 +573,7 @@ function paperHTML(dk, extraCls = '') {
   return `<div class="canvas bookpage ${extraCls}">
     <div class="datestamp" style="transform:rotate(${dateStampRot(dk)}deg);--ds-rot:${dateStampRot(dk)}deg">
       <span class="d">${pd.getMonth() + 1} · ${pd.getDate()}</span>
-      <span class="w">星期${WEEK_S[pd.getDay()]}</span>
+      <span class="w">${weekName(pd)}</span>
     </div>
     ${recs.length ? `<div class="paper-count">这天 ${recs.length} 枚</div>` : ''}
     ${weatherHTML(dk, false)}
@@ -675,19 +718,25 @@ function renderDeck() {
 
   // 印泥铁盒：盒里那坨墨的直径 = 这盒还剩多少（12px 空 → 26px 满），全 App 不写次数
   const tin = (inner, cls, extra = '') => `<div class="dk-ink ${cls}" ${extra}><span class="can">${inner}</span></div>`;
-  const inks = tin(`<span class="bs">默</span>`, `base ${selInk === null ? 'sel' : ''}`, 'data-ink="" title="章自带的薄墨"')
-    + Object.keys(INKS).map(id => {
-      const ratio = store.padLeft(id, PAD_CAP) / PAD_CAP;
+  const inks = Object.keys(INKS).map(id => {
+      // 墨饼大小 = 还能不能蘸。免费三款和买断之后恒满；没买断的付费色按今天剩余试用额度缩
+      const ratio = (INKS[id].free || store.isPro())
+        ? 1 : store.trialLeft(dateKey(Date.now()), TRIAL_DIPS) / TRIAL_DIPS;
       const d = Math.round(8 + 15 * ratio);   // 空 8px → 满 23px，铁盒面要留得住
-      const blob = ratio > 0
-        ? `<span class="ink" style="width:${d}px;height:${d}px;background:${inkCSS(id)}"></span>` : '';
+      // 🔴 额度用完不要画成空井 —— 空井读起来是"坏了/没有了"，
+      //    而实际是"今天用不了"。改成淡淡的本色：意思对，而且颜色还看得见，
+      //    本身就是持续的购买驱动（你看得见它多好看）。
+      const blob = `<span class="ink${ratio > 0 ? '' : ' faded'}"
+        style="width:${ratio > 0 ? d : 23}px;height:${ratio > 0 ? d : 23}px;background:${inkCSS(id)}"></span>`;
       return tin(blob, `${selInk === id ? 'sel' : ''} ${ratio <= 0 ? 'dry' : ''}`,
         `data-ink="${id}" title="${INKS[id].name}"`);
     }).join('');
 
   // 章：立在托盘里（木柄 + 章面）
+  // 🔴 只摆已解锁的：初始 12 枚 + 用出来的那些。没解锁的不在托盘里，
+  //    这样「发现新章」才是真的奖励，抽屉里的「还没遇到」也才是真话。
   let list = deckCat === 'glyph' ? GLYPHS
-    : STAMPS.filter(s => deckCat === 'all' || s.cat === deckCat);
+    : STAMPS.filter(s => isUnlocked(s.id) && (deckCat === 'all' || s.cat === deckCat));
   if (!deckOpen) {
     // 收起态只摆得下几枚，就摆今天已经用过的——那多半也是接下来要用的
     const usedToday = new Set(store.recordsOf(dateKey(Date.now())).map(r => r.stampId));
@@ -695,9 +744,9 @@ function renderDeck() {
   }
   const strip = list.map(s =>
     `<div class="dk-stamp ${selStamp === s.id ? 'sel' : ''}" data-sid="${s.id}"
-          style="color:${inkMainColor(isPhoto ? 'zhu' : (selInk || s.ink))}">
+          style="color:${inkMainColor(isPhoto ? 'zhu' : (selStamp === s.id ? selInk : usableInk(s.ink)))}">
       <i class="handle"></i>
-      <span class="face">${stampSVG(s, { size: 30, ink: selInk, mat: selMat })}</span>
+      <span class="face">${stampSVG(s, { size: 30, ink: selStamp === s.id ? selInk : usableInk(s.ink), mat: selMat })}</span>
       <span class="nm">${s.kind === 'glyph' ? (s.label || '') : s.name}</span></div>`).join('');
 
   // 材质 + 状态一句话（没墨了 / 还剩多少，都用话说，不用数字和进度条）
@@ -717,7 +766,7 @@ function renderDeck() {
   //    而换印泥是高频操作（一次蘸墨只盖 3 下）。用户原话："收起来还没盖印泥还得打开"。
   //    整排印泥常驻之后，点当前选中的那盒 = 重新蘸同色的墨（deck-inks 的 click 本来就这么干）。
 
-  const supplied = store.claimedSupply(dateKey(Date.now()));
+  const trialLeftNow = store.trialLeft(dateKey(Date.now()), TRIAL_DIPS);
 
   return `<div class="deck ${deckOpen ? 'open' : ''}" id="deck">
     <button class="deck-grab" id="deck-grab" aria-label="${deckOpen ? '收起' : '展开'}"></button>
@@ -735,8 +784,9 @@ function renderDeck() {
     </div>
     <div class="tray-foot">
       ${mats}<span class="tray-note">${note}</span>
-      <button class="tray-supply ${supplied ? '' : 'due'}" id="tray-supply">${
-        supplied ? COPY.supplyClaimedShort : COPY.supplyShort}</button>
+      <button class="tray-supply ${trialLeftNow > 0 ? '' : 'due'}" id="tray-supply">${
+        store.isPro() ? COPY.proName
+          : (trialLeftNow > 0 ? COPY.trialLeftHint.replace('{n}', trialLeftNow) : COPY.trialOut)}</button>
     </div>
   </div>`;
 }
@@ -828,15 +878,30 @@ function bindToday() {
     b.addEventListener('click', () => { selMat = b.dataset.mat; eraser = false; renderToday(); }));
   $('#tool-eraser').addEventListener('click', () => { eraser = !eraser; renderToday(); });
 
-  // 印泥：点一下 = 蘸墨。「默」是章自带的薄墨不耗盒；彩色印泥每蘸一次扣一格
+  // 印泥：点一下 = 蘸墨。三档规则（8-28 拍板）：
+  //   · 免费三款（朱红/墨色/松绿）—— 不耗印泥盒、不限量，这是记录能力的兜底
+  //   · 付费十款 + 已买断     —— 同上，不限量
+  //   · 付费十款 + 没买断     —— 走每天 TRIAL_DIPS 次的试用额度，用完当天不能再蘸
+  // 🔴 故意不加锁：锁是"你不能用"，试用是"今天还能用几次"。让人天天用得上彩色、
+  //    形成习惯，撞到边界时再决定买不买。
   document.querySelectorAll('#deck-inks .dk-ink').forEach(el =>
     el.addEventListener('click', () => {
-      const k = el.dataset.ink || null;
+      const k = el.dataset.ink;
+      if (!k) return;
       eraser = false;
-      if (k !== null) {
-        if (store.padLeft(k, PAD_CAP) <= 0) { toast(COPY.padEmpty, 1600); renderToday(); return; }
-        store.usePad(k, PAD_CAP);
+      const def = INKS[k];
+      const isPaid = def && !def.free && !store.isPro();
+      if (isPaid) {
+        if (!store.useTrial(dateKey(Date.now()), TRIAL_DIPS)) {
+          // ⛔ 不弹推销窗。你刚点的是这盒颜色，就把印泥盒打开给你看 ——
+          //    是"你要的东西在这儿"，不是"来买吧"。7 天内拒绝过就连这个也不做，只留一句提示。
+          toast(COPY.trialOut, 2000);
+          renderToday();
+          if (!store.proQuiet()) openSupply();
+          return;
+        }
       }
+      // 免费档和买断之后不消耗任何东西，直接蘸
       selInk = k;
       inkLeft = INK_USES;
       toast(COPY.dipped, 900); haptic();
@@ -870,6 +935,38 @@ function bindToday() {
 // 字体和桌布：只往 <html> 上挂两个 data 属性，具体长什么样全在 CSS 的 token 里。
 // ⚠️ 分享卡吃不到这两个设置——它是把 SVG 塞进 <img> 光栅化的隔离文档，读不到 CSS 变量。
 //    这条是已知的、故意的（分享卡那块单独排）。
+// 这枚印泥用户现在能不能直接用：免费三款、以及买断之后的全部都能；
+// 没买断的付费色回落到「最接近的免费色」（暖→朱红、深→墨色、冷→松绿，见 data.js 的 near）。
+// ⚠️ 回落只用于**自动跟随**。用户手动点一款付费色是另一条路——那走试用额度，不回落。
+function usableInk(id) {
+  const k = INKS[id];
+  if (!k) return 'zhu';
+  return (k.free || store.isPro()) ? id : (k.near || 'zhu');
+}
+
+// 选中一枚章：颜色自动跟着这枚章走（这就是原来「默」的行为，只是多了一道回落）。
+// 免费用户看到的是三色混排，买断之后每枚章盖回它自己的颜色 —— 付费买到的就是这个。
+function pickStamp(sid) {
+  selStamp = sid;
+  const def = sid && stampById[sid];
+  if (def && def.ink) {
+    selInk = usableInk(def.ink);
+    inkLeft = INK_USES;      // 跟随的一定是不耗盒的颜色，直接给满
+  }
+}
+
+// index.html 里写死的那几处文字，换语言时统一重写。
+// ⚠️ Tab 按钮只改那个文字节点，**别重建 innerHTML** —— 里面的 <svg> 图标会被一起冲掉。
+// ⚠️ HTML 里留着的中文是「没有 JS 时的兜底 + zh 默认值」，故意不清空。
+function renderTabLabels() {
+  document.querySelectorAll('#tabbar button[data-tab]').forEach(b => {
+    const txt = [...b.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+    if (txt) txt.textContent = COPY['tab_' + b.dataset.tab];
+  });
+  const st = $('#supply-title'); if (st) st.textContent = COPY.supplyTitle;
+  const sf = $('#supply-foot'); if (sf) sf.textContent = COPY.supplyFoot;
+}
+
 function applyLook() {
   const de = document.documentElement;
   // 🔴 属性名必须跟按钮上那套**错开**（按钮用 data-font / data-desk）。
@@ -916,7 +1013,7 @@ function bindStampCell(el) {
     const def = stampById[sid];
     ghost.innerHTML = stampBodySVG(def, {
       size: 66,
-      ink: selMat === 'p' ? 'zhu' : (selInk || def.ink),
+      ink: selMat === 'p' ? 'zhu' : selInk,
       charge: selMat === 'p' ? 3 : inkLeft,
     });
     ghost.style.left = x + 'px'; ghost.style.top = y + 'px';
@@ -967,18 +1064,18 @@ function bindStampCell(el) {
       const cv = $('#today-canvas');
       const r = cv.getBoundingClientRect();
       if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
-        selStamp = sid;
+        pickStamp(sid);
         placeStamp(e.clientX, e.clientY, cv);
       } else {
         // 拎起来又放回托盘：不当"没发生过"，就当选中了它——手都伸过去了
-        selStamp = sid;
+        pickStamp(sid);
         renderToday();
       }
     } else if (!wasPan && Date.now() - t0 < 600
                && Math.abs(e.clientX - sx) < 8 && Math.abs(e.clientY - sy) < 8) {
       // 展开态是滚动着选的，手指难免带一点位移和停顿，判定放宽一点；
       // 但纵向也要卡住，否则滚一下松手就选中了一枚章
-      selStamp = (selStamp === sid) ? null : sid;  // 点一下选中/取消
+      if (selStamp === sid) selStamp = null; else pickStamp(sid);  // 点一下选中/取消
       eraser = false;
       // ⛔ 选完章自动收托盘：8-27 用户明确否掉（"实际也不应该自动收起"）。
       //    展开/收起是用户的决定，选一枚章不是"我说完了"。收起交给「收起」键和拉手。
@@ -1004,7 +1101,7 @@ function placeStamp(clientX, clientY, cv) {
   const pose = randomPose();
 
   // 深浅：光敏恒实；橡皮/木质三下由浓到淡（第 3 下几乎看不见）
-  const inkUsed = isPhoto ? 'zhu' : (selInk || def.ink);
+  const inkUsed = isPhoto ? 'zhu' : selInk;
   const chargeShow = isPhoto ? 3 : inkLeft;      // 按下去之前章底还有多少墨
   let depth = 0.95;
   if (!isPhoto) {
@@ -1065,6 +1162,16 @@ function placeStamp(clientX, clientY, cv) {
     undoTimer = setTimeout(() => { undoRec = null; if (curTab === 'today') renderToday(); }, UNDO_MS + 50);
     if (curTab === 'today') renderToday();
     if (curTab === 'today') noteHint(rec.id);   // 「写一句话」这个功能得让人看见
+    // 基础章解锁：判据是累计的，所以补盖也算 —— 补的也是真发生过的事。
+    // ⚠️ 跟隐藏章分开：隐藏章是"今天做了什么"的奖励，补盖不算。
+    const unlocked = checkUnlocks();
+    if (unlocked.length) {
+      // 轻一点：不占屏、不弹层。一句话 + 一次触感，跟它"顺手解锁"的性质相称；
+      // 隆重的那套（整屏发现动画）留给隐藏章。
+      toast(COPY.stampUnlocked.replace('{n}', unlocked.map(x => x.name).join('、')), 2200);
+      haptic();
+      if (curTab === 'today') renderToday();
+    }
     if (!isBackfill) {          // 补盖不参与隐藏章判定（那是"今天做了什么"的奖励）
       const newly = checkHidden();
       if (newly.length) showHiddenQueue(newly);
@@ -1141,57 +1248,107 @@ function pressAt(clientX, clientY, def, inkId, charge) {
 }
 
 // ============================================================
-// 印泥盒：库存 + 每日补给（每天可把一盒补满；「默」薄墨永远免费）
+// 印泥盒：看有哪些颜色 + 高级印泥盒的购买入口
+// 🔴 8-28 重新定义：原来这里是"库存 + 每日补一盒"。去掉「默」并把付费分档做进来之后，
+//    免费三款和买断之后的十款都**不消耗**，库存这套对它们没有意义；
+//    只有"没买断的付费色"还有余量的概念 —— 那不是库存，是**每天的试用额度**。
+//    所以墨饼的大小现在表达的是"今天还能蘸几次彩色"，每日补给按钮也跟着去掉了。
 // ============================================================
 function openSupply() {
   renderSupply();
   openSheet('sheet-supply');
 }
 
+// ---- 高级印泥盒的购买卡片 ----
+// 只出现在印泥盒里（弹层 + 抽屉页那一段），⛔ 首页不弹、不放红点、不写倒计时。
+// 卖点写的是「让每枚章盖回它自己的颜色」，不是"多 10 款颜色"——
+// 免费用户天天看着奶茶是墨色的、心里知道它本该是陶棕，这比任何弹窗都管用。
+function proCardHTML() {
+  if (store.isPro()) {
+    return `<div class="pro-card owned">
+      <div class="pro-t">${COPY.proName} · ${COPY.proOwned}</div>
+      <div class="pro-b">${COPY.proDesc}</div>
+    </div>`;
+  }
+  return `<div class="pro-card">
+    <div class="pro-t">${COPY.proCardTitle}</div>
+    <div class="pro-b">${esc(COPY.proCardBody).replace(/\n/g, '<br>')}</div>
+    <button class="cta pro-buy" data-pro="buy">${COPY.proBuy}</button>
+    <div class="pro-row">
+      <button class="pro-plain" data-pro="later">${COPY.proLater}</button>
+      <button class="pro-plain" data-pro="restore">${COPY.proRestore}</button>
+    </div>
+  </div>`;
+}
+
+// 🔴 真正的内购还没接：这里是唯一的桥接点。
+//    跟 ui.js:haptic / share.js:保存图片 是同一类 TODO —— 打包前必须接上，
+//    没接之前打出来的包别给人用，用户会点了没反应。
+//    接的时候只改这个函数体，UI 一行都不用动。
+async function startPurchase() {
+  if (!window.Capacitor) {                       // 浏览器里没有内购，直接放行方便验收
+    store.setPro(true);
+    toast(COPY.proThanks, 1800); haptic();
+    return true;
+  }
+  // TODO(IAP): 在这里调内购插件，成功后 store.setPro(true)
+  toast(COPY.proFailed, 2000);
+  return false;
+}
+
+async function restorePurchase() {
+  if (!window.Capacitor) { store.setPro(true); toast(COPY.proRestored, 1800); return true; }
+  // TODO(IAP): 恢复购买
+  toast(COPY.proFailed, 2000);
+  return false;
+}
+
+function bindProCard(root, rerender) {
+  root.querySelectorAll('[data-pro]').forEach(b =>
+    b.addEventListener('click', async () => {
+      const a = b.dataset.pro;
+      if (a === 'later') { store.declinePro(); closeSheets(); return; }
+      const ok = a === 'restore' ? await restorePurchase() : await startPurchase();
+      if (ok) { rerender(); renderToday(); }
+    }));
+}
+
 // 印泥盒的行：今日页的弹层和抽屉页的「印泥盒」段共用同一份，别让两边长歪
 function supplyRows() {
   const todayDk = dateKey(Date.now());
-  const claimed = store.claimedSupply(todayDk);
-  const base = `<div class="ink-well base" title="${COPY.baseInkDesc}">
-    <span class="w"><span class="bs">默</span></span><span class="nm">默</span>
-  </div>`;
-  return `<div class="ink-tray">${base + Object.keys(INKS).map(id => {
-    const left = store.padLeft(id, PAD_CAP);
-    const can = !claimed && left < PAD_CAP;
-    // 余量只由那坨墨的直径表达，不写次数、不画进度条
-    const ratio = left / PAD_CAP;
+  // ⛔「默」那一格 8-28 跟着托盘一起去掉了，印泥盒里也不再有它
+  return `<div class="ink-tray">${Object.keys(INKS).map(id => {
+    const def = INKS[id];
+    const unlimited = def.free || store.isPro();     // 免费三款 / 买断之后的十款
+    const left = unlimited ? TRIAL_DIPS : store.trialLeft(todayDk, TRIAL_DIPS);
+    // 余量只由那坨墨的直径表达，不写次数、不画进度条（8-25 定的规矩，沿用）
+    const ratio = unlimited ? 1 : left / TRIAL_DIPS;
     const d = Math.round(12 + 22 * ratio);
-    const state = ratio <= 0 ? COPY.padDry
-      : ratio > 0.6 ? COPY.padFull : ratio > 0.25 ? COPY.padMid : COPY.padLow;
-    // 一格一个圆形凹槽，墨饼嵌在里面（8-26 用户「抽屉该有摆放的设计」）。
-    // 能补的那些槽点一下就补满，不再一行一个「补满」按钮——那是设置页的样子。
-    return `<div class="ink-well ${left <= 0 ? 'dry' : ''} ${can ? 'can' : ''}"
-        ${can ? `data-refill="${id}"` : ''} title="${INKS[id].name} · ${state}">
-      <span class="w">${left > 0
-        ? `<span class="ink" style="width:${d}px;height:${d}px;background:${inkCSS(id)}"></span>` : ''}</span>
+    const state = unlimited ? COPY.inkFreeTag
+      : left <= 0 ? COPY.padDry
+        : COPY.trialLeftHint.replace('{n}', left);
+    return `<div class="ink-well ${ratio <= 0 ? 'dry' : ''}" title="${INKS[id].name} · ${state}">
+      <span class="w"><span class="ink${ratio > 0 ? '' : ' faded'}"
+        style="width:${ratio > 0 ? d : 34}px;height:${ratio > 0 ? d : 34}px;background:${inkCSS(id)}"></span></span>
       <span class="nm">${INKS[id].name}</span>
     </div>`;
   }).join('')}</div>`;
 }
 
-function bindSupply(root, rerender) {
-  const todayDk = dateKey(Date.now());
-  root.querySelectorAll('[data-refill]').forEach(b =>
-    b.addEventListener('click', () => {
-      const id = b.dataset.refill;
-      store.claimSupply(id, PAD_CAP, todayDk);
-      toast(`补满了一盒「${INKS[id].name}」。`, 1400);
-      haptic();
-      rerender();
-      if (curTab === 'today') renderToday();
-    }));
-}
+// 每日补给那套（点一格补满一盒）随库存概念一起去掉了。
+// 这里留着空壳，是因为抽屉页的「印泥盒」段也调它 —— 将来购买按钮要挂在这儿。
+function bindSupply(root, rerender) {}
 
 function renderSupply() {
   const todayDk = dateKey(Date.now());
-  $('#supply-note').textContent = store.claimedSupply(todayDk) ? COPY.supplyClaimed : COPY.supplyReady;
-  $('#supply-list').innerHTML = supplyRows();
+  const left = store.trialLeft(todayDk, TRIAL_DIPS);
+  $('#supply-note').textContent = store.isPro()
+    ? COPY.proOwned
+    : (left > 0 ? COPY.trialLeftHint.replace('{n}', left) : COPY.trialOut);
+  $('#supply-list').innerHTML = supplyRows() + proCardHTML();
+  $('#supply-foot').textContent = '';
   bindSupply($('#supply-list'), renderSupply);
+  bindProCard($('#supply-list'), renderSupply);
 }
 
 function posOf(r) {
@@ -1216,7 +1373,7 @@ function openActions(rid) {
     const a = e.target.dataset?.a; if (!a) return;
     if (a === 'close') return closeSheets();
     if (a === 'again') {
-      selStamp = rec.stampId; selMat = rec.mat || 'r'; eraser = false;
+      pickStamp(rec.stampId); selMat = rec.mat || 'r'; eraser = false;
       closeSheets(); renderToday(); toast('拿好了，接着盖。', 1200);
     }
     if (a === 'time') {
@@ -1284,7 +1441,11 @@ function renderCollection() {
   document.querySelectorAll('#drawer-seg [data-seg]').forEach(b =>
     b.addEventListener('click', () => { drawerSeg = b.dataset.seg; renderCollection(); }));
 
-  if (drawerSeg === 'inks') { bindSupply($('#page-collection'), renderCollection); return; }
+  if (drawerSeg === 'inks') {
+    bindSupply($('#page-collection'), renderCollection);
+    bindProCard($('#page-collection'), renderCollection);
+    return;
+  }
 
   document.querySelectorAll('#drawer-cats [data-dcat]').forEach(b2 =>
     b2.addEventListener('click', () => { drawerCat = b2.dataset.dcat; renderCollection(); }));
@@ -1404,9 +1565,12 @@ function drawerStamps(used, cnt) {
 
 function drawerInks() {
   const todayDk = dateKey(Date.now());
-  return `<div class="col-sub">${store.claimedSupply(todayDk) ? COPY.supplyClaimed : COPY.supplyReady}</div>
+  const left = store.trialLeft(todayDk, TRIAL_DIPS);
+  const note = store.isPro() ? COPY.proOwned
+    : (left > 0 ? COPY.trialLeftHint.replace('{n}', left) : COPY.trialOut);
+  return `<div class="col-sub">${note}</div>
     <div class="box box-paper"><div class="sup-list-in">${supplyRows()}</div></div>
-    <div class="shop-hint">新的印泥会陆续上架</div>`;
+    ${proCardHTML()}`;
 }
 
 // ============================================================
@@ -1446,7 +1610,7 @@ function renderFlipView() {
   $('#page-memories').innerHTML = `
     <div class="flip-bar">
       <button class="flip-back" id="flip-back">‹ ${d.getMonth() + 1}月</button>
-      <span class="flip-date">${d.getDate()} 日 · ${WEEK[d.getDay()]}${w ? ` <span class="w">${weatherSVG(w, 18)}</span>` : ''}</span>
+      <span class="flip-date">${d.getDate()} 日 · ${weekName(d)}${w ? ` <span class="w">${weatherSVG(w, 18)}</span>` : ''}</span>
       ${dk <= todayDk ? `<button class="t-share" id="flip-add">${COPY.addStampHere}</button>` : ''}
       ${recs.length ? `<button class="t-share" id="flip-share">分享</button>` : ''}
     </div>
@@ -1546,7 +1710,7 @@ function dayPanel(dk) {
       </div>`).join('')}</div>`
     : `<div class="empty">这一天是空白的，也很好。</div>`;
   return `<div class="day-panel" id="day-panel">
-    <div class="dp-t">${d.getMonth() + 1} 月 ${d.getDate()} 日 · ${WEEK[d.getDay()]}
+    <div class="dp-t">${d.getMonth() + 1} 月 ${d.getDate()} 日 · ${weekName(d)}
       ${w ? `<span class="w">${weatherSVG(w, 22)}</span>` : ''}
       <button class="dp-flip" data-flip="${dk}">${COPY.notebookFlip} ›</button>
     </div>
@@ -1772,7 +1936,7 @@ function renderWeekView() {
     const minis = list.slice(0, 8).map(r =>
       stampSVG(stampById[r.stampId], { size: 22, ink: r.ink, rot: r.rot, mat: r.mat, flat: true })).join('');
     rows += `<div class="week-row ${dk === todayDk ? 'today' : ''} ${memSelDay === dk ? 'selday' : ''}" data-dk="${dk}">
-      <div class="wd"><div class="d1" style="${future ? 'color:var(--faint)' : ''}">周${WEEK_S[d.getDay()]}</div>
+      <div class="wd"><div class="d1" style="${future ? 'color:var(--faint)' : ''}">${weekName(d, true)}</div>
         <div class="d2">${d.getMonth() + 1}.${d.getDate()}</div></div>
       <div class="minis">${minis}${list.length > 8 ? `<span class="cal-more">+${list.length - 8}</span>` : ''}</div>
       <span class="cnt">${list.length || ''}</span>
@@ -1847,6 +2011,11 @@ function renderMe() {
           <button data-cover="rose" class="cv rose ${(store.settings.cover || 'rose') === 'rose' ? 'on' : ''}" aria-label="藕粉"></button>
           <button data-cover="cream" class="cv cream ${store.settings.cover === 'cream' ? 'on' : ''}" aria-label="奶油"></button>
         </span></div>
+      <div class="me-item"><span class="k">${COPY.settingLang}</span>
+        <span class="pick-row">
+          ${LANGS.map(L => `<button data-lang-pick="${L}" class="pk ${getLang() === L ? 'on' : ''}">${
+            { zh: '中文', en: 'English', ja: '日本語' }[L]}</button>`).join('')}
+        </span></div>
       <div class="me-item"><span class="k">字体</span>
         <span class="pick-row">
           <button data-font="hand" class="pk ${(store.settings.font || 'hand') === 'hand' ? 'on' : ''}">手写</button>
@@ -1883,6 +2052,16 @@ function renderMe() {
   document.querySelectorAll('#page-me [data-paper]').forEach(b2 =>
     b2.addEventListener('click', () => {
       store.settings.paper = b2.dataset.paper; store.persist(); applyLook(); renderMe();
+    }));
+  // 语言：换了之后要重画的不只是本页——Tab 标签、今日页的空状态都是文案。
+  // ⚠️ 属性名用 data-lang-pick，故意跟 <html> 上那个 data-lang 错开：
+  //    同名的话 querySelectorAll 会把 <html> 自己也选上（V1.15 卡死那个 bug 的成因）。
+  document.querySelectorAll('#page-me [data-lang-pick]').forEach(b2 =>
+    b2.addEventListener('click', () => {
+      store.settings.lang = setLang(b2.dataset.langPick);
+      store.persist();
+      renderTabLabels();
+      renderMe();
     }));
   document.querySelectorAll('.cover-pick .cv').forEach(b2 =>
     b2.addEventListener('click', () => {

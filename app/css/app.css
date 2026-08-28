@@ -311,7 +311,42 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .sup-list-in .sup-row:last-child{border-bottom:none}
 .sup-row.base .sup-can{background:radial-gradient(circle at 32% 26%,var(--tin-base-hi),var(--tin-base) 62%,var(--tin-base-lo))}
 .sup-row.base .sup-can .bs{font-size:12px; color:var(--tray-text); opacity:.85}
+/* 今天的试用额度用完了：付费色淡下去，但**不消失**。
+   ⚠️ 原来是直接不画那坨墨（空井），读起来像"这盒坏了"；
+      淡色说的才是"今天用不了"，而且颜色本身还看得见。 */
+.ink .faded, .ink.faded{opacity:.22}
+.dk-ink .ink.faded{opacity:.2}
+
 .shop-hint{text-align:center; font-size:10.5px; color:var(--faint); letter-spacing:.18em; padding:14px 0 4px}
+
+/* ---- 高级印泥盒的购买卡片 ----
+   卡片本身是"桌上放着的一盒东西"：跟纸、卡片同族的浅底 + 发丝边，
+   没有角标、没有倒计时、没有"仅剩今天"。
+   ⚠️ 购买按钮用的是全局 .cta（实心朱红），跟「保存图片」那些主操作同一个样式——
+      也就是说它是**醒目的**。这是有意的取舍：卡片安静、按钮明确。
+      要更轻的话就把 .cta 换成描边样式，但转化会掉。
+   ⛔ 只出现在印泥盒里（弹层 / 抽屉页那一段），首页不放、不弹窗、不放红点。 */
+.pro-card{
+  margin:16px 10px 4px; padding:16px 16px 14px; border-radius:10px;
+  background:var(--card); border:.5px solid var(--line); text-align:center;
+}
+.pro-card .pro-t{
+  font-family:var(--f-title); font-size:14.5px; color:var(--ink);
+  letter-spacing:.06em; line-height:1.6;
+}
+.pro-card .pro-b{
+  font-family:var(--f-hand); font-size:12.5px; color:var(--sub);
+  line-height:1.9; margin:8px 0 14px;
+}
+.pro-card .cta.pro-buy{width:100%; margin:0}
+.pro-card .pro-row{display:flex; justify-content:center; gap:22px; margin-top:10px}
+.pro-card .pro-plain{
+  border:none; background:none; cursor:pointer; font-family:var(--f-title);
+  font-size:11.5px; color:var(--sub); letter-spacing:.1em; padding:6px 4px;
+}
+/* 买断之后就剩一句陈述，没有任何按钮 —— 卖完了就别再占地方 */
+.pro-card.owned{padding:14px 16px}
+.pro-card.owned .pro-b{margin-bottom:0}
 .col-cell .nm{font-size:10.5px; color:var(--ink)}
 .col-cell.locked .nm{color:var(--faint); letter-spacing:.14em}
 .hid-hint{font-size:10px; color:var(--faint); max-width:86px; line-height:1.5; text-align:center}
@@ -1746,6 +1781,39 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 :root[data-look-font="plain"] .col-title,
 :root[data-look-font="plain"] .op-cover .op-t,
 :root[data-look-font="plain"] .bl-t{font-weight:600}
+
+/* ---- 语言：字体与排版（跟 data-look-* 同一套做法，只往 <html> 挂 data-lang）----
+   ⛔ 中文不写在这里：不带 data-lang 或 data-lang="zh" 时走上面的默认 token，
+      所以中文界面一个字节都不变，这是这次重构唯一的验收标准。
+
+   🔴 日文：ZCOOL KuaiLe（快乐体）**一个假名都没有**（实测平假名 0/86、片假名 0/90，
+      连「気」「実」这种日本汉字也没有）。而 --f-title 的第一顺位正是它，
+      Tab 栏、按钮、卡片标题全用这个 token。
+      CSS 是逐字回退的，所以日文**不会掉字**，会落到下一顺位「小赖」——
+      结果是同一句话里汉字快乐体、假名小赖，两种笔形混排，不报错、极难发现。
+      解法就是把 --f-title 换成小赖打头（它本来就是第二顺位，风格不跳）。
+      小赖 44871 字、文楷 46490 字，假名都是 86/86 + 90/90 全覆盖。 */
+:root[data-lang="ja"]{
+  --f-title:"Xiaolai","LXGW WenKai","Hiragino Sans","Yu Gothic",sans-serif;
+  --f-ui:"Xiaolai","Hiragino Sans","Yu Gothic","Meiryo",sans-serif;
+  --f-hand:"LXGW WenKai","Xiaolai","Hiragino Mincho ProN","Yu Mincho",serif;
+}
+
+/* 英文：走系统拉丁栈。中文字库里是带拉丁字形，但字重和间距都不对（别的项目上踩过），
+   而英文这边用户要求不高——能用且全就行，不值得再引一款自托管拉丁字体。 */
+:root[data-lang="en"]{
+  --f-title:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --f-ui:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --f-hand:"Bradley Hand","Segoe Script","Comic Sans MS",cursive;
+}
+/* 🔴 中文界面到处在用 letter-spacing（79 处），拉开字距在中日文里好看，
+   在拉丁文里会把单词拆散、严重影响可读性。英文一律压回去。
+   ⚠️ 这是整条声明的覆盖，新加的组件如果自己写了 letter-spacing 也会被这条盖住，
+      要单独放开就写得比它更具体。 */
+:root[data-lang="en"] *{letter-spacing:normal !important}
+/* 竖排的月份标签：中日文竖着读没问题，英文竖排会变成一列字母 */
+:root[data-lang="en"] .mem-y-tab,
+:root[data-lang="en"] [style*="writing-mode"]{writing-mode:horizontal-tb !important}
 
 /* ---- 桌布：素色 / 细格。碎花是默认，见 --floral ---- */
 :root[data-look-desk="plain"]{ --floral:none; }

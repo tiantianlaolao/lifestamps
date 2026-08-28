@@ -1,0 +1,80 @@
+<!doctype html><meta charset="utf-8"><title>去掉「默」之后，免费和付费差多少</title>
+<link rel="stylesheet" href="../css/app.css">
+<style>
+ body{margin:0;background:#DDD8CC;font:13px/1.7 "Xiaolai",system-ui;color:#252421;padding:22px}
+ .wrap{max-width:1060px;margin:0 auto}
+ h2{font-family:"LXGW WenKai",serif;font-size:16px;letter-spacing:.12em;margin:0 0 6px;color:#5A544A}
+ .sub{color:#6B655C;font-size:12px;margin-bottom:16px;max-width:780px}
+ .row{background:#FBF8F1;border-radius:10px;padding:14px 16px 12px;margin-bottom:14px;
+      background-image:radial-gradient(circle at 3px 3px,#D3CDBE 2.2px,transparent 2.6px);
+      background-size:26px 26px}
+ .rt{font-size:12px;letter-spacing:.08em;color:#8C8880;margin-bottom:10px;line-height:1.6}
+ .rt b{color:#252421;font-weight:400;font-family:"LXGW WenKai",serif;font-size:14.5px}
+ .line{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap}
+ .cell{text-align:center;width:76px}
+ .cell .nm{font-size:10.5px;color:#8C8880;margin-top:1px}
+ .cell .ik{font-size:9px;color:#B3ACA0}
+</style>
+<div class="wrap">
+  <h2>去掉「默」之后，免费用户和付费用户的纸差多少</h2>
+  <div class="sub">同样六枚章（都在初始 12 枚里）。差别只在能用哪些印泥。
+    ⚠️ 现状那一行是今天线上的样子——「默」用的是每枚章自己的满饱和色，所以颜色其实已经是免费的了。</div>
+  <div id="out"></div>
+</div>
+<script type="module">
+import { stampById, INKS } from '../js/data.js';
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+document.body.insertAdjacentHTML('afterbegin',
+  `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+
+const IDS = ['milktea', 'water', 'work', 'stayup', 'happy', 'sparkle'];
+const FREE = ['zhu', 'mo', 'song'];          // 去掉「默」之后的免费三款
+
+// 一律回落到朱红：最笨的做法，纸面会变成一片红
+const freeFlat = s => (FREE.includes(s.ink) ? s.ink : 'zhu');
+
+// 回落到「最接近的免费款」：暖色→朱红、深色→墨色、冷色→松绿。
+// 这才是免费用户实际会看到的样子——三色混排，不是一片红。
+const NEAR = {
+  jie: 'zhu',   // 芥末（暖黄）→ 朱红
+  ou: 'zhu',    // 藕粉（暖粉）→ 朱红
+  sunset: 'zhu',// 晚霞（暖橙红）→ 朱红
+  rainbow: 'zhu',
+  dot: 'zhu',   // 水玉（黄+粉图案）→ 朱红
+  tao: 'mo',    // 陶棕（深暖棕）→ 墨色
+  teng: 'mo',   // 藤紫（冷灰紫）→ 墨色
+  dusk: 'mo',   // 暮色（粉紫渐变）→ 墨色
+  wu: 'song',   // 雾蓝（冷蓝）→ 松绿
+  matcha: 'song',
+};
+const freeNear = s => (FREE.includes(s.ink) ? s.ink : (NEAR[s.ink] || 'zhu'));
+
+const ROWS = [
+  { t: '现状（有「默」）',
+    d: '「默」= 章自带色、满饱和、不耗印泥盒、可无限盖。等于颜色本来就是免费的，付费只能卖"换色权"。',
+    ink: s => s.ink },
+  { t: '去掉「默」· 免费用户（回落方案甲：一律朱红）',
+    d: '最笨的做法。纸面会变成一片红 —— 付费动机是强了，但免费用户的第一印象很差。',
+    ink: freeFlat },
+  { t: '去掉「默」· 免费用户（回落方案乙：落到最接近的免费色）',
+    d: '暖色→朱红、深色→墨色、冷色→松绿。这才是免费用户实际会看到的：三色混排，仍然像个手账。'
+       + '记录能力完全不受影响，三款每天各 12 蘸 × 3 下。',
+    ink: freeNear },
+  { t: '去掉「默」· 买了高级印泥盒（13 款全开）',
+    d: '每枚章都能盖回它自己的颜色，也能随便换成任何一款。这就是 ¥6 买到的东西。',
+    ink: s => s.ink },
+];
+
+let h = '';
+for (const r of ROWS) {
+  h += `<div class="row"><div class="rt"><b>${r.t}</b><br>${r.d}</div><div class="line">`;
+  for (const id of IDS) {
+    const s = stampById[id];
+    const k = r.ink(s);
+    h += `<div class="cell">${stampSVG(s, { size: 62, ink: k, mat: 'r', seed: 3 })}
+          <div class="nm">${s.name}</div><div class="ik">${INKS[k].name}</div></div>`;
+  }
+  h += '</div></div>';
+}
+document.getElementById('out').innerHTML = h;
+</script>

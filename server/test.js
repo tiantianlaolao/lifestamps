@@ -35,6 +35,37 @@ const j = async (m, u, b) => {
   }
 };
 
+// 带 cookie 罐的客户端 = 模拟"一个浏览器"。
+// 🔴 Node 的 fetch **没有** cookie 罐，什么都不带回去 —— 所以上面那个裸的 j()
+//    每一发请求在服务端看来都是新访客。去重相关的断言必须用这个，
+//    拿 j() 去测"只能送一次"会永远绿，而且是那种最坏的假绿灯。
+function client() {
+  const jar = new Map();
+  return {
+    jar,
+    async req(m, u, b) {
+      const headers = {};
+      if (b) headers['content-type'] = 'application/json';
+      if (jar.size) headers.cookie = [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
+      try {
+        const r = await fetch(BASE + u, {
+          method: m, headers, body: b ? JSON.stringify(b) : undefined,
+        });
+        const raw = r.headers.getSetCookie ? r.headers.getSetCookie()
+          : [r.headers.get('set-cookie')].filter(Boolean);
+        for (const line of raw) {
+          const kv = line.split(';')[0];
+          const i = kv.indexOf('=');
+          if (i > 0) jar.set(kv.slice(0, i).trim(), kv.slice(i + 1).trim());
+        }
+        return { status: r.status, body: await r.json().catch(() => null), setCookie: raw };
+      } catch (e) {
+        return { status: 0, body: null, err: String(e && e.message) };
+      }
+    },
+  };
+}
+
 (async () => {
  try {
   await new Promise(r => setTimeout(r, 400));
@@ -66,6 +97,49 @@ const j = async (m, u, b) => {
   ok((await j('POST', `/api/share/${code}/gift`, { seal: 'g_fake' })).status === 400, '白名单外的章被拒');
   ok((await j('POST', `/api/share/${code}/gift`, { seal: 'milktea' })).status === 400, '普通章不能当赠礼送');
 
+  console.log('\n== 一个人只能送一次（8-29 加）==');
+  const one = await j('POST', '/api/share', day);
+  const oneCode = one.body.code;
+  const bob = client();
+
+  const open1 = await bob.req('GET', '/api/share/' + oneCode);
+  const setLine = (open1.setCookie || []).join(' ');
+  ok(setLine.includes('lsv_' + oneCode), '打开就发令牌，cookie 名带着短码：lsv_' + oneCode);
+  ok(/HttpOnly/i.test(setLine), '令牌是 HttpOnly —— 页面 JS 碰不到，也就没法被拿去当身份用');
+  ok(/Max-Age=604800/.test(setLine), '令牌跟短码同寿：Max-Age 正好 7 天');
+  // ⚠️ 别把这条写成固定路径：dev 是 /api/、生产是 /lifestamps/api/（nginx 削掉了前缀），
+  //    写死一个就等于在另一个环境里假红。要守的性质只有一条 —— **不许是 /**。
+  const cookiePath = (setLine.match(/Path=([^;]*)/) || [])[1] || '';
+  ok(cookiePath !== '/' && cookiePath.endsWith('api/'),
+     'Path 限死在这个接口下，不会捎带到站点其它地方（Path=' + cookiePath + '）');
+  ok(open1.body.mine === null, '还没送过时 mine = null');
+
+  const s1 = await bob.req('POST', `/api/share/${oneCode}/gift`, { seal: 'g_candy' });
+  ok(s1.status === 200 && s1.body.total === 1, '第一次送，成');
+  const s2 = await bob.req('POST', `/api/share/${oneCode}/gift`, { seal: 'g_paw' });
+  ok(s2.status === 409 && s2.body.already === true, '同一个浏览器再送 → 409');
+  ok(s2.body.mine === 'g_candy', '409 里回的是他当初留的那一枚，不是这次点的');
+  ok(s2.body.total === 1, '🔴 挡住之后总数没涨（这条才是用户报的那个 bug）');
+
+  const open2 = await bob.req('GET', '/api/share/' + oneCode);
+  ok(open2.body.mine === 'g_candy',
+     '重新打开这一页，服务端直接告诉他留过什么 —— 不靠 localStorage');
+
+  // 承认的上限：换浏览器/清 cookie 还能再送一次。写成断言是为了**别把它当 bug 修**，
+  // 再往上就只能存 ip，那是红线。
+  const carol = client();
+  const s3 = await carol.req('POST', `/api/share/${oneCode}/gift`, { seal: 'g_lamp' });
+  ok(s3.status === 200 && s3.body.total === 2, '换一个浏览器能再送一次（已知且故意的上限）');
+
+  console.log('\n== 令牌不可跨短码关联（口径的地基）==');
+  const other = await j('POST', '/api/share', day);
+  await bob.req('GET', '/api/share/' + other.body.code);
+  const t1 = bob.jar.get('lsv_' + oneCode);
+  const t2 = bob.jar.get('lsv_' + other.body.code);
+  ok(t1 && t2 && t1 !== t2,
+     '同一个浏览器在两个短码下拿到的是两串不同的令牌 —— 服务端拼不出"同一个人给谁送过"');
+  ok(/^[0-9a-f]{24}$/.test(t1), '令牌是服务端现生成的随机数，不是从请求里算出来的');
+
   console.log('\n== 不存在 / 过期 ==');
   const miss = await j('GET', '/api/share/zzzzzz');
   ok(miss.status === 410 && miss.body.expired === true, '不存在的码跟过期返回同一个东西（不泄露存在性）');
@@ -88,6 +162,13 @@ const j = async (m, u, b) => {
   ].map(s => s.toLowerCase());
   const banned = cols.filter(c => /ip|agent|device|user|owner|uid|token|nick|name/.test(c));
   ok(banned.length === 0, '库里没有任何身份列（实际列：' + cols.join(',') + '）');
+  // 8-29 唯一的例外，白名单式放行 —— 它凭什么不算身份，三条理由写在 schema.sql 顶部，
+  // 而那三条本身由上面「令牌不可跨短码关联」那两条断言守着。
+  ok(cols.includes('visitor'), 'gifts 有 visitor 列（一码一串的随机令牌，理由见 schema.sql）');
+  const visitors = srv.db.prepare(
+    'SELECT DISTINCT visitor FROM gifts WHERE visitor IS NOT NULL').all().map(r => r.visitor);
+  ok(visitors.length > 0 && visitors.every(v => /^[0-9a-f]{24}$/.test(v)),
+     '库里存着的 visitor 全是纯随机十六进制，没有一个能读出人来（' + visitors.length + ' 串）');
 
   console.log('\n== 白名单跟前端对得上 ==');
   // ⚠️ 这条是**开发期**的断言：线上只部署 server/，旁边没有 app/。

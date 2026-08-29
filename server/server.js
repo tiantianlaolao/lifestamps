@@ -31,6 +31,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('node:http');
+const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 
 const PORT = Number(process.env.LS_PORT || 8781);
@@ -38,11 +39,35 @@ const DB_PATH = process.env.LS_DB || path.join(__dirname, 'data', 'lifestamps.db
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;          // 短码有效期 7 天（8-28 用户拍板）
 const BODY_LIMIT = 64 * 1024;                     // 一天的章撑死几 KB，64k 足够且挡住了灌数据
 
+// Cookie 的 Path 必须写**浏览器看到的**那一段，不是这个进程看到的那一段：
+// nginx 把 /lifestamps/api/ 反代成 127.0.0.1:8781/api/，路径在中间被削掉了，
+// 服务端自己根本推不出公网前缀 —— 所以只能给死值 + 留一个环境变量。
+// ⛔ 别图省事写 Path=/：那样 www.tybbtech.com 上所有别的站点请求都会捎带这个
+//    cookie，而它只该在这一个接口里存在。
+const COOKIE_PATH = process.env.LS_COOKIE_PATH
+  || (process.env.LS_STATIC ? '/api/' : '/lifestamps/api/');
+
 // ---- 库 --------------------------------------------------------------------
 // 换数据库实现的话，改动全部在这一段里，上面的路由一行都不用动。
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA journal_mode = WAL');
+
+// 🔴 迁移必须跑在 schema.sql 前面。schema.sql 全是 IF NOT EXISTS，对老库来说
+//    建表那几句是空转，**但最后那条 UNIQUE INDEX(code, visitor) 会真的执行** ——
+//    老库的 gifts 还没有 visitor 列，那一句会直接抛、服务起不来。
+//    （新库反过来：这里 gifts 表还不存在，ALTER 无从谈起，所以要先判存在。）
+function migrate() {
+  const hasGiftsTable = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='gifts'").get();
+  if (!hasGiftsTable) return;                     // 新库，schema.sql 里本来就带这列
+  const cols = db.prepare('PRAGMA table_info(gifts)').all().map(c => c.name);
+  if (!cols.includes('visitor')) {
+    db.exec('ALTER TABLE gifts ADD COLUMN visitor TEXT');
+    console.log('[migrate] gifts 补上 visitor 列（老赠礼留 NULL，不参与去重）');
+  }
+}
+migrate();
 db.exec(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
 
 const q = {
@@ -50,7 +75,9 @@ const q = {
     'INSERT INTO shares (code, day, payload, created, expires) VALUES (?, ?, ?, ?, ?)'),
   getShare: db.prepare('SELECT * FROM shares WHERE code = ?'),
   countCode: db.prepare('SELECT 1 AS x FROM shares WHERE code = ?'),
-  insertGift: db.prepare('INSERT INTO gifts (code, seal, created) VALUES (?, ?, ?)'),
+  insertGift: db.prepare(
+    'INSERT INTO gifts (code, seal, created, visitor) VALUES (?, ?, ?, ?)'),
+  giftBy: db.prepare('SELECT seal FROM gifts WHERE code = ? AND visitor = ?'),
   giftsOf: db.prepare('SELECT seal, COUNT(*) AS n FROM gifts WHERE code = ? GROUP BY seal'),
   countShares: db.prepare('SELECT COUNT(*) AS c FROM shares'),
   sweepGifts: db.prepare(
@@ -93,6 +120,41 @@ const bucketTimer = setInterval(() => {
 }, 120_000);
 bucketTimer.unref();
 
+// ---- 访客令牌 --------------------------------------------------------------
+// 「同一个人只能送一次」唯一能落地的形态。为什么长这样，schema.sql 顶部写了口径，
+// 这里只记实现上的三个决定：
+//
+// 🔴 **一个短码一串**（cookie 名 lsv_<短码>）。写成全站一串会省事得多，
+//    但那一刻服务端就能看出"同一个访客给这两天都送过" = 关系链，口径当场就塌。
+// 🔴 **HttpOnly**：页面 JS 读不到也改不了。这不是防黑客，是防我自己 ——
+//    只要前端能碰，迟早有人拿它去做"记住这个用户"，那就变成身份了。
+// 🔴 Max-Age 跟短码 TTL 一样长：短码死了令牌也就没用了，不留残留。
+//
+// ⚠️ 换个浏览器 / 清了 cookie 依然能再送一次。这是**故意接受**的上限 ——
+//    再往上就只能存 ip，而那条是红线。用户 8-29 知情后拍的板。
+const COOKIE_MAX_AGE = Math.floor(TTL_MS / 1000);
+function visitorCookieName(code) { return 'lsv_' + code; }
+function newVisitor() { return crypto.randomBytes(12).toString('hex'); }
+
+function readCookie(req, name) {
+  const raw = req.headers.cookie;
+  if (!raw) return null;
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i < 0) continue;
+    if (part.slice(0, i).trim() === name) return part.slice(i + 1).trim() || null;
+  }
+  return null;
+}
+
+function visitorCookie(req, code, token) {
+  // Secure 只在确实走了 https 时加：本地 dev 是 http，加了浏览器会直接把这个
+  // cookie 丢掉，而且**不报任何错** —— 表现就是"去重时灵时不灵"，极难查。
+  const https = req.headers['x-forwarded-proto'] === 'https';
+  return `${visitorCookieName(code)}=${token}; Path=${COOKIE_PATH}; Max-Age=${COOKIE_MAX_AGE}`
+    + `; HttpOnly; SameSite=Lax` + (https ? '; Secure' : '');
+}
+
 // ---- 过期清扫 --------------------------------------------------------------
 // 过期不是"看不到"，是**真删掉**。A 也拿不回来 —— 这是产品决定：
 // 一天收起来就是收起来了，不做归档。
@@ -107,13 +169,18 @@ const sweepTimer = setInterval(sweep, 60 * 60 * 1000);
 sweepTimer.unref();
 
 // ---- 小工具 ----------------------------------------------------------------
-function send(res, status, obj) {
+function send(res, status, obj, setCookie) {
   const body = Buffer.from(JSON.stringify(obj), 'utf8');
-  res.writeHead(status, {
+  const head = {
     'content-type': 'application/json; charset=utf-8',
     'content-length': body.length,
     'cache-control': 'no-store',
-  });
+  };
+  // ⚠️ 'cache-control': 'no-store' 上面已经有了，这很关键：
+  //    带 Set-Cookie 的响应一旦被任何一层缓存住，两个访客就会拿到同一串令牌，
+  //    第二个人明明没送过却被判"送过了"。
+  if (setCookie) head['set-cookie'] = setCookie;
+  res.writeHead(status, head);
   res.end(body);
 }
 
@@ -202,10 +269,25 @@ async function route(req, res, pathname) {
     //    也就没法拿短码空间去探别人分享过什么。
     if (!row || Number(row.expires) < Date.now()) return send(res, 410, { expired: true });
     const p = JSON.parse(row.payload);
+
+    // 开这一页的时候就把令牌发下去，别等到点"送"那一刻才发：
+    // 早一步发，页面就能在**第一屏**如实告诉 B「你已经留过了」，
+    // 而不是让他挑完一枚章再被 409 打回来。
+    const code = row.code;
+    let visitor = readCookie(req, visitorCookieName(code));
+    let cookie = null;
+    if (!visitor) { visitor = newVisitor(); cookie = visitorCookie(req, code, visitor); }
+    const mineRow = q.giftBy.get(code, visitor);
+
     return send(res, 200, {
       day: row.day, stamps: p.stamps, verdict: p.verdict, note: p.note,
-      expires: Number(row.expires), ...giftsOf(row.code),
-    });
+      expires: Number(row.expires),
+      // 这个访客在这个短码下留过哪一枚（没留过就是 null）。
+      // 🔴 这是"送没送过"的**唯一权威**。前端那份 localStorage 只是个快照，
+      //    清了数据就没了，而这里清不掉（除非连 cookie 一起清）。
+      mine: mineRow ? mineRow.seal : null,
+      ...giftsOf(code),
+    }, cookie);
   }
 
   // B：匿名送一枚封蜡
@@ -217,8 +299,30 @@ async function route(req, res, pathname) {
     const row = q.getShare.get(code);
     if (!row || Number(row.expires) < Date.now()) return send(res, 410, { expired: true });
     if (tooFast(code)) return send(res, 429, { error: 'slow down' });
-    q.insertGift.run(code, seal, Date.now());
-    return send(res, 200, { ok: true, ...giftsOf(code) });
+
+    // 🔴 拿不到 cookie 就**现发一个、并且认下这一次**，不是拒绝。
+    //    隐私模式、拦 cookie 的浏览器、微信某些版本都可能一个 cookie 都不带回来；
+    //    直接拒绝 = 正常人第一下就送不出去，那是拿防刷去伤好人。
+    //    代价：每次都清 cookie 的人还能反复送 —— 那已经是主动对抗，不在这条需求里。
+    let visitor = readCookie(req, visitorCookieName(code));
+    let cookie = null;
+    if (!visitor) { visitor = newVisitor(); cookie = visitorCookie(req, code, visitor); }
+
+    const mine = q.giftBy.get(code, visitor);
+    // 409 而不是 4xx 里随便挑一个：前端拿它把界面切成"你留下的 xx"，
+    // 是**正常结局**不是错误，所以连同当前比例一起回，页面不用再多请求一次。
+    if (mine) return send(res, 409, { already: true, mine: mine.seal, ...giftsOf(code) }, cookie);
+
+    try {
+      q.insertGift.run(code, seal, Date.now(), visitor);
+    } catch (e) {
+      // 两个请求同时挤进来时，上面的 giftBy 都查不到，靠 UNIQUE(code, visitor) 兜住。
+      // ⚠️ 只吞唯一约束，别把别的库错误也当成"送过了"藏起来。
+      if (!/UNIQUE|constraint/i.test(String(e && e.message))) throw e;
+      const now = q.giftBy.get(code, visitor);
+      return send(res, 409, { already: true, mine: now ? now.seal : seal, ...giftsOf(code) }, cookie);
+    }
+    return send(res, 200, { ok: true, mine: seal, ...giftsOf(code) }, cookie);
   }
 
   return null;      // 没命中：交给 dev 静态分支，再不行就 404

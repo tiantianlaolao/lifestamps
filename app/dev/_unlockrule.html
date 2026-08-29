@@ -1,0 +1,94 @@
+<!doctype html><meta charset="utf-8"><title>解锁名额规则（路 B）</title>
+<!-- 8-29「路 B」端到端验收：走 App 的真代码（store/net），不是绕过去直接打接口。
+     规则三条：
+       ① 送：   同一访客 × 同一条分享 = 1 枚
+       ② 解锁： 同一访客 × 同一作者   = 最多 1 枚封蜡，一辈子；
+                名额只在「送来的这枚 A 还没有」时才消耗
+       ③ A 自己不开特例 → 最多帮自己解开一枚
+     🔴 这一页必须**在浏览器里**跑：朋友的 cookie 罐要靠真浏览器；
+        而 A 那一侧要走 store/net 的真代码，否则验的是接口不是产品。
+     🔴🔴 **一个浏览器 = 一个访客**，这一页里做不出"好几个不同的朋友"：
+        cookie 罐只有一个，而令牌是 HttpOnly、JS 删不掉。
+        （8-29 我一开始在注释里写反了，以为裸 fetch 每发都是新访客，
+          结果第二发被 409 挡住、什么都没到，看着像 again 坏了。量具坏了不是东西坏了。）
+        → 分工：**"好几个不同的人"那些规则由 server/test.js 覆盖**（它自带 cookie 罐）；
+          这一页只验 **A 这一侧走真代码**：installId 带没带上、解锁清单认不认、
+          got/again 分不分得开、断网会不会乱改。两边合起来才完整。
+     ⭐ 一个访客也能造出 again：规则①是**按分享**去重的，
+        所以同一个人换一天还能送 —— 而他的解锁名额是**跨分享**的、已经用掉了，
+        于是礼物到了、抽屉里不多东西 = 正好是 again。
+     用法：cd server && LS_STATIC=../app LS_PORT=8799 LS_DB=<临时> node server.js
+           开 http://127.0.0.1:8799/dev/_unlockrule.html -->
+<style>html,body{margin:0;background:#2a2724;color:#eee;font:12.5px/1.8 ui-monospace}
+ .w{padding:10px 16px}.FAIL{color:#ff7a6b;font-weight:700}.PASS{color:#7fd97f}
+ h3{color:#9cf;font-size:13px;margin:14px 0 4px}</style>
+<div class="w" id="o"></div>
+<script type="module">
+// 🔴 必须先把地址挪到根目录再 import net.js。
+//    net.js 是**按 location.href 推 API 根**的（原生壳除外），
+//    而这一页在 /dev/ 底下 → 它会去请求 /dev/api/share，静静地 404，
+//    createShare 返回 null，看着像"建分享坏了"。真 App 在根目录所以没这毛病。
+//    ⚠️ 顺序不能反：BASE 是模块加载时算好的常量，import 完再改地址就晚了。
+history.replaceState(null, '', '/');
+const { store } = await import('../js/store.js');
+const { createShare, collectGifts } = await import('../js/net.js');
+const o=document.getElementById('o');
+let P=0,F=0;
+const ok=(c,m)=>{c?P++:F++;o.insertAdjacentHTML('beforeend',
+  `<div class="${c?'PASS':'FAIL'}">${c?'PASS':'FAIL'}　${m}</div>`)};
+const h3=t=>o.insertAdjacentHTML('beforeend',`<h3>${t}</h3>`);
+const api=(m,u,b)=>fetch('/api'+u,{method:m,
+  headers:b?{'content-type':'application/json'}:{},body:b?JSON.stringify(b):undefined})
+  .then(r=>r.json().catch(()=>null));
+
+(async()=>{
+ try{
+  h3('A 建分享时带上匿名安装号');
+  store.installId=''; store.hidden={}; store.shares=[];
+  const recs=[{stampId:'milktea',ink:'zhu',ts:Date.now(),id:'r1'},
+              {stampId:'read',ink:'mo',ts:Date.now(),id:'r2'}];
+  const rec=await createShare('2026-08-29',recs,'v_few','');
+  ok(!!rec && !!rec.code,'建出短码：'+(rec&&rec.code));
+  const iid=store.installId;
+  ok(/^[0-9a-f]{32}$/.test(iid),'installId 生成了并落盘（'+iid.slice(0,8)+'…）');
+  const seen=await api('GET','/unlocked?author='+iid);
+  ok(seen && Array.isArray(seen.seals) && seen.seals.length===0,'服务端认这个作者，现在解开 0 枚');
+
+  h3('这个朋友第一次送 → 解开一枚，进抽屉');
+  const gift=(code,seal)=>api('POST',`/share/${code}/gift`,{seal});
+  await gift(rec.code,'g_candy');
+  let r=await collectGifts();
+  ok(r.got.length===1 && r.got[0]==='g_candy','got=[一颗糖]');
+  ok(!!store.hidden.g_candy,'抽屉里真的有了');
+  ok(r.again.length===0,'这一轮没有"又收到"的');
+
+  h3('同一条分享再送 → 被规则①挡住（409），什么都不会到');
+  const dup=await gift(rec.code,'g_paw');
+  ok(dup && dup.already===true,'同一个人对同一条分享只能送一次');
+  r=await collectGifts();
+  ok(r.got.length===0 && r.again.length===0,'没到东西，所以既不 got 也不 again');
+
+  h3('⭐ 同一个人换一天再送 → 礼物到了，但名额用过了 → again');
+  const rec2=await createShare('2026-08-30',recs,'v_few','');
+  ok(!!rec2 && rec2.code!==rec.code,'第二天建了另一条分享：'+(rec2&&rec2.code));
+  await gift(rec2.code,'g_lamp');
+  r=await collectGifts();
+  ok(r.got.length===0,'🔴 没解开新的 —— 他的名额一辈子只有一个');
+  ok(r.again.includes('g_lamp'),'⭐ again 里有它 —— 得提示 A，不然朋友白送了');
+  ok(!store.hidden.g_lamp,'抽屉里没多这一枚');
+  ok(Object.keys(store.hidden).length===1,'抽屉里还是只有一枚');
+
+  h3('网不通时什么都不改（宁可这轮不报）');
+  const realFetch=window.fetch;
+  window.fetch=()=>Promise.reject(new Error('offline'));
+  const before=JSON.stringify(store.hidden);
+  r=await collectGifts();
+  window.fetch=realFetch;
+  ok(r.got.length===0 && r.again.length===0,'断网时不报任何东西');
+  ok(JSON.stringify(store.hidden)===before,'⭐ 断网时抽屉一个字没改 —— 不会把"收到"当成"解锁"');
+
+  h3(`合计　通过 ${P}　失败 ${F}`);
+  document.title=F?`FAIL ${F}`:`PASS ${P}`;
+ }catch(e){ ok(false,'自己崩了：'+(e&&e.stack||e)); document.title='FAIL'; }
+})();
+</script>

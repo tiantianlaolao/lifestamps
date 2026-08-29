@@ -1,0 +1,85 @@
+<!doctype html><meta charset="utf-8"><title>B 也给自己留一枚（端到端）</title>
+<!-- 8-29：B 送完章 → 再给自己挑一枚 → 拿 6 位码 → 打开 App 输码收下。
+     🔴 领这一枚 = 用掉他"自己送自己"那一次，之后他给自己送就一枚都解不开。
+     这一页把整条链路走一遍：朋友端网页（iframe）+ App 端（走真代码 net.js）。
+     用法：cd server && LS_STATIC=../app LS_PORT=8799 LS_DB=<临时> node server.js
+           开 http://127.0.0.1:8799/dev/_ownseal.html -->
+<style>html,body{margin:0;background:#2a2724;color:#eee;font:12.5px/1.8 ui-monospace}
+ .w{padding:10px 16px}.FAIL{color:#ff7a6b;font-weight:700}.PASS{color:#7fd97f}
+ h3{color:#9cf;font-size:13px;margin:12px 0 4px}
+ iframe{border:1px solid #555;background:#fff;margin:8px 16px}</style>
+<div class="w" id="o"></div><iframe id="f" width="390" height="900"></iframe>
+<script type="module">
+// 🔴 先挪到根再 import：net.js 按 location.href 推 API 根，
+//    /dev/ 底下会去请求 /dev/api/…，静静 404。
+history.replaceState(null, '', '/');
+const { store } = await import('../js/store.js');
+const { createShare, collectGifts, claimTicket } = await import('../js/net.js');
+const o=document.getElementById('o'), f=document.getElementById('f');
+let P=0,F=0;
+const ok=(c,m)=>{c?P++:F++;o.insertAdjacentHTML('beforeend',
+  `<div class="${c?'PASS':'FAIL'}">${c?'PASS':'FAIL'}　${m}</div>`)};
+const h3=t=>o.insertAdjacentHTML('beforeend',`<h3>${t}</h3>`);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+(async()=>{
+ try{
+  h3('A 建一条分享（顺便验二维码回来了）');
+  store.installId=''; store.hidden={}; store.shares=[];
+  const recs=[{stampId:'milktea',ink:'zhu',ts:Date.now(),id:'r1'},
+              {stampId:'read',ink:'mo',ts:Date.now(),id:'r2'}];
+  const rec=await createShare('2026-08-29',recs,'v_few','');
+  ok(!!rec&&!!rec.code,'短码 '+(rec&&rec.code));
+  ok(rec.qr&&rec.qr.n===29&&rec.qr.path.length>200,
+     `二维码跟着回来了并存进本地（${rec.qr&&rec.qr.n}×${rec.qr&&rec.qr.n}）—— 卡片才画得出指向这一天的码`);
+  const AI=store.installId;
+
+  h3('B 打开链接：送一枚 → 再给自己挑一枚');
+  f.src='/s/?c='+rec.code;
+  await new Promise(r=>{f.onload=r}); await sleep(1600);
+  const d=f.contentDocument;
+  ok(!d.getElementById('own')||d.getElementById('own').classList.contains('f-hide'),
+     '没送之前，「也给自己留一枚」是藏着的');
+  d.querySelector('#give [data-seal="g_candy"]').click();
+  await sleep(2600);
+  const own=d.getElementById('own');
+  ok(own&&!own.classList.contains('f-hide'),'送完之后它出来了');
+  const picks=own.querySelectorAll('[data-own]');
+  ok(picks.length===6,`六枚封蜡随他挑（${picks.length} 枚）`);
+
+  h3('挑一枚 → 拿到 6 位码');
+  own.querySelector('[data-own="g_lamp"]').click();
+  await sleep(1800);
+  const codeEl=d.getElementById('f-code');
+  const ticket=codeEl?codeEl.textContent.trim():'';
+  ok(/^[a-z2-9]{6}$/.test(ticket),'页面上显示了 6 位码：'+ticket);
+  ok(/长按|输入这个码/.test(d.getElementById('own').textContent),'告诉他去哪儿用这个码');
+
+  h3('App 端：输码收下');
+  // ⚠️ B 是另一个人 = 另一个安装号，不能复用 A 的
+  store.installId=''; store.hidden={}; store.shares=[];
+  const BI=store.ensureInstallId();
+  const r1=await claimTicket(ticket);
+  ok(r1&&r1.ok&&r1.seal==='g_lamp','收下了，就是他挑的那一枚');
+  ok(!!store.hidden.g_lamp,'⭐ 当场进抽屉，不用等下次开机对账');
+  const r2=await claimTicket(ticket);
+  ok(r2&&r2.error==='used','同一个码再输一次 → 已经用过了');
+  const r3=await claimTicket('zzzzzz');
+  ok(r3&&r3.error==='gone','乱输一个 → 这个码不在了');
+
+  h3('🔴 领过之后，他给自己送就一枚都解不开');
+  const mine=await createShare('2026-08-30',recs,'v_few','');
+  // 用同一个浏览器（这一页跟 iframe 同源、同 cookie 罐）去给自己那条分享送
+  await fetch('/api/share/'+mine.code+'/gift',{method:'POST',
+    headers:{'content-type':'application/json'},body:JSON.stringify({seal:'g_coat'})});
+  const g=await collectGifts();
+  ok(g.got.length===0,`没解开任何新的（got=${JSON.stringify(g.got)}）`);
+  ok(Object.keys(store.hidden).length===1,
+     `抽屉里还是只有欢迎章那一枚（现在 ${Object.keys(store.hidden).length} 枚）`);
+  ok(g.again.includes('g_coat'),'但"又收到了"还是会提示他 —— 东西确实到了');
+
+  h3(`合计　通过 ${P}　失败 ${F}`);
+  document.title=F?`FAIL ${F}`:`PASS ${P}`;
+ }catch(e){ ok(false,'自己崩了：'+(e&&e.stack||e)); document.title='FAIL'; }
+})();
+</script>

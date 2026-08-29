@@ -62,7 +62,50 @@ CREATE TABLE IF NOT EXISTS unlocks (
   PRIMARY KEY (author, visitor)
 );
 
+-- 🔴 B 送完章之后给他的「待领的票」：他给自己挑的那一枚，凭 6 位兑换码在 App 里领。
+--   用户 8-29 拍板：**领那一枚 = 他"自己送自己"那一次**，所以领完他就再也不能给自己送了。
+--   ⭐ 兑换那一刻是这套机制里**唯一**能把「浏览器」和「App 安装」对上号的时机 ——
+--      票是发给某个 visitor 的，却是在 App 里用 install 兑的。见下面 bindings。
+CREATE TABLE IF NOT EXISTS tickets (
+  code    TEXT PRIMARY KEY,           -- 6 位兑换码，跟短码同一套字符集
+  seal    TEXT NOT NULL,              -- B 给自己挑的那一枚
+  visitor TEXT NOT NULL,              -- 按作者隔离的那个令牌（用来撤回偷跑的解锁）
+  browser TEXT,                       -- 浏览器的跨作者 id：兑换在 App 里发生，
+                                      -- 服务端只能从票里把它取出来建绑定
+  created INTEGER NOT NULL,
+  expires INTEGER NOT NULL,           -- 30 天。比分享的 7 天长：B 可能过几天才去装 App
+  claimed INTEGER,                    -- 兑换时间，非空 = 已用掉（一码只能用一次）
+  claimer TEXT                        -- 兑换者的安装号
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_one ON tickets(visitor, seal, created);
+
+-- 🔴🔴 「这个浏览器属于哪个 App 安装」。兑换那一刻建立，之后送章时用来认出
+--   「A 打开自己的分享链接给自己送章」，不给他解锁
+--   （用户 8-29 的设计：领欢迎章 = 用掉"自己送自己"那一次，以后再送都不算）。
+--
+--   ⛔ 走过两条死路，别再走一遍：
+--     ① 按 visitor 令牌绑定 —— **行不通**。令牌是「一个作者一串」，
+--        同一个浏览器在不同作者下是不同令牌，换个作者就对不上（test.js 当场抓到）。
+--     ② 兑换时给浏览器种 cookie —— **也行不通**。兑换发生在 **App 里**
+--        （原生壳、跨域、没有浏览器的 cookie 罐），服务端根本碰不到那个浏览器。
+--   ✅ 只能是：浏览器另外带一个**跨作者**的随机 id（cookie lsb），
+--      发票时把它一起写进票里；兑换在 App 里发生，服务端从票里取出它来建绑定。
+--
+--   ⚠️ 口径又松一档，原样记下来别当没有：
+--      lsb 是跨作者的，所以服务端**能**看出同一个浏览器访问过哪些作者的分享。
+--      两点缓解：① 赠礼记录里存的仍然是**按作者隔离**的 visitor，不是 lsb，
+--      所以"谁给谁送过"这张关系图依然拼不出来；
+--      ② 这张表只有装了 App 并领过欢迎章的人才有一行，存的是"设备↔自己的 App"，
+--      不是人和人的关系。
+CREATE TABLE IF NOT EXISTS bindings (
+  browser TEXT PRIMARY KEY,          -- 浏览器的跨作者随机 id（cookie lsb）
+  install TEXT NOT NULL,             -- 它属于哪个 App 安装
+  created INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_gifts_code     ON gifts(code);
+CREATE INDEX IF NOT EXISTS idx_tickets_visitor ON tickets(visitor);
+CREATE INDEX IF NOT EXISTS idx_tickets_expires ON tickets(expires);
 CREATE INDEX IF NOT EXISTS idx_shares_expires ON shares(expires);
 CREATE INDEX IF NOT EXISTS idx_shares_author  ON shares(author);
 CREATE INDEX IF NOT EXISTS idx_unlocks_author ON unlocks(author);

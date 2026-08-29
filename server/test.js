@@ -249,6 +249,72 @@ function client() {
   ok(bad.status === 410 && bad.h('access-control-allow-origin') === IOS,
      '失败响应（410）也带 CORS —— 不然壳里看到的一律是"网络错误"');
 
+  console.log('\n== 二维码（便宜的不变量；能不能扫由 check_qr.py 守）==');
+  // ⚠️ 这里**故意不验"扫不扫得出来"** —— 那需要真解码器（OpenCV），
+  //    而这个文件要在部署机上跑，零依赖是红线。分工写在 qr.js 顶部。
+  const { qr: mkqr } = require('./qr.js');
+  const sh = await j('POST', '/api/share', { ...day, author: 'e'.repeat(32) });
+  ok(typeof sh.body.url === 'string' && sh.body.url.endsWith(sh.body.code),
+     '建分享时一起把短链回来了：' + sh.body.url);
+  ok(sh.body.qr && sh.body.qr.n === 29 && typeof sh.body.qr.path === 'string'
+     && sh.body.qr.path.length > 200,
+     `二维码 29×29、路径非空（${sh.body.qr && sh.body.qr.n}，${sh.body.qr && sh.body.qr.path.length} 字符）`);
+  ok(sh.body.url.length <= 42,
+     `短链 ${sh.body.url.length} 字节 ≤ 42 —— 超了二维码会变大、卡片版式就得重画`);
+  const q1 = mkqr('https://www.tybbtech.com/l/abcdef');
+  const q2 = mkqr('https://www.tybbtech.com/l/abcdef');
+  ok(q1.path === q2.path && q1.mask === q2.mask, '同样内容每次生成完全一样（确定性）');
+  let threw = false;
+  try { mkqr('x'.repeat(45)); } catch (_) { threw = true; }
+  ok(threw, '超出 V3-M 上限当场抛，不许悄悄换更大版本（那会让卡片版式静默错位）');
+
+  console.log('\n== B 也能给自己留一枚（兑换票 + 绑定）==');
+  const AB = 'f'.repeat(32);                  // A 的安装号
+  const sA = await j('POST', '/api/share', { ...day, author: AB });
+  const bee = client();                       // 朋友 B 的浏览器
+  ok((await bee.req('POST', `/api/share/${sA.body.code}/ticket`, { seal: 'g_lamp' })).status === 403,
+     '🔴 没送过就想要票 → 403（不然打开链接就能白拿一枚章，这枚章的意义当场没了）');
+  await bee.req('POST', `/api/share/${sA.body.code}/gift`, { seal: 'g_candy' });
+  const tk = await bee.req('POST', `/api/share/${sA.body.code}/ticket`, { seal: 'g_lamp' });
+  ok(tk.status === 200 && /^[a-z2-9]{6}$/.test(tk.body.ticket),
+     '送过之后拿到 6 位兑换码：' + tk.body.ticket);
+  const tk2 = await bee.req('POST', `/api/share/${sA.body.code}/ticket`, { seal: 'g_paw' });
+  ok(tk2.body.ticket === tk.body.ticket, '同一个浏览器重复点，给回同一张票，不会越发越多');
+
+  const BI = 'a1b2'.repeat(8);                // B 的安装号
+  const c1 = await j('POST', '/api/claim', { ticket: tk.body.ticket, install: BI });
+  ok(c1.status === 200 && c1.body.seal === 'g_lamp', 'B 在 App 里兑换成功，拿到他挑的那一枚');
+  const uB = (await j('GET', '/api/unlocked?author=' + BI)).body.seals;
+  ok(uB.length === 1 && uB[0] === 'g_lamp', 'B 的抽屉里有了这一枚');
+  ok((await j('POST', '/api/claim', { ticket: tk.body.ticket, install: BI })).status === 409,
+     '一码只能用一次');
+
+  console.log('\n== 领过之后就再也不能给自己送了（8-29 用户的设计）==');
+  const sB = await j('POST', '/api/share', { ...day, day: '2026-09-01', author: BI });
+  await bee.req('POST', `/api/share/${sB.body.code}/gift`, { seal: 'g_coat' });
+  const uB2 = (await j('GET', '/api/unlocked?author=' + BI)).body.seals;
+  ok(uB2.length === 1,
+     `🔴 他用同一个浏览器给自己送，一枚都解不开（还是 ${uB2.length} 枚）—— 绑定认出这是他本人`);
+  const bee2 = client();                      // 换个浏览器 = 换个人，照样能送
+  await bee2.req('POST', `/api/share/${sB.body.code}/gift`, { seal: 'g_umbrella' });
+  ok((await j('GET', '/api/unlocked?author=' + BI)).body.seals.length === 2,
+     '别人送照样解得开（别把所有人都误伤了）');
+
+  console.log('\n== 撤回：绑定建立之前偷跑的那一枚也要撤掉 ==');
+  const CI = 'c3d4'.repeat(8);
+  const sC = await j('POST', '/api/share', { ...day, day: '2026-09-02', author: CI });
+  const cheat = client();                     // C 自己的浏览器，还没绑定
+  await cheat.req('POST', `/api/share/${sC.body.code}/gift`, { seal: 'g_candy' });
+  ok((await j('GET', '/api/unlocked?author=' + CI)).body.seals.length === 1,
+     '绑定之前，自己送自己确实解开了一枚（路 B 那个已知上限）');
+  const tkC = await cheat.req('POST', `/api/share/${sC.body.code}/ticket`, { seal: 'g_paw' });
+  await j('POST', '/api/claim', { ticket: tkC.body.ticket, install: CI });
+  const uC = (await j('GET', '/api/unlocked?author=' + CI)).body.seals;
+  ok(uC.length === 1 && uC[0] === 'g_paw',
+     `⭐ 一领欢迎章，之前偷跑那一枚就被撤掉了，只剩欢迎章（现在是 ${JSON.stringify(uC)}）`);
+  ok((await j('POST', '/api/claim', { ticket: 'zzzzzz', install: CI })).status === 410,
+     '不存在的兑换码 → 410');
+
   console.log('\n== 不存在 / 过期 ==');
   const miss = await j('GET', '/api/share/zzzzzz');
   ok(miss.status === 410 && miss.body.expired === true, '不存在的码跟过期返回同一个东西（不泄露存在性）');

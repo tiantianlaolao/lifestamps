@@ -33,6 +33,7 @@ const path = require('path');
 const http = require('node:http');
 const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
+const { qr } = require('./qr.js');
 
 const PORT = Number(process.env.LS_PORT || 8781);
 const DB_PATH = process.env.LS_DB || path.join(__dirname, 'data', 'lifestamps.db');
@@ -44,6 +45,12 @@ const BODY_LIMIT = 64 * 1024;                     // 一天的章撑死几 KB，
 // 服务端自己根本推不出公网前缀 —— 所以只能给死值 + 留一个环境变量。
 // ⛔ 别图省事写 Path=/：那样 www.tybbtech.com 上所有别的站点请求都会捎带这个
 //    cookie，而它只该在这一个接口里存在。
+// 卡片二维码指向的短链。🔴 必须带 www —— 顶级域 tybbtech.com 连不上（实测）。
+// 🔴 也必须短：这一条是 33 字节，二维码正好 29×29，跟卡片上原来那张写死的同尺寸，
+//    版式一个像素都不用动。换成 /lifestamps/s/?c= 那条（47 字节）就要 33×33，卡片得重画。
+const SHORT_BASE = process.env.LS_SHORT_BASE || 'https://www.tybbtech.com/l/';
+const TICKET_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // 兑换码 30 天：B 可能过几天才装 App
+
 const COOKIE_PATH = process.env.LS_COOKIE_PATH
   || (process.env.LS_STATIC ? '/api/' : '/lifestamps/api/');
 
@@ -89,6 +96,20 @@ const q = {
   insertUnlock: db.prepare(
     'INSERT INTO unlocks (author, visitor, seal, created) VALUES (?, ?, ?, ?)'),
   sealsOf: db.prepare('SELECT DISTINCT seal FROM unlocks WHERE author = ?'),
+  // ---- 兑换票 / 绑定 ----
+  insertTicket: db.prepare(
+    'INSERT INTO tickets (code, seal, visitor, browser, created, expires)'
+    + ' VALUES (?, ?, ?, ?, ?, ?)'),
+  getTicket: db.prepare('SELECT * FROM tickets WHERE code = ?'),
+  ticketOfVisitor: db.prepare(
+    'SELECT * FROM tickets WHERE visitor = ? AND claimed IS NULL AND expires > ? LIMIT 1'),
+  useTicket: db.prepare('UPDATE tickets SET claimed = ?, claimer = ? WHERE code = ?'),
+  sweepTickets: db.prepare('DELETE FROM tickets WHERE expires < ?'),
+  getBind: db.prepare('SELECT install FROM bindings WHERE browser = ?'),
+  putBind: db.prepare(
+    'INSERT INTO bindings (browser, install, created) VALUES (?, ?, ?)'
+    + ' ON CONFLICT(browser) DO UPDATE SET install = excluded.install'),
+  dropUnlock: db.prepare('DELETE FROM unlocks WHERE author = ? AND visitor = ?'),
   countShares: db.prepare('SELECT COUNT(*) AS c FROM shares'),
   sweepGifts: db.prepare(
     'DELETE FROM gifts WHERE code IN (SELECT code FROM shares WHERE expires < ?)'),
@@ -111,6 +132,16 @@ function newCode() {
   }
   // 31^6 ≈ 8.9 亿，连撞 20 次说明库满了或随机源坏了，宁可报错也别死循环
   throw new Error('code space exhausted');
+}
+
+// 兑换码。跟短码同一套字符集（去掉了 0/O、1/I/l），但要在 tickets 表里去重。
+function newTicketCode() {
+  for (let i = 0; i < 20; i++) {
+    let c = '';
+    for (let j = 0; j < 6; j++) c += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
+    if (!q.getTicket.get(c)) return c;
+  }
+  throw new Error('ticket code space exhausted');
 }
 
 // ---- 防刷 ------------------------------------------------------------------
@@ -145,6 +176,12 @@ bucketTimer.unref();
 // ⚠️ 换个浏览器 / 清了 cookie 依然算新的人，能再解开一枚。这是**故意接受**的上限
 //    （路 B 的固有代价，用户 8-29 知情后拍的板）；再往上就只能存 ip，那条是红线。
 const COOKIE_MAX_AGE = 180 * 24 * 60 * 60;        // 180 天（用户 8-29 拍板）
+// 领过欢迎章之后种在浏览器上的那个 cookie：值就是他的 App 安装号。
+// ⚠️ 它跟访客令牌不同，是**跨作者**的 —— 这是它能起作用的原因，也是它的代价。
+//    只在请求里当场比对，任何表都不写。见 schema.sql 顶部那段。
+// 浏览器的跨作者随机 id。⚠️ 跟访客令牌不同，它**不按作者隔离** —— 这是它能起作用的
+//    原因，也是它的代价（见 schema.sql 顶部 bindings 那段）。第一次打开分享页就种下。
+const BROWSER_COOKIE = 'lsb';
 function visitorCookieName(row) { return 'lsv_' + (row.author || row.code); }
 function newVisitor() { return crypto.randomBytes(12).toString('hex'); }
 
@@ -153,8 +190,15 @@ function newVisitor() { return crypto.randomBytes(12).toString('hex'); }
 //    那样 A 自己给自己送六次就集齐了 —— 名额是跨分享的，客户端手上没有这个视野。
 // ⭐ 名额**只在真的解开一枚时才消耗**：送来的那枚 A 已经有了就不写这一行，
 //    名额留着，下次这个人送一枚新的还能解开。对朋友友好，也不给 A 多开口子。
-function tryUnlock(author, visitor, seal) {
+function tryUnlock(author, visitor, seal, browserId) {
   if (!author || !visitor) return false;          // 老分享没有 author：不参与解锁
+  // 🔴 领过欢迎章的浏览器在 bindings 里有一行，我们就知道它属于哪个 App 安装。
+  //    它给**自己那条分享**送章 → 就是 A 自己给自己送，不给解锁。
+  //    （用户 8-29 的设计：领那枚欢迎章 = 用掉了"自己送自己"那一次，以后再送都不算。）
+  //    ⚠️ 钥匙必须是**跨作者**的 lsb，不能用 visitor：令牌一个作者一串，
+  //       同一个浏览器换个作者就是另一串，对不上（栽过一次）。
+  const bind = browserId ? q.getBind.get(browserId) : null;
+  if (bind && bind.install === author) return false;
   if (q.slotUsed.get(author, visitor)) return false;   // 这个人的名额用掉了
   if (q.sealOwned.get(author, seal)) return false;     // 这一枚已经有了 → 名额留着
   q.insertUnlock.run(author, visitor, seal, Date.now());
@@ -170,6 +214,22 @@ function readCookie(req, name) {
     if (part.slice(0, i).trim() === name) return part.slice(i + 1).trim() || null;
   }
   return null;
+}
+
+// 拿这个浏览器的跨作者 id，没有就现发一个。
+// 🔴 每条会用到它的路径都得叫一次 —— 只在 GET 分享页种的话，
+//    任何没走过 GET 的顺序（测试里、或者以后前端改流程）都会拿到空的，
+//    表现是「绑定悄悄没建立」，而这种失败**一点错都不报**。
+function ensureBrowser(req, out) {
+  let id = readCookie(req, BROWSER_COOKIE);
+  if (!id) { id = newVisitor(); out.push(browserCookie(req, id)); }
+  return id;
+}
+
+function browserCookie(req, id) {
+  const https = req.headers['x-forwarded-proto'] === 'https';
+  return `${BROWSER_COOKIE}=${id}; Path=${COOKIE_PATH}; Max-Age=${COOKIE_MAX_AGE}`
+    + `; HttpOnly; SameSite=Lax` + (https ? '; Secure' : '');
 }
 
 function visitorCookie(req, row, token) {
@@ -220,7 +280,9 @@ function sweep() {
   const now = Date.now();
   const g = q.sweepGifts.run(now).changes;
   const s = q.sweepShares.run(now).changes;
-  if (s || g) console.log(`[sweep] 清掉过期分享 ${s} 条、赠礼 ${g} 枚（unlocks 不动）`);
+  const t = q.sweepTickets.run(now).changes;
+  if (s || g || t) console.log(
+    `[sweep] 清掉过期分享 ${s} 条、赠礼 ${g} 枚、兑换票 ${t} 张（unlocks / bindings 不动）`);
 }
 sweep();
 const sweepTimer = setInterval(sweep, 60 * 60 * 1000);
@@ -333,7 +395,14 @@ async function route(req, res, pathname) {
     const now = Date.now();
     const code = newCode();
     q.insertShare.run(code, b.day, payload, now, now + TTL_MS, author);
-    return send(res, 200, { code, expires: now + TTL_MS });
+    // 顺手把二维码算好一起回去：短码是动态的，卡片上那张写死的路径没法用了。
+    // 编码器在服务端 = 只写一份、App 端零新增依赖（见 qr.js 顶部）。
+    const code2 = qr(SHORT_BASE + code);
+    return send(res, 200, {
+      code, expires: now + TTL_MS,
+      url: SHORT_BASE + code,
+      qr: { n: code2.n, path: code2.path },
+    });
   }
 
   // A：我现在解开了哪几枚封蜡。
@@ -348,6 +417,7 @@ async function route(req, res, pathname) {
 
   const mShare = pathname.match(/^\/api\/share\/([A-Za-z0-9]{1,12})$/);
   const mGift = pathname.match(/^\/api\/share\/([A-Za-z0-9]{1,12})\/gift$/);
+  const mTicket = pathname.match(/^\/api\/share\/([A-Za-z0-9]{1,12})\/ticket$/);
 
   // B：打开这一天（A 也用同一个接口回来收赠礼）
   if (m === 'GET' && mShare) {
@@ -362,8 +432,12 @@ async function route(req, res, pathname) {
     // 而不是让他挑完一枚章再被 409 打回来。
     const code = row.code;
     let visitor = readCookie(req, visitorCookieName(row));
-    let cookie = null;
-    if (!visitor) { visitor = newVisitor(); cookie = visitorCookie(req, row, visitor); }
+    const cookies = [];
+    if (!visitor) { visitor = newVisitor(); cookies.push(visitorCookie(req, row, visitor)); }
+    // 浏览器的跨作者 id：现在种下，等他将来领欢迎章时才用得上
+    // （发票时写进票里 → 兑换在 App 里发生 → 服务端从票里取出来建绑定）。
+    ensureBrowser(req, cookies);
+    const cookie = cookies.length ? cookies : null;
     const mineRow = q.giftBy.get(code, visitor);
 
     return send(res, 200, {
@@ -392,8 +466,10 @@ async function route(req, res, pathname) {
     //    直接拒绝 = 正常人第一下就送不出去，那是拿防刷去伤好人。
     //    代价：每次都清 cookie 的人还能反复送 —— 那已经是主动对抗，不在这条需求里。
     let visitor = readCookie(req, visitorCookieName(row));
-    let cookie = null;
-    if (!visitor) { visitor = newVisitor(); cookie = visitorCookie(req, row, visitor); }
+    const cookies = [];
+    if (!visitor) { visitor = newVisitor(); cookies.push(visitorCookie(req, row, visitor)); }
+    const browserId = ensureBrowser(req, cookies);
+    const cookie = cookies.length ? cookies : null;
 
     const mine = q.giftBy.get(code, visitor);
     // 409 而不是 4xx 里随便挑一个：前端拿它把界面切成"你留下的 xx"，
@@ -411,8 +487,73 @@ async function route(req, res, pathname) {
     }
     // 规则②：送出去之后看这一枚算不算「帮 A 解开一枚」。
     // ⚠️ 结果不回给 B —— 他不该知道 A 的收藏进度，那是 A 的事。
-    tryUnlock(row.author, visitor, seal);
+    tryUnlock(row.author, visitor, seal, browserId);
     return send(res, 200, { ok: true, mine: seal, ...giftsOf(code) }, cookie);
+  }
+
+  // B：送完之后，给自己也挑一枚 → 换一张 6 位兑换码，去 App 里领。
+  // 🔴 必须先送过才给票：不然任何人打开链接就能白拿一枚章，
+  //    这枚章的意义（"你给别人留了东西，所以也收一枚"）当场就没了。
+  if (m === 'POST' && mTicket) {
+    const code = mTicket[1].toLowerCase();
+    const b = await readBody(req);
+    const seal = String(b.seal || '');
+    if (!SEALS.includes(seal)) return send(res, 400, { error: 'seal' });
+    const row = q.getShare.get(code);
+    if (!row || Number(row.expires) < Date.now()) return send(res, 410, { expired: true });
+
+    const visitor = readCookie(req, visitorCookieName(row));
+    // 没有令牌 = 这个浏览器根本没送过（送的时候一定会种下）
+    if (!visitor || !q.giftBy.get(code, visitor)) {
+      return send(res, 403, { error: 'gift first' });
+    }
+    // 已经绑过、而且那个安装号已经给自己留过一枚了 → 别再发票，
+    // 免得他拿到码却兑不了（兑换那头会拒），那是最难受的形态。
+    const tcookies = [];
+    const browserId = ensureBrowser(req, tcookies);
+    const tcookie = tcookies.length ? tcookies : null;
+    const bind = q.getBind.get(browserId);
+    if (bind && q.slotUsed.get(bind.install, 'self:' + bind.install)) {
+      return send(res, 409, { error: 'already_own' }, tcookie);
+    }
+    // 同一个浏览器重复点：把还没用掉的那张原样给回去，别越发越多
+    const exist = q.ticketOfVisitor.get(visitor, Date.now());
+    if (exist) return send(res, 200, { ticket: exist.code, seal: exist.seal }, tcookie);
+
+    const now = Date.now();
+    const tk = newTicketCode();
+    q.insertTicket.run(tk, seal, visitor, browserId, now, now + TICKET_TTL_MS);
+    return send(res, 200, { ticket: tk, seal }, tcookie);
+  }
+
+  // A/B：在 App 里用 6 位码领那一枚。
+  // ⭐ 这是整套机制里唯一能把「浏览器」和「App 安装」对上号的时机。
+  if (m === 'POST' && pathname === '/api/claim') {
+    const b = await readBody(req);
+    const tk = String(b.ticket || '').toLowerCase().trim();
+    const install = String(b.install || '');
+    if (!/^[a-z2-9]{6}$/.test(tk)) return send(res, 400, { error: 'ticket' });
+    if (!/^[0-9a-f]{16,64}$/.test(install)) return send(res, 400, { error: 'install' });
+
+    const t = q.getTicket.get(tk);
+    if (!t || Number(t.expires) < Date.now()) return send(res, 410, { error: 'gone' });
+    if (t.claimed) return send(res, 409, { error: 'used' });
+
+    // 一个人一辈子只给自己留一枚（用户 8-29 拍板）
+    const selfKey = 'self:' + install;
+    if (q.slotUsed.get(install, selfKey)) return send(res, 409, { error: 'already_own' });
+
+    q.useTicket.run(Date.now(), install, tk);
+    // 🔴 补一刀：如果这个浏览器**之前**已经给自己那条分享解开过一枚（那时还认不出他），
+    //    现在知道了，撤掉。不撤的话"领了欢迎章就不能再自己送"这句话就是假的。
+    q.dropUnlock.run(install, t.visitor);
+    // 欢迎章占掉他"自己送自己"那个名额
+    q.insertUnlock.run(install, selfKey, t.seal, Date.now());
+    // 🔴 用票里带着的浏览器 id 建绑定。
+    //    ⛔ 不能改成"在这里给浏览器种 cookie"：兑换发生在 **App 里**（原生壳、跨域），
+    //       服务端根本碰不到那个浏览器。这也是票里非得存 browser 的原因。
+    if (t.browser) q.putBind.run(t.browser, install, Date.now());
+    return send(res, 200, { ok: true, seal: t.seal });
   }
 
   return null;      // 没命中：交给 dev 静态分支，再不行就 404

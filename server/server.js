@@ -58,27 +58,37 @@ db.exec('PRAGMA journal_mode = WAL');
 //    老库的 gifts 还没有 visitor 列，那一句会直接抛、服务起不来。
 //    （新库反过来：这里 gifts 表还不存在，ALTER 无从谈起，所以要先判存在。）
 function migrate() {
-  const hasGiftsTable = db.prepare(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name='gifts'").get();
-  if (!hasGiftsTable) return;                     // 新库，schema.sql 里本来就带这列
-  const cols = db.prepare('PRAGMA table_info(gifts)').all().map(c => c.name);
-  if (!cols.includes('visitor')) {
+  const has = n => db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(n);
+  const cols = t => db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);
+  if (has('gifts') && !cols('gifts').includes('visitor')) {
     db.exec('ALTER TABLE gifts ADD COLUMN visitor TEXT');
     console.log('[migrate] gifts 补上 visitor 列（老赠礼留 NULL，不参与去重）');
   }
+  if (has('shares') && !cols('shares').includes('author')) {
+    db.exec('ALTER TABLE shares ADD COLUMN author TEXT');
+    console.log('[migrate] shares 补上 author 列（8-29 之前的老分享留 NULL，不参与解锁）');
+  }
+  // unlocks 表没有迁移问题：schema.sql 里 CREATE TABLE IF NOT EXISTS 会直接建出来。
 }
 migrate();
 db.exec(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
 
 const q = {
   insertShare: db.prepare(
-    'INSERT INTO shares (code, day, payload, created, expires) VALUES (?, ?, ?, ?, ?)'),
+    'INSERT INTO shares (code, day, payload, created, expires, author) VALUES (?, ?, ?, ?, ?, ?)'),
   getShare: db.prepare('SELECT * FROM shares WHERE code = ?'),
   countCode: db.prepare('SELECT 1 AS x FROM shares WHERE code = ?'),
   insertGift: db.prepare(
     'INSERT INTO gifts (code, seal, created, visitor) VALUES (?, ?, ?, ?)'),
   giftBy: db.prepare('SELECT seal FROM gifts WHERE code = ? AND visitor = ?'),
   giftsOf: db.prepare('SELECT seal, COUNT(*) AS n FROM gifts WHERE code = ? GROUP BY seal'),
+  // ---- 解锁名额（规则②）----
+  slotUsed: db.prepare('SELECT seal FROM unlocks WHERE author = ? AND visitor = ?'),
+  sealOwned: db.prepare('SELECT 1 AS x FROM unlocks WHERE author = ? AND seal = ?'),
+  insertUnlock: db.prepare(
+    'INSERT INTO unlocks (author, visitor, seal, created) VALUES (?, ?, ?, ?)'),
+  sealsOf: db.prepare('SELECT DISTINCT seal FROM unlocks WHERE author = ?'),
   countShares: db.prepare('SELECT COUNT(*) AS c FROM shares'),
   sweepGifts: db.prepare(
     'DELETE FROM gifts WHERE code IN (SELECT code FROM shares WHERE expires < ?)'),
@@ -121,20 +131,35 @@ const bucketTimer = setInterval(() => {
 bucketTimer.unref();
 
 // ---- 访客令牌 --------------------------------------------------------------
-// 「同一个人只能送一次」唯一能落地的形态。为什么长这样，schema.sql 顶部写了口径，
-// 这里只记实现上的三个决定：
+// 为什么长这样，schema.sql 顶部写了完整口径，这里只记实现上的几个决定：
 //
-// 🔴 **一个短码一串**（cookie 名 lsv_<短码>）。写成全站一串会省事得多，
-//    但那一刻服务端就能看出"同一个访客给这两天都送过" = 关系链，口径当场就塌。
+// 🔴🔴 **一个作者一串**（cookie 名 lsv_<author>），180 天 —— 8-29 从「一个短码一串」改的。
+//    非改不可的理由：解锁名额要跨分享统计。还按短码发令牌的话，
+//    A 每天换一条分享就等于换一个新身份，一周就能把六枚封蜡全刷开，规则等于没写。
+//    ⛔ 但**跨作者仍然不可关联**：cookie 名里带 author，给 A 的令牌和给 C 的令牌
+//       是两串无关的随机数。想省事改成全站一串之前，先回去读 schema.sql 那段。
+// 🔴 老分享没有 author（8-29 之前建的），回落到按短码发 —— 行为跟改之前一致，不会突然出错。
 // 🔴 **HttpOnly**：页面 JS 读不到也改不了。这不是防黑客，是防我自己 ——
 //    只要前端能碰，迟早有人拿它去做"记住这个用户"，那就变成身份了。
-// 🔴 Max-Age 跟短码 TTL 一样长：短码死了令牌也就没用了，不留残留。
 //
-// ⚠️ 换个浏览器 / 清了 cookie 依然能再送一次。这是**故意接受**的上限 ——
-//    再往上就只能存 ip，而那条是红线。用户 8-29 知情后拍的板。
-const COOKIE_MAX_AGE = Math.floor(TTL_MS / 1000);
-function visitorCookieName(code) { return 'lsv_' + code; }
+// ⚠️ 换个浏览器 / 清了 cookie 依然算新的人，能再解开一枚。这是**故意接受**的上限
+//    （路 B 的固有代价，用户 8-29 知情后拍的板）；再往上就只能存 ip，那条是红线。
+const COOKIE_MAX_AGE = 180 * 24 * 60 * 60;        // 180 天（用户 8-29 拍板）
+function visitorCookieName(row) { return 'lsv_' + (row.author || row.code); }
 function newVisitor() { return crypto.randomBytes(12).toString('hex'); }
+
+// ---- 解锁裁决（规则②：一个访客对一个作者，一辈子最多帮他解开一枚）------------
+// 🔴 这件事**必须服务端说了算**。以前是 App 自己数「收到过就解锁」，
+//    那样 A 自己给自己送六次就集齐了 —— 名额是跨分享的，客户端手上没有这个视野。
+// ⭐ 名额**只在真的解开一枚时才消耗**：送来的那枚 A 已经有了就不写这一行，
+//    名额留着，下次这个人送一枚新的还能解开。对朋友友好，也不给 A 多开口子。
+function tryUnlock(author, visitor, seal) {
+  if (!author || !visitor) return false;          // 老分享没有 author：不参与解锁
+  if (q.slotUsed.get(author, visitor)) return false;   // 这个人的名额用掉了
+  if (q.sealOwned.get(author, seal)) return false;     // 这一枚已经有了 → 名额留着
+  q.insertUnlock.run(author, visitor, seal, Date.now());
+  return true;
+}
 
 function readCookie(req, name) {
   const raw = req.headers.cookie;
@@ -147,22 +172,55 @@ function readCookie(req, name) {
   return null;
 }
 
-function visitorCookie(req, code, token) {
+function visitorCookie(req, row, token) {
   // Secure 只在确实走了 https 时加：本地 dev 是 http，加了浏览器会直接把这个
   // cookie 丢掉，而且**不报任何错** —— 表现就是"去重时灵时不灵"，极难查。
   const https = req.headers['x-forwarded-proto'] === 'https';
-  return `${visitorCookieName(code)}=${token}; Path=${COOKIE_PATH}; Max-Age=${COOKIE_MAX_AGE}`
+  return `${visitorCookieName(row)}=${token}; Path=${COOKIE_PATH}; Max-Age=${COOKIE_MAX_AGE}`
     + `; HttpOnly; SameSite=Lax` + (https ? '; Secure' : '');
+}
+
+// ---- 跨域 ------------------------------------------------------------------
+// 🔴 网页版是同源，所以这件事在浏览器里**永远复现不了**；原生壳是跨域的：
+//    iOS 的 origin 是 `capacitor://localhost`（capacitor.config.json 没设 iosScheme，
+//    默认就是 capacitor），Android 是 `https://localhost`（androidScheme: "https"）。
+//    往生产域发 `content-type: application/json` 的 POST，浏览器**必须先发预检 OPTIONS**；
+//    服务端没有这条路由就 404 → 预检失败 → net.js 的 call() 吞成 {status:0} →
+//    界面报「无法生成链接」。8-29 用户真机实测报出来的，8-28 后端上线时就带着这个毛病。
+//
+// ⛔ 不用 `*`：白名单就一行的事，能挡掉随便一个网页拿访客的浏览器来刷分享。
+// ⛔ **不发 Access-Control-Allow-Credentials**：原生壳用到的两个接口都不需要 cookie
+//    （A 建分享、A 回来收赠礼，都跟访客令牌无关）。发了等于把令牌暴露到跨域场景里，
+//    而且一旦带上 credentials，Allow-Origin 就再也不能用通配，出错方式更隐蔽。
+//    B 送章走的是**同源**的 /lifestamps/s/，跟 CORS 一点关系都没有。
+const ALLOW_ORIGINS = new Set([
+  'capacitor://localhost',   // iOS 壳
+  'https://localhost',       // Android 壳（androidScheme: "https"）
+  'http://localhost',        // Android 壳退回 http / 本地 livereload
+  'ionic://localhost',       // 老版本壳，留着不碍事
+]);
+
+function applyCors(req, res) {
+  // 🔴 `Vary: Origin` 不能省：响应内容随 Origin 变，缺了它任何一层缓存
+  //    都可能把给壳的响应喂给别人（或者反过来），而且是偶发的，最难查。
+  res.setHeader('Vary', 'Origin');
+  const o = req.headers.origin;
+  if (o && ALLOW_ORIGINS.has(o)) res.setHeader('Access-Control-Allow-Origin', o);
 }
 
 // ---- 过期清扫 --------------------------------------------------------------
 // 过期不是"看不到"，是**真删掉**。A 也拿不回来 —— 这是产品决定：
 // 一天收起来就是收起来了，不做归档。
+//
+// 🔴🔴 **绝不碰 unlocks 表**（用户 8-29 拍板：解锁记录不设过期）。
+//    它一跟着删，名额就复活 —— 同一个人隔七天再来又能帮 A 解开一枚，
+//    规则②当场就漏了，而且现象极隐蔽：只有长期用的人才会慢慢多出几枚封蜡。
+//    ⛔ 以后谁觉得"这张表会越长越大"想给它加过期，先回来读这一段。
 function sweep() {
   const now = Date.now();
   const g = q.sweepGifts.run(now).changes;
   const s = q.sweepShares.run(now).changes;
-  if (s || g) console.log(`[sweep] 清掉过期分享 ${s} 条、赠礼 ${g} 枚`);
+  if (s || g) console.log(`[sweep] 清掉过期分享 ${s} 条、赠礼 ${g} 枚（unlocks 不动）`);
 }
 sweep();
 const sweepTimer = setInterval(sweep, 60 * 60 * 1000);
@@ -221,6 +279,20 @@ function giftsOf(code) {
 async function route(req, res, pathname) {
   const m = req.method;
 
+  // 预检。204 + 不带 body；Max-Age 让浏览器把结果缓存一天，
+  // 否则每一次盖章分享都要多一个来回。
+  // ⚠️ 允许的头只写 content-type —— 我们就发这一个。写多了等于给自己开口子。
+  if (m === 'OPTIONS' && pathname.startsWith('/api/')) {
+    res.writeHead(204, {
+      'access-control-allow-methods': 'GET, POST, OPTIONS',
+      'access-control-allow-headers': 'content-type',
+      'access-control-max-age': '86400',
+      'content-length': '0',
+    });
+    res.end();
+    return;                                  // 不是 null = 已经回过了
+  }
+
   if (m === 'GET' && pathname === '/api/health') {
     return send(res, 200, {
       ok: true, shares: Number(q.countShares.get().c), ttlDays: TTL_MS / 86400000,
@@ -253,10 +325,25 @@ async function route(req, res, pathname) {
       note: String(b.note || '').slice(0, 140),
     });
 
+    // A 的匿名安装号。⚠️ 严格校验格式而不是照单全收：它会被拼进 cookie 名，
+    //    放任何字符进去就等于让客户端往响应头里注入东西。
+    //    没带（老版本 App）就存 null，那条分享不参与解锁，行为跟 8-29 之前一致。
+    const author = /^[0-9a-f]{16,64}$/.test(String(b.author || '')) ? b.author : null;
+
     const now = Date.now();
     const code = newCode();
-    q.insertShare.run(code, b.day, payload, now, now + TTL_MS);
+    q.insertShare.run(code, b.day, payload, now, now + TTL_MS, author);
     return send(res, 200, { code, expires: now + TTL_MS });
+  }
+
+  // A：我现在解开了哪几枚封蜡。
+  // 🔴 解锁归服务端裁决（名额是跨分享的，客户端没这个视野），App 只能来问。
+  //    ⚠️ 拿 author 就能查，这不算越权：查到的只是「这个安装号解开了哪几枚」，
+  //       没有谁送的、也没有哪天送的 —— 而 author 本来就只有 A 自己手上有。
+  if (m === 'GET' && pathname === '/api/unlocked') {
+    const author = new URL(req.url, 'http://x').searchParams.get('author') || '';
+    if (!/^[0-9a-f]{16,64}$/.test(author)) return send(res, 400, { error: 'author' });
+    return send(res, 200, { seals: q.sealsOf.all(author).map(r => r.seal) });
   }
 
   const mShare = pathname.match(/^\/api\/share\/([A-Za-z0-9]{1,12})$/);
@@ -274,9 +361,9 @@ async function route(req, res, pathname) {
     // 早一步发，页面就能在**第一屏**如实告诉 B「你已经留过了」，
     // 而不是让他挑完一枚章再被 409 打回来。
     const code = row.code;
-    let visitor = readCookie(req, visitorCookieName(code));
+    let visitor = readCookie(req, visitorCookieName(row));
     let cookie = null;
-    if (!visitor) { visitor = newVisitor(); cookie = visitorCookie(req, code, visitor); }
+    if (!visitor) { visitor = newVisitor(); cookie = visitorCookie(req, row, visitor); }
     const mineRow = q.giftBy.get(code, visitor);
 
     return send(res, 200, {
@@ -304,9 +391,9 @@ async function route(req, res, pathname) {
     //    隐私模式、拦 cookie 的浏览器、微信某些版本都可能一个 cookie 都不带回来；
     //    直接拒绝 = 正常人第一下就送不出去，那是拿防刷去伤好人。
     //    代价：每次都清 cookie 的人还能反复送 —— 那已经是主动对抗，不在这条需求里。
-    let visitor = readCookie(req, visitorCookieName(code));
+    let visitor = readCookie(req, visitorCookieName(row));
     let cookie = null;
-    if (!visitor) { visitor = newVisitor(); cookie = visitorCookie(req, code, visitor); }
+    if (!visitor) { visitor = newVisitor(); cookie = visitorCookie(req, row, visitor); }
 
     const mine = q.giftBy.get(code, visitor);
     // 409 而不是 4xx 里随便挑一个：前端拿它把界面切成"你留下的 xx"，
@@ -322,6 +409,9 @@ async function route(req, res, pathname) {
       const now = q.giftBy.get(code, visitor);
       return send(res, 409, { already: true, mine: now ? now.seal : seal, ...giftsOf(code) }, cookie);
     }
+    // 规则②：送出去之后看这一枚算不算「帮 A 解开一枚」。
+    // ⚠️ 结果不回给 B —— 他不该知道 A 的收藏进度，那是 A 的事。
+    tryUnlock(row.author, visitor, seal);
     return send(res, 200, { ok: true, mine: seal, ...giftsOf(code) }, cookie);
   }
 
@@ -361,6 +451,12 @@ function serveStatic(res, pathname) {
 
 // ---- 起 --------------------------------------------------------------------
 const server = http.createServer((req, res) => {
+  // 🔴 挂在最外面，**每一条响应都带上** —— 包括 404、400、429、410 和预检。
+  //    只给成功那条加 CORS 的话，失败时浏览器读不到真实状态码，
+  //    前端拿到的一律是"网络错误"，排查时会往完全错的方向找。
+  //    （writeHead 里传的头会跟这里 setHeader 的合并，所以下面各处不用改。）
+  applyCors(req, res);
+
   let pathname;
   try { pathname = new URL(req.url, 'http://x').pathname; }
   catch (_) { return send(res, 400, { error: 'bad url' }); }
@@ -395,4 +491,6 @@ server.listen(PORT, '127.0.0.1', () => {
 //    Windows 上直接 process.exit() 会撞 libuv 的
 //    「Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)」原生崩溃，
 //    结果是**不管测试过没过退出码都一样**，闸门等于没有。
-module.exports = { server, db };
+// sweep 导出来只为 test.js 能主动触发一次过期清扫，
+// 验「解锁记录不跟着删」——干等一小时那个定时器是不现实的。
+module.exports = { server, db, sweep };

@@ -104,9 +104,12 @@ function client() {
 
   const open1 = await bob.req('GET', '/api/share/' + oneCode);
   const setLine = (open1.setCookie || []).join(' ');
-  ok(setLine.includes('lsv_' + oneCode), '打开就发令牌，cookie 名带着短码：lsv_' + oneCode);
+  // ⚠️ 这条分享**没带 author**（模拟 8-29 之前的老分享 / 老版本 App），
+  //    所以令牌回落到按短码发。这条同时也在守那个回落分支还活着。
+  ok(setLine.includes('lsv_' + oneCode),
+     '没有 author 的老分享，令牌回落到按短码发：lsv_' + oneCode);
   ok(/HttpOnly/i.test(setLine), '令牌是 HttpOnly —— 页面 JS 碰不到，也就没法被拿去当身份用');
-  ok(/Max-Age=604800/.test(setLine), '令牌跟短码同寿：Max-Age 正好 7 天');
+  ok(/Max-Age=15552000/.test(setLine), '令牌活 180 天（8-29 从 7 天改的，解锁名额要跨分享数）');
   // ⚠️ 别把这条写成固定路径：dev 是 /api/、生产是 /lifestamps/api/（nginx 削掉了前缀），
   //    写死一个就等于在另一个环境里假红。要守的性质只有一条 —— **不许是 /**。
   const cookiePath = (setLine.match(/Path=([^;]*)/) || [])[1] || '';
@@ -131,14 +134,120 @@ function client() {
   const s3 = await carol.req('POST', `/api/share/${oneCode}/gift`, { seal: 'g_lamp' });
   ok(s3.status === 200 && s3.body.total === 2, '换一个浏览器能再送一次（已知且故意的上限）');
 
-  console.log('\n== 令牌不可跨短码关联（口径的地基）==');
-  const other = await j('POST', '/api/share', day);
-  await bob.req('GET', '/api/share/' + other.body.code);
-  const t1 = bob.jar.get('lsv_' + oneCode);
-  const t2 = bob.jar.get('lsv_' + other.body.code);
-  ok(t1 && t2 && t1 !== t2,
-     '同一个浏览器在两个短码下拿到的是两串不同的令牌 —— 服务端拼不出"同一个人给谁送过"');
-  ok(/^[0-9a-f]{24}$/.test(t1), '令牌是服务端现生成的随机数，不是从请求里算出来的');
+  console.log('\n== 令牌口径：按作者发，跨作者仍不可关联（8-29 路 B）==');
+  // ⚠️ 8-29 上午这里守的是「一个短码一串」，下午改成「一个作者一串」之后
+  //    那两条会假红。口径变了断言就得跟着变 —— 但**放松的边界要重新钉死**：
+  //    跨分享可关联是有意为之（解锁名额要跨分享数），跨作者不可关联是底线。
+  const AUTH_X = 'a'.repeat(32), AUTH_Y = 'b'.repeat(32);
+  const sx1 = await j('POST', '/api/share', { ...day, author: AUTH_X });
+  const sx2 = await j('POST', '/api/share', { ...day, day: '2026-08-30', author: AUTH_X });
+  const sy1 = await j('POST', '/api/share', { ...day, author: AUTH_Y });
+  const dan = client();
+  await dan.req('GET', '/api/share/' + sx1.body.code);
+  await dan.req('GET', '/api/share/' + sx2.body.code);
+  await dan.req('GET', '/api/share/' + sy1.body.code);
+  const tX = dan.jar.get('lsv_' + AUTH_X);
+  const tY = dan.jar.get('lsv_' + AUTH_Y);
+  ok(!!tX && !!tY, `cookie 名带的是作者号不是短码（lsv_${AUTH_X.slice(0, 6)}…）`);
+  ok(dan.jar.get('lsv_' + sx1.body.code) === undefined, '不再按短码发令牌了');
+  ok(tX !== tY, '⭐ 同一个浏览器面对两个不同作者，拿到的是两串不同的令牌 —— 跨作者拼不出关系链');
+  ok(/^[0-9a-f]{24}$/.test(tX), '令牌是服务端现生成的随机数，不是从请求里算出来的');
+  const setLine2 = ((await dan.req('GET', '/api/share/' + sy1.body.code)).setCookie || []).join(' ');
+  const anyAge = /Max-Age=15552000/.test(setLine2) || /Max-Age=15552000/.test(
+    ((await client().req('GET', '/api/share/' + sy1.body.code)).setCookie || []).join(' '));
+  ok(anyAge, '令牌活 180 天（用户 8-29 拍板；太短的话朋友会被反复当成新人）');
+
+  console.log('\n== 解锁名额：一个人一辈子只帮你解开一枚（规则②）==');
+  const AU = 'c'.repeat(32);
+  const un = async () => (await j('GET', '/api/unlocked?author=' + AU)).body.seals.sort();
+  const d1 = await j('POST', '/api/share', { ...day, author: AU });
+  const d2 = await j('POST', '/api/share', { ...day, day: '2026-08-30', author: AU });
+  const d3 = await j('POST', '/api/share', { ...day, day: '2026-08-31', author: AU });
+  ok((await un()).length === 0, '一开始一枚都没解开');
+
+  const f1 = client();                        // 朋友甲
+  await f1.req('POST', `/api/share/${d1.body.code}/gift`, { seal: 'g_candy' });
+  ok(JSON.stringify(await un()) === '["g_candy"]', '甲送了一颗糖 → 解开一颗糖');
+
+  await f1.req('POST', `/api/share/${d2.body.code}/gift`, { seal: 'g_paw' });
+  ok(JSON.stringify(await un()) === '["g_candy"]',
+     '🔴 甲换一天再送一枚新的，解不开了 —— 他的名额一辈子只有一个');
+
+  const f2 = client();                        // 朋友乙
+  const r2 = await f2.req('POST', `/api/share/${d2.body.code}/gift`, { seal: 'g_candy' });
+  ok(r2.status === 200, '乙照样送得出去（送和解锁是两回事，A 收得到）');
+  ok(JSON.stringify(await un()) === '["g_candy"]', '乙送的是重复的那枚 → 没解开新的');
+  await f2.req('POST', `/api/share/${d3.body.code}/gift`, { seal: 'g_lamp' });
+  ok(JSON.stringify(await un()) === '["g_candy","g_lamp"]',
+     '⭐ 乙的名额刚才没被浪费掉，这次送新的解开了 —— 名额只在真解开时才消耗');
+
+  const f3 = client();
+  await f3.req('POST', `/api/share/${d3.body.code}/gift`, { seal: 'g_coat' });
+  ok((await un()).length === 3, '第三个人来 → 第三枚。六枚 = 六个不同的人');
+
+  console.log('\n== A 自己送自己：最多一枚（规则③）==');
+  const ME = 'd'.repeat(32);
+  const myDays = [];
+  for (const dd of ['2026-08-20', '2026-08-21', '2026-08-22', '2026-08-23']) {
+    myDays.push((await j('POST', '/api/share', { ...day, day: dd, author: ME })).body.code);
+  }
+  const self = client();                      // A 自己那台设备（同一个 cookie 罐）
+  const seals = ['g_candy', 'g_paw', 'g_lamp', 'g_coat'];
+  for (let i = 0; i < myDays.length; i++) {
+    await self.req('POST', `/api/share/${myDays[i]}/gift`, { seal: seals[i] });
+  }
+  const mySeals = (await j('GET', '/api/unlocked?author=' + ME)).body.seals;
+  ok(mySeals.length === 1,
+     `🔴 自己给自己送了四天四枚，只解开 ${mySeals.length} 枚（这就是路 B 的上限：最多一枚）`);
+
+  console.log('\n== 解锁记录不跟着过期删（不然名额会复活）==');
+  srv.db.prepare('UPDATE shares SET expires = 1 WHERE author = ?').run(AU);
+  srv.sweep();
+  ok((await un()).length === 3, '短码全过期清掉之后，解开的三枚还在');
+  ok(srv.db.prepare('SELECT COUNT(*) c FROM shares WHERE author = ?').get(AU).c === 0,
+     '（确认分享确实被清了，否则上一条什么都没验到）');
+
+  console.log('\n== 跨域：原生壳能不能建分享（8-29 真机报的）==');
+  // 🔴 这一组是**唯一**能在本地拦住那个 bug 的闸门。
+  //    网页版同源，浏览器里怎么点都不会走 CORS —— 8-28 后端上线时带着这个毛病，
+  //    一路验到 8-29 都没人发现，直到用户在真机上点「发个链接给朋友」。
+  const IOS = 'capacitor://localhost';        // iOS 壳的 origin
+  const AND = 'https://localhost';            // Android 壳（androidScheme: "https"）
+  const raw = async (m, u, headers, body) => {
+    const r = await fetch(BASE + u, { method: m, headers, body });
+    return { status: r.status, h: n => r.headers.get(n) };
+  };
+
+  const pre = await raw('OPTIONS', '/api/share',
+    { origin: IOS, 'access-control-request-method': 'POST',
+      'access-control-request-headers': 'content-type' });
+  ok(pre.status === 204, `预检 OPTIONS 有人接（HTTP ${pre.status}，404 就是那个 bug）`);
+  ok(pre.h('access-control-allow-origin') === IOS, '预检回的 Allow-Origin 就是 iOS 壳那个 origin');
+  ok((pre.h('access-control-allow-headers') || '').includes('content-type'),
+     '预检放行 content-type（不放行的话 JSON 请求发不出去）');
+
+  const cors = await raw('POST', '/api/share',
+    { origin: IOS, 'content-type': 'application/json' }, JSON.stringify(day));
+  ok(cors.status === 200 && cors.h('access-control-allow-origin') === IOS,
+     '真请求也带 Allow-Origin（只在预检上加，响应照样被浏览器扔掉）');
+  ok((cors.h('vary') || '').toLowerCase().includes('origin'),
+     'Vary: Origin 在 —— 少了它缓存会把给壳的响应喂给别人');
+  ok(cors.h('access-control-allow-credentials') === null,
+     '⭐ 不发 Allow-Credentials：原生壳这两个接口不需要 cookie，别把访客令牌暴露到跨域');
+
+  const andr = await raw('POST', '/api/share',
+    { origin: AND, 'content-type': 'application/json' }, JSON.stringify(day));
+  ok(andr.h('access-control-allow-origin') === AND, 'Android 壳那个 origin 也在白名单里');
+
+  const evil = await raw('POST', '/api/share',
+    { origin: 'https://evil.example', 'content-type': 'application/json' }, JSON.stringify(day));
+  ok(evil.h('access-control-allow-origin') === null,
+     '⭐ 白名单外的站点拿不到 Allow-Origin（这条挂了说明写成了 `*`）');
+
+  // 失败响应也得带 CORS，否则前端只能看到"网络错误"，永远查不到真实原因
+  const bad = await raw('GET', '/api/share/zzzzzz', { origin: IOS });
+  ok(bad.status === 410 && bad.h('access-control-allow-origin') === IOS,
+     '失败响应（410）也带 CORS —— 不然壳里看到的一律是"网络错误"');
 
   console.log('\n== 不存在 / 过期 ==');
   const miss = await j('GET', '/api/share/zzzzzz');
@@ -163,8 +272,12 @@ function client() {
   const banned = cols.filter(c => /ip|agent|device|user|owner|uid|token|nick|name/.test(c));
   ok(banned.length === 0, '库里没有任何身份列（实际列：' + cols.join(',') + '）');
   // 8-29 唯一的例外，白名单式放行 —— 它凭什么不算身份，三条理由写在 schema.sql 顶部，
-  // 而那三条本身由上面「令牌不可跨短码关联」那两条断言守着。
-  ok(cols.includes('visitor'), 'gifts 有 visitor 列（一码一串的随机令牌，理由见 schema.sql）');
+  // 而那几条本身由上面「令牌口径」那一组断言守着（尤其是跨作者不可关联那条）。
+  ok(cols.includes('visitor'), 'gifts 有 visitor 列（按作者发的随机令牌，理由见 schema.sql）');
+  ok(cols.includes('author'), 'shares 有 author 列（A 的匿名安装号，不是账号）');
+  const uc = srv.db.prepare('PRAGMA table_info(unlocks)').all().map(c => c.name);
+  ok(uc.length > 0 && !uc.some(c => /ip|agent|device|nick/.test(c)),
+     'unlocks 表里也没有任何身份列（实际列：' + uc.join(',') + '）');
   const visitors = srv.db.prepare(
     'SELECT DISTINCT visitor FROM gifts WHERE visitor IS NOT NULL').all().map(r => r.visitor);
   ok(visitors.length > 0 && visitors.every(v => /^[0-9a-f]{24}$/.test(v)),

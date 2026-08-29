@@ -1551,9 +1551,23 @@ function renderCollection() {
     }));
   document.querySelectorAll('#page-collection .dk-cell[data-hid]').forEach(el =>
     el.addEventListener('click', () => {
-      const h = hiddenById[el.dataset.hid];
-      const d = new Date(store.hidden[h.id]);
-      toast(COPY.unlockedAt.replace('{m}', d.getMonth() + 1).replace('{d}', d.getDate()).replace('{name}', h.name));
+      const id = el.dataset.hid;
+      // 🔴 这一栏从 8-28 起装**两类**：条件解锁的隐藏章 + 只能由朋友送的封蜡。
+      //    只查 hiddenById 的话，点封蜡拿到的是 undefined，下一行当场抛
+      //    「undefined is not an object」——8-29 用户在真机上点出来的。
+      //    ⚠️ 它埋了一整天没暴露，因为格子要**已解锁**才带 data-hid、才有处理器，
+      //       而封蜡要真收到过一枚才会解锁。这类"要先满足条件才点得到"的路径，
+      //       光靠自己点页面是走不到的。
+      //    ⭐ stampById 里本来就含封蜡（带 kind:'seal'），不用另开一张表。
+      const h = hiddenById[id] || stampById[id];
+      const ts = store.hidden[id];
+      // 兜底：以后这一栏再混进第三类东西，最坏也只是点了没反应，不会白屏。
+      if (!h || !ts) return;
+      const d = new Date(ts);
+      // 🔴 封蜡必须说「收到」，不能说「解锁」——它是别人给你的，不是你解开的。
+      //    说成后者，这枚章存在的全部意义就没了（跟 showGiftQueue 那条红线同源）。
+      const tpl = h.kind === 'seal' ? COPY.giftGotAt : COPY.unlockedAt;
+      toast(tpl.replace('{m}', d.getMonth() + 1).replace('{d}', d.getDate()).replace('{name}', h.name));
     }));
 }
 

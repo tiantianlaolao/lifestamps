@@ -1,0 +1,76 @@
+<!doctype html><meta charset="utf-8"><title>抽屉里每个格子都点一遍</title>
+<!-- 8-29 用户真机报：抽屉里点已收到的封蜡 → 「undefined is not an object」。
+     根因：隐藏章那一栏从 8-28 起装两类（隐藏章 + 封蜡），
+     而点击处理器只查 hiddenById，封蜡查出来是 undefined。
+
+     🔴 它埋了一整天没被发现，因为**格子要已解锁才带 data-hid、才有处理器**，
+        而封蜡要真收到过一枚才会解锁 —— 自己点页面永远走不到那个状态。
+        这一页就是干这个的：**先把状态摆好，再把每一个可点的格子都点一遍**。
+
+     判据 = 一次异常都不许有。不看 toast 内容对不对（那是文案的事），
+     只看点下去会不会炸 —— 这类 bug 的代价是整页白屏，不是显示错。
+
+     用法：cd app && python -m http.server 8773
+           开 http://127.0.0.1:8773/dev/_drawerclick.html -->
+<style>html,body{margin:0;background:#2a2724;color:#eee;font:12.5px/1.8 ui-monospace}
+ .w{padding:10px 16px}.FAIL{color:#ff7a6b;font-weight:700}.PASS{color:#7fd97f}
+ h3{color:#9cf;font-size:13px;margin:12px 0 4px} iframe{border:1px solid #555;margin:8px 16px}</style>
+<div class="w" id="o"></div><iframe id="f" width="390" height="700"></iframe>
+<script>
+const o=document.getElementById('o'),f=document.getElementById('f');
+let P=0,F=0;
+const ok=(c,m)=>{c?P++:F++;o.insertAdjacentHTML('beforeend',
+  `<div class="${c?'PASS':'FAIL'}">${c?'PASS':'FAIL'}　${m}</div>`)};
+const h3=t=>o.insertAdjacentHTML('beforeend',`<h3>${t}</h3>`);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+(async()=>{
+  // 先把"已经收到过封蜡、也解开过隐藏章"这个状态摆好，再进抽屉。
+  // ⚠️ 得在 App 起来之前写 localStorage，否则会被它自己的初始化盖掉。
+  h3('摆状态：收到过 3 枚封蜡 + 解开过 1 枚隐藏章 h_moyu');
+  const hidden = { g_candy: Date.now()-864e5, g_lamp: Date.now()-2*864e5,
+                   g_paw: Date.now()-3*864e5, h_moyu: Date.now()-4*864e5 };
+  localStorage.setItem('lifestamps_hidden', JSON.stringify(hidden));
+  ok(localStorage.getItem('lifestamps_hidden')!==null,
+     '写进 localStorage（前缀 lifestamps_，跟 store.js 的 save() 一致）');
+
+  f.src='/index.html?demo=1&skipob=1&book=open&tab=collection';
+  await new Promise(r=>{f.onload=r}); await sleep(2800);
+  const w=f.contentWindow, d=f.contentDocument;
+
+  // 抓 iframe 里的任何未捕获异常
+  const errs=[];
+  w.addEventListener('error', e => errs.push(String(e.message||e)));
+  w.addEventListener('unhandledrejection', e => errs.push(String(e.reason)));
+
+  h3('把隐藏章那一栏展开');
+  const fold=[...d.querySelectorAll('[data-fold]')].find(e=>/隐藏章/.test(e.textContent));
+  ok(!!fold,'找得到「隐藏章」那一栏');
+  if(fold){ fold.click(); await sleep(700); }
+
+  const cells=[...d.querySelectorAll('#page-collection .dk-cell[data-hid]')];
+  ok(cells.length>0, `这一栏里可点的格子有 ${cells.length} 个`);
+  // 🔴 判据得能区分：如果一个封蜡格子都没有，这一轮什么都没验到
+  const sealCells=cells.filter(c=>c.querySelector('.face.seal'));
+  ok(sealCells.length>0, `其中封蜡格子 ${sealCells.length} 个（0 的话这一轮证明不了任何事）`);
+
+  h3('每一个都点一遍');
+  for(const c of cells){ c.click(); await sleep(120); }
+  await sleep(400);
+  ok(errs.length===0, errs.length===0
+     ? `全部点完，一次异常都没有（点了 ${cells.length} 个）`
+     : `🔴 抛异常了：${errs.join(' / ')}`);
+
+  // 顺带确认封蜡说的是「收到」不是「解锁」——这条红线值得钉住
+  h3('封蜡的话必须说「收到」');
+  errs.length=0;
+  sealCells[0].click(); await sleep(300);
+  const toast=d.getElementById('toast');
+  const txt=toast?toast.textContent:'';
+  ok(/收到/.test(txt) && !/解锁/.test(txt),
+     `点封蜡弹的是：「${txt}」`);
+
+  h3(`合计　通过 ${P}　失败 ${F}`);
+  document.title=F?`FAIL ${F}`:`PASS ${P}`;
+})();
+</script>

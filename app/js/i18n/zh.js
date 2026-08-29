@@ -100,6 +100,9 @@ export const ZH = {
   colDrawer: '抽屉',
   firstFoundAt: '首次发现 {m}月{d}日 · 一共 {n} 次',
   unlockedAt: '{m}月{d}日 解锁 · {name}',
+  // 🔴 封蜡在抽屉里点开时用这句，不能用上面那句：
+  //    「解锁」是你自己挣来的，「收到」是别人给你的 —— 这枚章的意义全在后者。
+  giftGotAt: '{m}月{d}日 收到 · {name}',
   foldEmpty: '这一类还没有盖过的章。',
   flipShare: '分享', flipPrev: '‹ 昨天', flipNext: '明天 ›',
   flipEditNote: '改一改这天的话', flipAddNote: '给这天补一句',

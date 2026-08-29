@@ -1,0 +1,73 @@
+<!doctype html><meta charset="utf-8"><title>盖章看得见吗</title>
+<!-- 8-29 用户报「B 选章送的时候没有盖章这个动作了」。
+     查下来动作一直在跑，问题是**它发生在屏幕外**：
+     手机上要往下滚 400 多像素才够得着那六枚封蜡，这时纸早滚出去了，
+     封蜡落在视口上方 —— 390×560 实测纸 top=-316、封蜡 top=-56。
+     修法：点下去先把纸滚回来，等滚停了再落章，落完 620ms 才展开"你留下的"。
+
+     🔴 这一页每一轮都自己新建一条分享。
+        多个 iframe 共用同一份 localStorage **和同一个 cookie 罐**，
+        用同一个短码跑第二轮，会被第一轮的「已经送过」挡住，
+        第二轮直接变成"没落上封蜡"——看着像产品坏了，其实是量具坏了（8-29 栽过）。
+     🔴 判据要求封蜡**中心**在视口内。只判"有没有一像素露出来"太松，
+        第一版就把 top=-56 的那一枚（整枚都在上面）判成了"看得见"。
+
+     用法：cd server && LS_STATIC=../app LS_PORT=8799 LS_DB=<临时> node server.js
+           开 http://127.0.0.1:8799/dev/_waxview.html -->
+<style>html,body{margin:0;background:#2a2724;color:#eee;font:12.5px/1.8 ui-monospace}
+ .w{padding:10px 14px}.FAIL{color:#ff7a6b;font-weight:700}.PASS{color:#7fd97f}
+ h3{color:#9cf;font-size:13px;margin:14px 0 4px}
+ iframe{border:1px solid #555;background:#fff;margin:0 8px}</style>
+<div class="w" id="o"></div><div id="fr" style="display:flex"></div>
+<script>
+const o=document.getElementById('o'),fr=document.getElementById('fr');
+let P=0,F=0;
+const line=s=>o.insertAdjacentHTML('beforeend','<div>'+s+'</div>');
+const ok=(c,m)=>{c?P++:F++;line(`<span class="${c?'PASS':'FAIL'}">${c?'PASS':'FAIL'}</span>　${m}`)};
+const h3=t=>o.insertAdjacentHTML('beforeend',`<h3>${t}</h3>`);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+async function newShare(){
+  const r=await fetch('/api/share',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({day:'2026-08-29',verdict:'v_coffee_night',note:'验盖章看不看得见',
+      stamps:[{id:'milktea',ink:'zhu',x:28,y:22},{id:'read',ink:'mo',x:64,y:44},
+              {id:'stayup',ink:'mo',x:38,y:70}]})});
+  return (await r.json()).code;
+}
+
+async function run(w,h){
+  h3(`${w}×${h}（手机去掉地址栏后的可用高度）`);
+  const code=await newShare();
+  const f=document.createElement('iframe');f.width=w;f.height=h;f.src='/s/?c='+code;
+  fr.appendChild(f);
+  await new Promise(r=>{f.onload=r}); await sleep(1500);
+  const d=f.contentDocument,win=f.contentWindow;
+  const btn=d.querySelector('#give [data-seal]');
+  if(!btn){ok(false,'找不到可点的封蜡，这一轮没验到');return;}
+
+  // 模拟真人：先把要点的那枚滚进视野
+  btn.scrollIntoView({block:'center'});
+  await sleep(300);
+  const sy0=win.scrollY;
+  const paperBefore=d.getElementById('paper').getBoundingClientRect();
+  line(`点之前：scrollY=${Math.round(win.scrollY)}　纸 top=${Math.round(paperBefore.top)}（这就是"够得着章"时纸的位置）`);
+
+  btn.click();
+  await sleep(2600);                       // 等滚回来 + 落章 + 展开
+  const wax=d.querySelector('#paper .f-wax');
+  if(!wax){ok(false,'纸上没有封蜡');return;}
+  const r=wax.getBoundingClientRect();
+  const cy=r.top+r.height/2;
+  line(`盖完：scrollY=${Math.round(win.scrollY)}　封蜡 top=${Math.round(r.top)} 中心 y=${Math.round(cy)}`);
+  // 🔴 这条是判官的自检：纸如果压根没滚回来，下面那条"看得见"就只是封蜡随机落点
+  //    碰巧撞上了，不是修复起了作用。8-29 第一版就是这么给出两个假 PASS 的
+  //    （无头不发 rAF 帧 → smooth 滚动一步没走，scrollY 三轮完全没变）。
+  ok(Math.round(win.scrollY)!==Math.round(sy0), `纸真的滚回来了（${Math.round(sy0)} → ${Math.round(win.scrollY)}）`);
+  ok(cy>0 && cy<h, cy>0&&cy<h ? `封蜡中心在视口里（0 < ${Math.round(cy)} < ${h}）—— 盖下去这一下看得见`
+                              : `🔴 封蜡中心在视口外（${Math.round(cy)}，视口 0~${h}）—— 用户看不见盖章`);
+  // 顺带确认"你留下的"那一屏也出来了
+  ok(!d.getElementById('after').classList.contains('f-hide'),'落章之后「你留下的」那一屏也展开了');
+}
+(async()=>{ for(const s of [[390,560],[375,500],[430,640]]) await run(...s);
+  h3(`合计　通过 ${P}　失败 ${F}`); document.title=F?`FAIL ${F}`:`PASS ${P}`; })();
+</script>

@@ -1,0 +1,116 @@
+<!doctype html><meta charset="utf-8"><title>朋友端·能不能滚</title>
+<!-- 8-29 用户实测报的 bug：分享链接打开后**滚不动，下面内容看不到**。
+     根子是 app/s/ link 了 app.css，而 app.css 的 `html,body{height:100%;overflow:hidden}`
+     是给原生壳写的（文档能滚 → WKWebView 外面的 UIScrollView 抢手势）。
+     s/ 这一页没有 main，body 自己就是滚动容器，被那条一刀切死。
+
+     🔴 这个检查必须**真的去滚一下看 scrollY 动没动**。
+        只量 scrollHeight > clientHeight 是不够的 —— overflow:hidden 的时候
+        scrollHeight 照样比 clientHeight 大，那个判据两种状态下读数一样 = 假绿灯。
+     🔴 而且要先确认"内容确实超过一屏"，否则滚不动是因为没东西可滚，
+        这一轮什么都没证明，得报「无从判断」而不是 PASS。
+
+     用法（要跟 s/ 同源，所以走本地服务而不是 file://）：
+        cd server && LS_STATIC=../app LS_PORT=8799 LS_DB=<临时> node server.js
+        然后开 http://127.0.0.1:8799/dev/_scrollcheck.html?c=<短码>
+     手机尺寸取的是常见的窄屏，够短才验得出溢出。 -->
+<style>
+  html,body{margin:0;background:#2a2724;color:#eee;font:13px/1.7 ui-monospace,Consolas,monospace}
+  .row{display:flex;gap:14px;padding:10px 14px;align-items:flex-start;flex-wrap:wrap}
+  .box{border:1px solid #555;padding:8px 10px;border-radius:6px;min-width:250px}
+  h2{font-size:13px;margin:0 0 6px;color:#9cf}
+  .PASS{color:#7fd97f}.FAIL{color:#ff7a6b;font-weight:700}.SKIP{color:#e8c56b}
+  iframe{border:1px solid #555;background:#fff}
+</style>
+<div class="row" id="out"></div>
+<div class="row" id="frames"></div>
+<script>
+const code = new URLSearchParams(location.search).get('c') || '';
+// 三个真机常见尺寸。最矮那个是 iPhone SE 一类，最容易暴露溢出。
+const SIZES = [[430, 932], [390, 844], [375, 667]];
+const out = document.getElementById('out');
+const frames = document.getElementById('frames');
+let pass = 0, fail = 0, skip = 0;
+
+function line(cls, txt) { return `<div class="${cls}">${cls}　${txt}</div>`; }
+
+async function check([w, h], broken) {
+  const f = document.createElement('iframe');
+  f.width = w; f.height = h;
+  f.src = '/s/?c=' + encodeURIComponent(code);
+  frames.appendChild(f);
+  await new Promise(r => { f.onload = r; });
+  // 章是 SVG 滤镜，给它一点时间落定，否则高度还在长
+  await new Promise(r => setTimeout(r, 900));
+
+  const win = f.contentWindow, doc = f.contentDocument;
+  // 🔴 判官自检：把 app.css 那条老规则原样注回去，人为造出 8-29 那个 bug。
+  //    这一格**期望是滚不动**。它要是也绿了，说明上面九条根本不是在验滚动，
+  //    只是在永远说 PASS —— 那种判据比没有更糟。
+  if (broken) {
+    const s = doc.createElement('style');
+    s.textContent = 'html,body{height:100%!important;overflow:hidden!important}';
+    doc.head.appendChild(s);
+    await new Promise(r => setTimeout(r, 120));
+  }
+  const el = doc.scrollingElement || doc.documentElement;
+  const cs = n => getComputedStyle(n).overflowY;
+  const box = document.createElement('div');
+  box.className = 'box';
+  let html = `<h2>${w}×${h}${broken ? '　判官自检（期望红）' : ''}</h2>`;
+
+  if (broken) {
+    win.scrollTo(0, 99999);
+    await new Promise(r => setTimeout(r, 120));
+    const y = win.scrollY || el.scrollTop || 0;
+    html += `<div>html.overflowY=${cs(doc.documentElement)}　scrollY=${Math.round(y)}</div>`;
+    if (y === 0) { html += line('PASS', '注回老规则后确实滚不动 → 判官分得清好坏'); pass++; }
+    else { html += line('FAIL', '🔴 造了 bug 它还说能滚 —— 上面那些 PASS 全都不算数'); fail++; }
+    box.innerHTML = html; out.appendChild(box); return;
+  }
+
+  const over = el.scrollHeight - el.clientHeight;
+  html += `<div>scrollH ${el.scrollHeight} / clientH ${el.clientHeight}　溢出 ${over}px</div>`;
+  html += `<div>html.overflowY=${cs(doc.documentElement)}　body.overflowY=${cs(doc.body)}</div>`;
+
+  if (over <= 2) {
+    // 内容没超过一屏 —— 这一轮证明不了任何事，别记成 PASS
+    html += line('SKIP', '内容没超过一屏，这个尺寸什么都没验到'); skip++;
+  } else {
+    // 🔴 判据本体：真去滚，再读回来。overflow:hidden 时这里恒为 0。
+    win.scrollTo(0, 99999);
+    await new Promise(r => setTimeout(r, 120));
+    const y = win.scrollY || el.scrollTop || 0;
+    if (y > 0) { html += line('PASS', `滚得动，滚到了 ${Math.round(y)}px`); pass++; }
+    else { html += line('FAIL', '滚不动（scrollY 恒 0）——下面的内容用户永远看不到'); fail++; }
+
+    // 底部那句「不用登录…」是全页最后一个元素：它得真能进到视口里
+    const foot = doc.querySelector('.f-foot');
+    if (!foot) { html += line('FAIL', '找不到 .f-foot，页面结构变了'); fail++; }
+    else {
+      const r = foot.getBoundingClientRect();
+      if (r.bottom <= h + 4) { html += line('PASS', `页脚滚到视口内了（bottom ${Math.round(r.bottom)} ≤ ${h}）`); pass++; }
+      else { html += line('FAIL', `页脚仍在视口外（bottom ${Math.round(r.bottom)} > ${h}）`); fail++; }
+    }
+
+    // 下载入口必须**送之前**就存在（8-29 用户："这样比较顺"）
+    const cta = doc.querySelector('#getin .f-cta');
+    if (cta) { html += line('PASS', '没送之前就有「也开始记你的」入口'); pass++; }
+    else { html += line('FAIL', '送之前找不到下载入口'); fail++; }
+  }
+  box.innerHTML = html;
+  out.appendChild(box);
+}
+
+(async () => {
+  if (!code) { out.innerHTML = line('FAIL', '没给 ?c=短码'); return; }
+  for (const s of SIZES) await check(s);
+  await check([390, 844], true);          // 判官自检，放最后
+  const sum = document.createElement('div');
+  sum.className = 'box';
+  sum.innerHTML = `<h2>合计</h2><div class="${fail ? 'FAIL' : 'PASS'}">`
+    + `通过 ${pass}　失败 ${fail}　跳过 ${skip}</div>`;
+  out.appendChild(sum);
+  document.title = fail ? `FAIL ${fail}` : `PASS ${pass}`;
+})();
+</script>

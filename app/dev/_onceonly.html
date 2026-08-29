@@ -1,0 +1,82 @@
+<!doctype html><meta charset="utf-8"><title>朋友端·只能送一次</title>
+<!-- 8-29 用户报的：分享链接打开多次，每次都能再送一枚。
+     修法是服务端发一码一串的 HttpOnly 令牌（见 server/schema.sql 顶部的口径）。
+
+     🔴 这一页必须在**浏览器里**跑，不能拿 node 的 fetch 代替：
+        node 的 fetch 没有 cookie 罐，什么都不带回去，服务端每次都当新访客
+        —— 去重相关的断言在那边永远是绿的，最坏的一种假闸门。
+        （server/test.js 里为此专门手写了一个 cookie 罐，那是另一条防线。）
+
+     🔴 最后一条才是要害：**先把 localStorage 清掉再刷新**。
+        不清的话，页面照样会显示"你留下的"，但那可能只是旧的自律逻辑在起作用，
+        这一轮就完全没验到服务端。判据必须能区分"服务端拦住了"和"本地记着呢"。
+
+     用法（要跟 s/ 同源）：
+        cd server && LS_STATIC=../app LS_PORT=8799 LS_DB=<临时> node server.js
+        开 http://127.0.0.1:8799/dev/_onceonly.html -->
+<style>
+  html,body{margin:0;background:#2a2724;color:#eee;font:13px/1.8 ui-monospace,Consolas,monospace}
+  .wrap{padding:12px 16px}
+  .PASS{color:#7fd97f}.FAIL{color:#ff7a6b;font-weight:700}
+  h2{font-size:13px;color:#9cf;margin:16px 0 4px}
+  iframe{border:1px solid #555;background:#fff;margin-top:10px}
+</style>
+<div class="wrap" id="out"></div>
+<iframe id="f" width="390" height="700"></iframe>
+<script>
+const out = document.getElementById('out');
+const f = document.getElementById('f');
+let pass = 0, fail = 0;
+const ok = (c, m) => { c ? pass++ : fail++; out.insertAdjacentHTML('beforeend',
+  `<div class="${c ? 'PASS' : 'FAIL'}">${c ? 'PASS' : 'FAIL'}　${m}</div>`); };
+const h2 = t => out.insertAdjacentHTML('beforeend', `<h2>${t}</h2>`);
+const api = (m, u, b) => fetch('/api' + u, {
+  method: m, headers: b ? { 'content-type': 'application/json' } : {},
+  body: b ? JSON.stringify(b) : undefined,
+}).then(async r => ({ status: r.status, body: await r.json().catch(() => null) }));
+
+function load(code) {
+  return new Promise(r => { f.onload = () => setTimeout(r, 900); f.src = '/s/?c=' + code; });
+}
+
+(async () => {
+  h2('准备');
+  const day = { day: '2026-08-29', verdict: 'v_coffee_night', note: '本地自测',
+    stamps: [{ id: 'milktea', ink: 'zhu', x: 30, y: 30 }, { id: 'read', ink: 'mo', x: 60, y: 60 }] };
+  const made = await api('POST', '/share', day);
+  const code = made.body.code;
+  ok(made.status === 200 && !!code, '建了一条分享：' + code);
+
+  h2('第一次打开');
+  await load(code);
+  const d1 = f.contentDocument;
+  ok(d1.querySelectorAll('#give .f-seal').length === 6, '六枚封蜡都摆着，随便挑');
+  ok(d1.querySelector('#getin .f-cta'), '还没送就已经有下载入口了');
+
+  h2('送一枚，然后再送一枚');
+  const g1 = await api('POST', `/share/${code}/gift`, { seal: 'g_candy' });
+  ok(g1.status === 200 && g1.body.total === 1, '第一次送出去了，total=1');
+  const g2 = await api('POST', `/share/${code}/gift`, { seal: 'g_paw' });
+  ok(g2.status === 409, '同一个浏览器再送 → 409（用户报的就是这里）');
+  ok(g2.body.total === 1, '🔴 挡住之后 total 还是 1，没被刷上去');
+  ok(g2.body.mine === 'g_candy', '回的是他当初留的那一枚');
+
+  h2('清掉 localStorage 再刷新（这条才证明是服务端在拦）');
+  try { f.contentWindow.localStorage.removeItem('lifestamps_sent_' + code); } catch (_) {}
+  await load(code);
+  const d2 = f.contentDocument;
+  // 本地那份确实清干净了，否则下面这条证明不了任何事
+  let leftover = null;
+  try { leftover = f.contentWindow.localStorage.getItem('lifestamps_sent_' + code); } catch (_) {}
+  const seals = d2.querySelectorAll('#give .f-seal');
+  ok(seals.length === 1, `刷新后只剩他留的那一枚（实际 ${seals.length} 枚）`);
+  ok(/你留下的/.test(d2.querySelector('#give .f-sect-t').textContent), '标题变成「你留下的」');
+  ok(!d2.querySelector('#after').classList.contains('f-hide'), '「你留下的是…」那一屏直接就在');
+  ok(leftover === 'g_candy',
+     '⭐ 页面是从服务端拿回 mine 之后**自己把 localStorage 写回去的**'
+     + `（清空后又变成 ${leftover}）—— 说明拦住它的是服务端，不是本地那份缓存`);
+
+  h2(`合计　通过 ${pass}　失败 ${fail}`);
+  document.title = fail ? `FAIL ${fail}` : `PASS ${pass}`;
+})().catch(e => { ok(false, '自己崩了：' + (e && e.stack || e)); });
+</script>

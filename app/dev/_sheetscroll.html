@@ -1,0 +1,108 @@
+<!doctype html><meta charset="utf-8"><title>分享弹层·能不能滚</title>
+<!-- 8-29 用户报：「点击分享生成的页面也有不能滚动的问题」。
+     .overlay 是 position:absolute;inset:0 的 flex 列，**没有 overflow-y**，
+     而且 justify-content:center —— 内容一旦比屏幕高，
+     ①滚不动 ②顶部会被吃掉（居中溢出的经典症状，滚都滚不回去）。
+     🔴 要量的是**内容真的变高之后**的状态：
+        日卡弹层空手打开时卡被 max-height:56dvh 缩着，不溢出，什么都验不到；
+        点了「发个链接给朋友」多出一块之后才会溢出。
+     用法：cd server && LS_STATIC=../app LS_PORT=8799 LS_DB=<临时> node server.js
+           开 http://127.0.0.1:8799/dev/_sheetscroll.html -->
+<style>
+ html,body{margin:0;background:#2a2724;color:#eee;font:12.5px/1.7 ui-monospace,Consolas,monospace}
+ .wrap{padding:10px 14px}.PASS{color:#7fd97f}.FAIL{color:#ff7a6b;font-weight:700}.SKIP{color:#e8c56b}
+ h2{font-size:13px;color:#9cf;margin:14px 0 4px}
+ .row{display:flex;gap:12px;padding:0 14px 14px}iframe{border:1px solid #555;background:#fff}
+</style>
+<div class="wrap" id="out"></div><div class="row" id="fr"></div>
+<script>
+const out=document.getElementById('out'),fr=document.getElementById('fr');
+let P=0,F=0,S=0;
+const mark=(k,m)=>{k==='PASS'?P++:k==='FAIL'?F++:S++;
+  out.insertAdjacentHTML('beforeend',`<div class="${k}">${k}　${m}</div>`)};
+const ok=(c,m)=>mark(c?'PASS':'FAIL',m);
+const h2=t=>out.insertAdjacentHTML('beforeend',`<h2>${t}</h2>`);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+async function probe(label,url,w,h,after){
+  h2(`${label}　${w}×${h}`);
+  const f=document.createElement('iframe');f.width=w;f.height=h;f.src=url;fr.appendChild(f);
+  await new Promise(r=>{f.onload=r}); await sleep(3200);
+  const d=f.contentDocument;
+  // 🔴 after() 可能会关掉一个弹层再开另一个，所以**必须在 after 之后再取**。
+  //    先取会量到那个已经关掉的弹层：scrollH/clientH 全是 0、留白算出负数，
+  //    看着像产品坏了，其实是量具坏了（8-29 当场栽了一次）。
+  if(after){
+    if(!d.querySelector('.overlay')){mark('SKIP','页面还没起来');return;}
+    await after(d); await sleep(2500);
+  }
+  const ov=d.querySelector('.overlay.show');
+  if(!ov){mark('SKIP','没有弹层是打开的，这一轮什么都没验到');return;}
+  const cs=getComputedStyle(ov);
+  const over=ov.scrollHeight-ov.clientHeight;
+  out.insertAdjacentHTML('beforeend',
+    `<div>#${ov.id}　overflowY=${cs.overflowY}　justify=${cs.justifyContent}　`
+    +`scrollH ${ov.scrollHeight} / clientH ${ov.clientHeight}　纵向溢出 ${over}px</div>`);
+
+  // 横向：天气那一行在窄屏上是不是被切了
+  const wr=ov.querySelector('.weather-row');
+  if(wr){
+    const xo=wr.scrollWidth-wr.clientWidth;
+    const r=wr.getBoundingClientRect(), o=ov.getBoundingClientRect();
+    ok(xo<=1 && r.left>=o.left-1 && r.right<=o.right+1,
+       `天气行 scrollW ${wr.scrollWidth}/clientW ${wr.clientWidth}，`
+       +`left ${Math.round(r.left)}(弹层 ${Math.round(o.left)}) right ${Math.round(r.right)}(弹层 ${Math.round(o.right)})`);
+  }
+
+  if(over<=2){
+    // 🔴 把 justify-content:center 换成首尾 auto margin，真正的回归风险是
+    //    "有富余时还居不居中"。不溢出的这几轮必须验这条，否则等于没验。
+    const cs2=getComputedStyle(ov);
+    const pt=parseFloat(cs2.paddingTop), pb=parseFloat(cs2.paddingBottom);
+    const o=ov.getBoundingClientRect();
+    const a=ov.firstElementChild.getBoundingClientRect();
+    const z=ov.lastElementChild.getBoundingClientRect();
+    const gT=a.top-o.top-pt, gB=o.bottom-z.bottom-pb;
+    ok(Math.abs(gT-gB)<=2, `没溢出时仍然垂直居中（上留白 ${Math.round(gT)} / 下留白 ${Math.round(gB)}）`);
+    return;
+  }
+  ov.scrollTop=99999; await sleep(120);
+  ok(ov.scrollTop>0, ov.scrollTop>0?`滚得动，到了 ${ov.scrollTop}px`:'🔴 滚不动（scrollTop 恒 0）—— 下面的按钮点不到');
+  ov.scrollTop=0; await sleep(80);
+  const first=ov.firstElementChild;
+  const rt=first.getBoundingClientRect(), o2=ov.getBoundingClientRect();
+  ok(rt.top>=o2.top-2, rt.top>=o2.top-2 ? '顶部没被吃掉'
+     : `🔴 顶部被切掉 ${Math.round(o2.top-rt.top)}px（justify-content:center 溢出的经典症状，滚也滚不回去）`);
+}
+
+const DAY='/index.html?demo=1&skipob=1&book=open&open=shareday';
+const MON='/index.html?demo=1&skipob=1&book=open&open=share';
+(async()=>{
+  await probe('日卡·刚打开',DAY,375,667);
+  await probe('日卡·点过「发个链接给朋友」',DAY,375,667,
+    async d=>{ d.getElementById('sh-link')?.click(); });
+  await probe('月卡·刚打开',MON,375,667);
+  await probe('隐藏章/赠礼弹层（注入真实内容）',DAY,375,667, async d=>{
+    d.querySelector('.overlay.show')?.classList.remove('show');
+    const ov=d.getElementById('ov-hidden');
+    ov.innerHTML='<div class="ov-spark">✦ ✦ ✦</div>'
+      +'<div class="ov-badge" style="width:168px;height:168px;background:#ddd"></div>'
+      +'<div class="ov-name">一颗糖</div><div class="ov-sub">给你点甜的</div>'
+      +'<button class="ov-btn">收进抽屉</button>';
+    ov.classList.add('show');
+  });
+  await probe('本子月结（注入很高的内容，逼它溢出）',DAY,375,667, async d=>{
+    d.querySelector('.overlay.show')?.classList.remove('show');
+    const ov=d.getElementById('ov-booklet');
+    ov.innerHTML='<div class="bl-page" style="height:900px;background:#eee">'
+      +'<div class="bl-t">8 月</div></div>';
+    ov.classList.add('show');
+  });
+  // 🔴 放最后 + 先清存储：iframe 之间共用同一份 localStorage，
+  //    前面几轮的 skipob=1 已经把 onboarded 写成 true，不清就永远看不到引导页。
+  try{ localStorage.clear(); }catch(_){}
+  await probe('引导页（先清空存储）','/index.html',375,667);
+  h2(`合计　通过 ${P}　失败 ${F}　跳过 ${S}`);
+  document.title=F?`FAIL ${F}`:`PASS ${P}`;
+})();
+</script>

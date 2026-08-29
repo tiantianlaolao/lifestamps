@@ -225,12 +225,29 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .act-time button{width:90px; margin-top:0}
 
 /* ---------- 全屏覆盖（隐藏章 / 分享 / 引导） ---------- */
+/* 🔴 8-29 用户实测：日卡弹层点过「发个链接给朋友」之后**滚不动，而且顶部被切掉**。
+   两个毛病是同一个根子，缺一条都修不好：
+     ① 没有 overflow-y —— 内容比屏幕高就是溢出，滚不了；
+     ② justify-content:center —— 居中的 flex 一旦溢出，**吃的是上面那一截**，
+        而且它跑到了滚动区之外，滚都滚不回去（日期章直接被切走）。
+   所以 center 必须换成"首尾 auto 外边距"：有富余时照样居中，溢出时从顶部开始排。
+   实测（375×667，点过发链接）：溢出 42px → 顶部就被吃掉 42px。
+   ⚠️ 这三个弹层（隐藏章 / 分享 / 引导）共用这一段，改完三个都要重新看一眼。
+   ⚠️ 这里让它滚是安全的：抢手势那条红线针对的是 **html/body 文档级**滚动
+      （原生壳外面的 UIScrollView），内层容器滚动本来就是这个 App 的常态（main 就是）。
+      而且不溢出时 scrollHeight == clientHeight，压根不产生滚动。 */
 .overlay{
   position:absolute; inset:0; z-index:60; background:var(--paper);
-  display:none; flex-direction:column; align-items:center; justify-content:center;
+  display:none; flex-direction:column; align-items:center;
   padding:40px 34px; text-align:center;
+  overflow-y:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none;
 }
+.overlay::-webkit-scrollbar{display:none}
 .overlay.show{display:flex}
+/* 代替 justify-content:center。写在 .show 上是因为 display:none 时没有 flex 项。 */
+.overlay.show > *{flex-shrink:0}
+.overlay.show > :first-child{margin-top:auto}
+.overlay.show > :last-child{margin-bottom:auto}
 .ov-spark{font-size:22px; letter-spacing:.4em; color:var(--accent)}
 .ov-name{font-size:21px; font-weight:600; margin:16px 0 4px; letter-spacing:.08em}
 .ov-sub{font-size:12.5px; color:var(--sub); letter-spacing:.1em}
@@ -620,7 +637,13 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .week-row.today .wd .d1{color:var(--accent); font-weight:600}
 
 /* 今日手账卡分享层：天气选择 */
-.weather-row{display:flex; gap:10px; margin:14px 0 4px; align-items:center}
+/* 🔴 8-29：这一行在 375 宽的屏上 scrollWidth 385 > 屏宽 375，左右各溢出 5px ——
+   「今天的天气」几个字和最后那个月亮按钮都被切掉。弹层是 flex 居中，
+   溢出会**两头一起切**，所以不是"右边多出来一点"那么好认。
+   六个按钮 + 标签在窄屏上就是排不下，只能让它自己换行；
+   ⛔ 别改成横滑：这一排是六选一，看不见的选项等于不存在。 */
+.weather-row{display:flex; gap:10px; margin:14px 0 4px; align-items:center;
+  flex-wrap:wrap; justify-content:center; max-width:100%}
 .weather-row span{white-space:nowrap}
 .weather-row .wbtn{border:1px solid var(--line); background:none; border-radius:var(--r3); cursor:pointer; padding:6px 8px 3px}
 .weather-row .wbtn.sel{border-color:var(--accent); background:rgba(201,75,60,.07)}
@@ -1883,6 +1906,12 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .mine-more:active{color:var(--ink)}
 
 /* ---- 分享弹层里的「发个链接给朋友」---- */
+/* 分享弹层里那句「发给朋友，他们能给你留一枚封蜡」。
+   ⚠️ 宽度跟着按钮走、不要顶满弹层，否则两行字比按钮还宽，读起来像报错提示。 */
+.share-hint{
+  max-width:300px; margin:16px auto 0; font-family:var(--f-hand);
+  font-size:12.5px; line-height:1.75; color:var(--sub); letter-spacing:.02em;
+}
 .sh-linkbox:empty{display:none}
 .sh-linkbox{margin-top:10px; width:100%; max-width:300px}
 .sh-linkbox .sh-url{

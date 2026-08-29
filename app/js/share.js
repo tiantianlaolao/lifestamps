@@ -406,7 +406,10 @@ export async function openShareDay(dk) {
                placeholder="想在卡上写一句话？">
       </div>
       <button class="ov-btn" id="sh-save" style="margin-top:8px">保存图片</button>
-      <button class="ov-btn ghost" id="sh-link">发个链接给朋友</button>
+      ${/* 🔴 这一句是 A 分享的动力所在，别删。抽屉里那句「只能由朋友送给你」
+             要翻到抽屉才看得见，而 A 决定发不发是在这一屏。 */''}
+      <div class="share-hint">${COPY.shareGiftHint}</div>
+      <button class="ov-btn ghost" id="sh-link" style="margin-top:6px">发个链接给朋友</button>
       <div class="sh-linkbox" id="sh-linkbox"></div>
       <button class="ov-btn ghost" id="sh-close">关闭</button>`;
     ov.querySelectorAll('.wbtn').forEach(b => b.onclick = () => {

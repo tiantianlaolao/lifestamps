@@ -16,6 +16,13 @@
      100% + 68px，把整个 #main 拉宽，比例条和按钮一起溢出屏幕右边。
      （8-28 截图抓到的，纯看代码看不出来。）*/
   *{box-sizing:border-box}
+  /* 🔴🔴 必须写回来，否则这一页**滚不动、下面的内容直接被裁掉**（8-29 用户实测报的）。
+     根子在 app.css:54 的 `html,body{height:100%; overflow:hidden}` —— 那条是**给原生壳写的**：
+     文档一旦能滚，WKWebView 外面那个 UIScrollView 就来抢触摸手势（拖拽全废、点按正常）。
+     App 里靠 `main{overflow-y:auto}` 单独承担滚动，所以那条成立。
+     但这一页**没有 main**，body 自己就是滚动容器，被一刀切死。
+     ⛔ 别去动 app.css 那一条来"顺手修好两边"——它是原生壳的命根子。 */
+  html,body{height:auto; overflow:visible}
   body{
     margin:0; min-height:100dvh; background:var(--desk,#DDD8CC); color:var(--ink,#252421);
     font-family:var(--f-ui,"Xiaolai","PingFang SC",sans-serif);
@@ -122,7 +129,11 @@ const code = (new URLSearchParams(location.search).get('c') || '').toLowerCase()
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-// 这台设备给这个码送过没有。纯自律 —— 服务端不认识设备，也不该认识。
+// 这台设备给这个码送过没有。
+// ⚠️ 8-29 起这**不再是唯一防线**：服务端会在 GET/POST 的响应里给出权威的 `mine`
+//    （一码一串的 HttpOnly 令牌，见 server/schema.sql 顶部）。
+//    这份 localStorage 留着只当兜底 —— 有些浏览器一个 cookie 都不带回来，
+//    那时服务端每次都当新访客，只剩它能拦住同一台设备的重复点。
 // 🔴 用 try/catch 包住：微信里、无痕窗口里、被拦截的浏览器里 localStorage 会直接抛。
 const SENT_KEY = 'lifestamps_sent_' + code;
 function sentSeal() { try { return localStorage.getItem(SENT_KEY); } catch (_) { return null; } }
@@ -153,7 +164,8 @@ let data = null;
 
 function render() {
   const d = new Date(data.day + 'T12:00:00');
-  const already = sentSeal();
+  // 服务端说了算；localStorage 只在服务端拿不到令牌时兜底。顺序不能反。
+  const already = data.mine || sentSeal();
 
   // 纸：把 A 那天的章按原位摆回去
   const chips = data.stamps.map(s => {
@@ -190,6 +202,16 @@ function render() {
 
     <div class="f-sect f-hide" id="after"></div>
 
+    ${/* 下载入口**常驻**，送之前也看得见（8-29 用户："这样比较顺"）。
+         原来它藏在 showAfter() 里，只有送完才冒出来 —— 再叠上那时候整页滚不动，
+         B 基本不可能看到它。
+         ⚠️ get/ 中转页现在还写着「先在网页里试试」：ios/android 商店地址都是空的，
+            App 一天没上架，这里就一天不许写成「下载 App」。 */''}
+    <div class="f-sect" id="getin">
+      <div class="f-sect-t">那你的今天呢？</div>
+      <a class="f-cta" href="../get/">也开始记你的</a>
+    </div>
+
     <div class="f-foot">
       不用登录，也不会知道你是谁。<br>
       这一天 ${Math.max(1, Math.ceil((data.expires - Date.now()) / 86400000))} 天后自动收起来。
@@ -198,8 +220,12 @@ function render() {
   $('#state').classList.add('f-hide');
   $('#main').classList.remove('f-hide');
 
-  if (already) showAfter(already, false);
-  else $('#give').addEventListener('click', onPick);
+  if (already) {
+    // 服务端说他留过 → 顺手把本地那份补回去。
+    // 这样万一以后 cookie 被浏览器清了（而 localStorage 还在），本地兜底仍然认得出。
+    markSent(already);
+    showAfter(already, false);
+  } else $('#give').addEventListener('click', onPick);
 }
 
 async function onPick(e) {
@@ -207,21 +233,87 @@ async function onPick(e) {
   if (!btn || btn.disabled) return;
   const id = btn.dataset.seal;
   $('#give').querySelectorAll('.f-seal').forEach(b => { b.disabled = true; });
+
+  // 🔴🔴 先把纸滚回视野里，再落章。
+  //    手机上够得着这六枚章的时候，纸已经滚上去 300 多像素了
+  //    （390×560 实测：纸 top=-316，只剩最下面 83px 在屏幕上），
+  //    这时候落下去的封蜡整枚都在视口上方 —— 动画照跑，但**没有人看见**。
+  //    用户 8-29 报的「没有盖章这个动作了」就是这个：动作在，只是发生在屏幕外。
+  //    ⚠️ 这一步不等网络：手指一抬纸就开始回，网络回来时正好落章，两件事并行。
+  const paper = $('#paper');
+  if (paper) paper.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
   try {
     const r = await fetch(`${API}/share/${code}/gift`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ seal: id }),
     });
+    // 🔴 409 = "你已经留过了"，这是**正常结局不是错误**。
+    //    当成错误的话，B 会看到"没送出去，再点一下试试"然后一直点 —— 最坏的形态：
+    //    界面在催他做一件永远不会成功的事。响应里已经带了他当初留的那一枚和最新比例，
+    //    直接切到"你留下的"那一屏，跟刷新后回来看到的完全一致。
+    if (r.status === 409) {
+      const j0 = await r.json();
+      data.gifts = j0.gifts; data.total = j0.total;
+      const mine = j0.mine || id;
+      markSent(mine);
+      showAfter(mine, false);
+      return;
+    }
     if (!r.ok) throw new Error(String(r.status));
     const j = await r.json();
     data.gifts = j.gifts; data.total = j.total;
     markSent(id);
+    // 等纸滚到位再落章。网络快的时候（本地几十毫秒）不等的话，
+    // 章会在纸还在往回滚的半路上落下，等于白滚。
+    await waitScrollSettled(paper);
+    // 🔴 兜底，不能省：smooth 滚动**不保证一定到得了**——
+    //    无头浏览器不发 rAF 帧时它一步都不走（实测 scrollY 三轮纹丝不动），
+    //    真机上低电量模式、"减弱动态效果"、页面被后台过，也都可能让它半路停下。
+    //    正确性不能挂在一个动画上：平滑那一下只管手感，到不到位由这一句说了算。
+    if (paper) paper.scrollIntoView({ block: 'center' });
     dropWax(id);
-    showAfter(id, true);
+    // 🔴 落章之后再展开"你留下的"，否则新内容当场把版面推走，
+    //    刚滚好的纸又被顶出去，前面那一下白做。
+    setTimeout(() => { showAfter(id, true); reserveGiftBack(id); }, 620);
   } catch (_) {
     $('#give').querySelectorAll('.f-seal').forEach(b => { b.disabled = false; });
     $('#give').querySelector('.f-sect-t').textContent = '没送出去，再点一下试试';
   }
+}
+
+// ⏸ 预留：送完之后也给 B 自己留一枚章。
+//    8-29 用户拍板「如果上了 APP 还要重新设计就先等等，预留这个接口」—— 所以这里
+//    **故意什么都不做**，只把挂点和坑写下来，免得下次从零想一遍。
+//
+//    🔴 真正卡住它的不是写不写得出来，是"发给谁"：
+//      · 网页版 /lifestamps/ 跟本页**同源**，往 localStorage 塞一个待领标记就行，最简单；
+//      · 但原生壳的 origin 是 capacitor://localhost，装完 App **读不到**这里写的任何东西。
+//        跨过去只有两条路：① 页面上给一个兑换码，App 里填（有摩擦，但两端都通）；
+//        ② 干脆改成"新用户一律送一枚"，跟这个链接脱钩（没摩擦，但也就不是"朋友给的"了）。
+//    ⚠️ 顺带一个产品判断：送**封蜡**最讲得通（B 送了一枚也收回一枚），但封蜡的设定是
+//       「只能由朋友送」，自动发会把这条稀缺性稀释掉 —— 决定前先回去看这条。
+//    ⛔ 别送印泥：8-28 刚为了堵住"颜色本来就免费"这个漏才把「默」删掉的。
+function reserveGiftBack(sealId) { /* 故意留空，见上面 */ }
+
+// 等平滑滚动停下来。浏览器没有"滚完了"这个事件，只能采样位置。
+// 🔴 必须有硬上限：无头浏览器不发 rAF 帧，smooth 滚动可能一动不动，
+//    没有上限的话这里会永远等下去 —— 验收页当场挂住，而且看起来像页面死了。
+function waitScrollSettled(el, cap = 700) {
+  return new Promise(resolve => {
+    const t0 = Date.now();
+    let last = null;
+    const tick = () => {
+      const y = Math.round(window.scrollY);
+      const elapsed = Date.now() - t0;
+      // 至少采两拍再判"停了"：刚发起 smooth 滚动的头一拍位置还没变，
+      // 只看"连续两次相同"会在起步瞬间误判成已经停好了。
+      if ((last === y && elapsed >= 180) || elapsed > cap) return resolve();
+      last = y;
+      setTimeout(tick, 60);
+    };
+    setTimeout(tick, 60);
+  });
 }
 
 // 把送出的那枚封蜡贴到纸上 —— "送到了"这件事得看得见，光弹个提示太轻了
@@ -242,11 +334,14 @@ function showAfter(mine, justNow) {
     .map(g => ({ g, n: data.gifts[g.id] || 0 }))
     .filter(r => r.n > 0)
     .sort((a, b) => b.n - a.n);
+  // 🔴 8-29 用户拍板：右边写**枚数**，不写百分比。
+  //    2 枚 = 50%、3 枚 = 33%，小数字下的百分比没有信息量，还假装自己是统计。
+  //    条子长度照旧按占比画 —— 它负责"一眼看出谁多"，数字负责"到底几枚"。
   const bars = rows.map(r => `
     <div class="f-bar ${r.g.id === mine ? 'f-mine' : ''}">
       <span class="f-bn">${esc(r.g.name)}</span>
       <span class="f-bt"><span class="f-bf" style="width:${Math.round(r.n / total * 100)}%"></span></span>
-      <span class="f-bp">${Math.round(r.n / total * 100)}%</span>
+      <span class="f-bp">${r.n} 枚</span>
     </div>`).join('');
 
   const me = GIFTS.find(g => g.id === mine);
@@ -254,9 +349,9 @@ function showAfter(mine, justNow) {
     <div class="f-thanks">${justNow
       ? `「${esc(me ? me.say : '')}」<br>送到了。TA 下次打开就能收到。`
       : `你留的是「${esc(me ? me.name : '')}」。`}</div>
-    ${total > 1 ? `<div class="f-sect-t">这一天一共收到 ${total} 枚</div><div class="f-bars">${bars}</div>` : ''}
-    <div class="f-sect-t" style="margin-top:28px">那你的今天呢？</div>
-    <a class="f-cta" href="../get/">也开始记你的</a>`;
+    ${/* ⚠️ 这里原来还有一份「那你的今天呢？」+ CTA。已经搬到 render() 里常驻了，
+          别再加回来 —— 两个一样的红按钮上下挨着，读起来像页面出了错。 */''}
+    ${total > 1 ? `<div class="f-sect-t">这一天一共收到 ${total} 枚</div><div class="f-bars">${bars}</div>` : ''}`;
   $('#after').classList.remove('f-hide');
   $('#give').querySelector('.f-sect-t').textContent = '你留下的';
   // 送完立刻把其余五枚收走，跟刷新后回来看到的是同一屏

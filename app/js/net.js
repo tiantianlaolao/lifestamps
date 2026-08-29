@@ -63,7 +63,11 @@ export async function createShare(day, records, verdict, note) {
   });
   const { data } = await call('share', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ day, stamps, verdict: verdict || '', note: note || '' }),
+    // author = 匿名安装号。服务端拿它算封蜡的解锁名额（见 store.installId 那段注释）。
+    body: JSON.stringify({
+      day, stamps, verdict: verdict || '', note: note || '',
+      author: store.ensureInstallId(),
+    }),
   });
   if (!data || !data.code) return null;
 
@@ -80,14 +84,27 @@ export function shareURL(code) {
 }
 
 // A：回来看看收到了什么。
-// 返回**这一次新收到**的封蜡 id 列表（已经收过的不重复报）。
+//
+// 🔴🔴 8-29 起「收到」和「解锁」是两件事，别再混成一件：
+//    · 收到 = 有人在某条分享上给你留了一枚。谁送都算，每天都能收，没有上限。
+//    · 解锁 = 这枚封蜡真的进抽屉。规则：**一个人一辈子只帮你解开一枚**，
+//      所以六枚封蜡 = 六个不同的人给过你。
+//    名额是**跨分享**统计的，客户端手上没有这个视野 → **解锁只能由服务端裁决**，
+//    这里只负责去问一句「我现在解开了哪几枚」。
+//    （以前是 App 自己数「收到过就解锁」，那样 A 自己给自己送六次就集齐了。）
+//
+// 返回 { got:[新解锁的], again:[又收到但没解锁的] }：
+//    got   → 「有人给你留了一枚 XX」，进抽屉
+//    again → 「又有人给你留了一枚 XX」，不进抽屉
+//    ⚠️ again 必须也提示（用户 8-29 拍板）：不提示的话，朋友送了却毫无反应，那朋友是白送的。
+//
 // ⚠️ 过期的短码直接从本地清掉：服务端那边也真的删了，留着只会每次白请求一遍。
 export async function collectGifts() {
   const list = store.shares || [];
-  if (!list.length) return [];
+  if (!list.length) return { got: [], again: [] };
   const now = Date.now();
   const fresh = [];
-  const gotNow = [];
+  const arrived = [];                                     // 这一轮新到的（不管解不解锁）
 
   for (const s of list) {
     if (s.expires <= now) continue;                       // 过期的丢掉
@@ -97,18 +114,36 @@ export async function collectGifts() {
     const seen = s.seen || {};
     for (const g of GIFTS) {
       const n = data.gifts[g.id] || 0;
-      if (n > (seen[g.id] || 0)) {
-        seen[g.id] = n;
-        if (!store.hidden[g.id]) gotNow.push(g.id);        // 第一次收到才算"新得到一枚"
-      }
+      if (n > (seen[g.id] || 0)) { seen[g.id] = n; arrived.push(g.id); }
     }
     fresh.push({ ...s, seen });
   }
 
-  for (const id of gotNow) store.hidden[id] = Date.now();
-  if (fresh.length !== list.length || gotNow.length) {
-    store.shares = fresh;
-    store.persist();
+  // 服务端说了算的那份解锁清单。
+  // 🔴 网不通就返回 null —— 这时**什么都别改**：把 arrived 当成解锁会绕过整套名额规则，
+  //    当成没解锁又会漏掉提示。宁可这一轮不报，下次开 App 再说。
+  const unlocked = await fetchUnlocked();
+  if (!unlocked) {
+    if (fresh.length !== list.length) { store.shares = fresh; store.persist(); }
+    return { got: [], again: [] };
   }
-  return gotNow;
+
+  const got = [];
+  for (const id of unlocked) {
+    if (!store.hidden[id]) { store.hidden[id] = Date.now(); got.push(id); }
+  }
+  // 到了、但没进抽屉的那些（名额用完了，或者这枚本来就有）
+  const again = [...new Set(arrived)].filter(id => !got.includes(id));
+
+  store.shares = fresh;
+  store.persist();
+  return { got, again };
+}
+
+// 我现在解开了哪几枚封蜡。网不通返回 null（跟"一枚都没有"要分得开）。
+async function fetchUnlocked() {
+  const id = store.installId;
+  if (!/^[0-9a-f]{16,64}$/.test(id || '')) return [];      // 还没发过分享，自然一枚都没有
+  const { data } = await call('unlocked?author=' + encodeURIComponent(id));
+  return data && Array.isArray(data.seals) ? data.seals : null;
 }

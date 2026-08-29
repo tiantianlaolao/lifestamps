@@ -252,7 +252,14 @@ function init() {
   //    这个 App 的核心动作（盖章）从来不需要联网。
   // ⚠️ 引导页还没走完时不弹，别把新用户的第一屏抢了。
   if (store.settings.onboarded) {
-    collectGifts().then(got => { if (got.length) showGiftQueue(got); }).catch(() => {});
+    // got   = 新解开的封蜡，弹「有人给你留了一枚」并进抽屉
+    // again = 又收到但没解开的（那个人的名额用过了，或者这枚本来就有）
+    //         🔴 also 必须提示（用户 8-29 拍板）：不提示的话朋友送了却毫无反应 = 白送。
+    //         话得跟第一次不一样，见 COPY.giftAgainSpark。
+    collectGifts().then(({ got, again }) => {
+      if (got.length) showGiftQueue(got);
+      else if (again.length) showGiftQueue(again, true);
+    }).catch(() => {});
   }
   if (devPage) openFlip(devPage);
   if (params.get('noopen') === '1') noOpening = true;   // dev：一律不出封面
@@ -1457,21 +1464,25 @@ function openActions(rid) {
 // 🔴 跟隐藏章共用覆盖层，但**话必须不一样**：隐藏章是"你解开了"，
 //    赠礼是"有人给了你" —— 说成前者，这枚章存在的全部意义就没了。
 // 🔴 不说是谁送的（也确实不知道）：匿名是这套机制的地基，不是妥协。
-function showGiftQueue(ids) {
+// again=true：这一枚**又**收到了一次，但没进抽屉
+//   （送它的那个人名额已经用过，或者这枚 A 本来就有 —— 规则见 net.js 的 collectGifts）。
+//   🔴 照样要弹（用户 8-29 拍板）：不弹的话，朋友送了却毫无反应，那朋友是白送的。
+//   🔴 但话必须换一套：说成「有人给你留了一枚」会让人以为抽屉里多了东西，翻过去却没有。
+function showGiftQueue(ids, again) {
   const [id, ...rest] = ids; if (!id) return;
-  const g = GIFTS.find(x => x.id === id); if (!g) return showGiftQueue(rest);
+  const g = GIFTS.find(x => x.id === id); if (!g) return showGiftQueue(rest, again);
   const ov = $('#ov-hidden');
   ov.innerHTML = `
-    <div class="ov-spark">${COPY.giftGotSpark}</div>
+    <div class="ov-spark">${again ? COPY.giftAgainSpark : COPY.giftGotSpark}</div>
     <div class="ov-badge">${stampSVG({ ...g, kind: 'seal' }, { size: 168, rot: -2 })}</div>
     <div class="ov-name">${g.name}</div>
-    <div class="ov-sub">${g.say}</div>
-    <button class="ov-btn" id="hid-ok">${COPY.ovPutAway}</button>`;
+    <div class="ov-sub">${again ? COPY.giftAgainSub : g.say}</div>
+    <button class="ov-btn" id="hid-ok">${again ? COPY.ovKnow : COPY.ovPutAway}</button>`;
   ov.classList.add('show');
   haptic();
   $('#hid-ok').onclick = () => {
     ov.classList.remove('show');
-    if (rest.length) showGiftQueue(rest); else render();
+    if (rest.length) showGiftQueue(rest, again); else render();
   };
 }
 
@@ -1653,7 +1664,13 @@ function drawerStamps(used, cnt) {
     ${fold('hid', COPY.drawerHidden,
       (hidGot + giftGot) + ' / ' + (HIDDEN.length + GIFTS.length), drawerHidOpen,
       `<div class="dk-grid">${HIDDEN.map(h => cell(h, 'hid')).join('')
-        + GIFTS.map(g => cell({ ...g, kind: 'seal', hint: COPY.giftOnlyHint }, 'hid')).join('')}</div>`)}`;
+        + GIFTS.map(g => cell({ ...g, kind: 'seal', hint: COPY.giftOnlyHint }, 'hid')).join('')}</div>`
+      // ⭐ 把规则写成设定，不写成防作弊。
+      //    机制上它是「一个人一辈子只帮你解开一枚」，读出来是「每一枚都来自一个不同的人」——
+      //    同一件事，后一种说法才是这个 App 该有的语气。
+      // ⚠️ 这句话现在是真的：服务端 unlocks 表的主键就是 (author, visitor)。
+      //    哪天规则改了这句必须跟着改，否则就是文案说了代码没做的事。
+      + `<div class="dk-note">${COPY.sealOnePerPerson}</div>`)}`;
 }
 
 function drawerInks() {

@@ -301,6 +301,12 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 
 /* 抽屉里的章 = 实物：木柄 + 章面。和托盘里同一套语言。 */
 .dk-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px 2px; margin-top:8px}
+/* 封蜡那一栏底下的一句设定：「每一枚封蜡，来自一个不同的人。」
+   ⚠️ 手写体 + 弱化颜色，让它读起来是设定不是说明书。 */
+.dk-note{
+  font-family:var(--f-hand); font-size:12px; line-height:1.7;
+  color:var(--faint); letter-spacing:.04em; text-align:center; margin:14px 2px 2px;
+}
 .dk-cell{display:flex; flex-direction:column; align-items:center; gap:0; cursor:pointer}
 .dk-cell .handle{
   width:26px; height:11px; border-radius:6px 6px 2px 2px; display:block;

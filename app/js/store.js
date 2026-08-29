@@ -47,6 +47,15 @@ export const store = {
   //    清了本地数据 = 这些分享再也收不回来，这是匿名换来的代价，写在这儿别忘。
   shares: load('shares', []),
 
+  // 🔴 匿名安装号。**不是账号**：本机首次启动随机生成，服务端拿它把
+  //    「同一个人发出去的那些天」串成一串，用来算封蜡的解锁名额
+  //    （规则：一个人一辈子只帮你解开一枚 → 六枚 = 六个不同的人）。
+  //    它反查不到任何人，也不跟设备/IP/账号有任何关系。
+  //    ⚠️ 清了本地数据就换一个新号 = 之前解开的封蜡在服务端那边认不回来了；
+  //       跟 shares 一样，是匿名换来的代价。以后有账号了换成 uid，规则不用改。
+  //    ⚠️ 格式必须是 16~64 位小写十六进制——服务端会拿它拼 cookie 名，那边也在校验。
+  installId: load('installId', ''),
+
   persist() {
     save('records', this.records);
     save('discovered', this.discovered);
@@ -65,6 +74,27 @@ export const store = {
     save('proDeclined', this.proDeclined);
     save('unlocked', this.unlocked);
     save('shares', this.shares);
+    save('installId', this.installId);
+  },
+
+  // 第一次要用的时候才生成，生成完立刻落盘。
+  // ⚠️ crypto.randomUUID 在**非安全上下文**（http 的局域网调试页）里是 undefined，
+  //    直接用会当场抛、把整个分享流程带崩 —— 所以退回 getRandomValues，
+  //    再退回 Math.random（够用了：它只要在本机唯一，不需要密码学强度）。
+  ensureInstallId() {
+    if (/^[0-9a-f]{16,64}$/.test(this.installId || '')) return this.installId;
+    let id = '';
+    try {
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      id = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+    } catch (_) {
+      id = Array.from({ length: 32 },
+        () => Math.floor(Math.random() * 16).toString(16)).join('');
+    }
+    this.installId = id;
+    save('installId', id);
+    return id;
   },
 
   // ---- 印泥盒库存 ----

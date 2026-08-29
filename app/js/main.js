@@ -4,7 +4,7 @@
 import { STAMPS, GLYPHS, isGlyph, HIDDEN, GIFTS, GIFT_WAX, CATEGORIES, INKS, COPY, stampById, hiddenById, monthPersona, lockedMaterial, seriesById } from './data.js';
 import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint, inkMainColor, inkCSS, darken, seedOf, weatherSVG } from './stamp.js';
 import { store, dateKey, fmtTime, posOf } from './store.js';
-import { collectGifts } from './net.js';
+import { collectGifts, claimTicket } from './net.js';
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked } from './hidden.js';
 import { verdictOf } from './verdict.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
@@ -1487,6 +1487,22 @@ function showGiftQueue(ids, again) {
 }
 
 
+// 收下自己挑的那一枚。
+// 🔴 话必须跟「有人给你留了东西」分开：这枚是**他自己挑的**，说成别人送的就是假话。
+//    也要点破它的代价 —— 这一枚用掉了"自己送自己"那一次，不说清楚会让人以为是白得的。
+function showOwnGot(g) {
+  const ov = $('#ov-hidden');
+  ov.innerHTML = `
+    <div class="ov-spark">${COPY.ownGotSpark}</div>
+    <div class="ov-badge">${stampSVG({ ...g, kind: 'seal' }, { size: 168, rot: -2 })}</div>
+    <div class="ov-name">${g.name}</div>
+    <div class="ov-sub">${COPY.ownGotSub}</div>
+    <button class="ov-btn" id="hid-ok">${COPY.ovPutAway}</button>`;
+  ov.classList.add('show');
+  haptic();
+  $('#hid-ok').onclick = () => { ov.classList.remove('show'); render(); };
+}
+
 function showHiddenQueue(list) {
   const [h, ...rest] = list; if (!h) return;
   const ov = $('#ov-hidden');
@@ -2129,6 +2145,18 @@ function renderMe() {
         return `<div class="ttl-old"><div class="ttl-m">${mm} 月</div><div class="ttl-n">${t.title}</div></div>`;
       }).join('')}</div>` : ''}
 
+    ${/* 朋友给你留链接、你也给自己挑了一枚 → 那边给了个 6 位码，在这儿收下。
+         🔴 一辈子只能收一次：这一枚就是你"自己送自己"那一次（8-29 用户拍板）。
+         ⚠️ 之所以是手输而不是点链接直接开 App：微信里点链接**不会**跳 App
+            （微信有意屏蔽），而这条链路基本都发生在微信里。 */''}
+    <div class="ttl-k">朋友那儿留了一枚？</div>
+    <div class="claim-box">
+      <input id="claim-in" maxlength="6" autocapitalize="off" autocorrect="off"
+             spellcheck="false" placeholder="输入 6 位码">
+      <button class="claim-go" id="claim-go">收下</button>
+    </div>
+    <div class="claim-msg" id="claim-msg"></div>
+
     <div class="me-list">
       <div class="me-item"><span class="k">本子封面</span>
         <span class="cover-pick">
@@ -2192,6 +2220,35 @@ function renderMe() {
       store.settings.cover = b2.dataset.cover; store.persist(); renderMe();
     }));
   $('#sw-sound').onchange = e => { store.settings.sound = e.target.checked; store.persist(); };
+
+  // ---- 收下朋友那边留的那一枚 ----
+  const cin = $('#claim-in'), cgo = $('#claim-go'), cmsg = $('#claim-msg');
+  if (cin && cgo) {
+    // 🔴 挂 pointerdown 不挂 click：键盘弹着的时候按下去 → 输入框失焦 → 键盘收起 →
+    //    版面上弹 → 按钮在 click 派发前就从手指底下挪走了，那一下落到空处。
+    //    （8-27「给这天补一句」栽过一模一样的坑。）
+    cgo.addEventListener('pointerdown', async ev => {
+      ev.preventDefault();
+      const t2 = (cin.value || '').trim().toLowerCase();
+      if (!/^[a-z2-9]{6}$/.test(t2)) { cmsg.textContent = '这个码看着不太对，再核对一下。'; return; }
+      cgo.disabled = true; cmsg.textContent = '正在收…';
+      const r = await claimTicket(t2);
+      cgo.disabled = false;
+      if (!r) { cmsg.textContent = '网络不太好，待会儿再试。'; return; }
+      if (r.error) {
+        cmsg.textContent = {
+          used: '这个码已经被用过了。',
+          gone: '这个码不在了 —— 打错了，或者过了三十天。',
+          already_own: '你已经给自己留过一枚了，一辈子只能留一枚。',
+        }[r.error] || '没能收下，再试一次。';
+        return;
+      }
+      cin.value = ''; cmsg.textContent = '';
+      const g = GIFTS.find(x => x.id === r.seal);
+      // 复用收到赠礼那一屏，但话得是"你自己挑的"——不是别人送的，别说反了
+      if (g) showOwnGot(g); else render();
+    });
+  }
   $('#sw-haptic').onchange = e => { store.settings.haptic = e.target.checked; store.persist(); };
   $('#btn-wipe').onclick = e => {
     const b = e.target;

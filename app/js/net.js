@@ -30,8 +30,13 @@ async function call(path, opts) {
   const timer = setTimeout(() => ctl.abort(), TIMEOUT);
   try {
     const r = await fetch(API + path, { ...opts, signal: ctl.signal });
-    if (!r.ok) return { status: r.status, data: null };
-    return { status: r.status, data: await r.json() };
+    // 🔴 失败时也要把响应体读出来。原来这里 `if (!r.ok) return {data:null}`，
+    //    结果服务端明明回了 {error:'used'} / {error:'gone'} / {error:'already_own'}，
+    //    界面上只能说一句笼统的"没能收下" —— 用户不知道是自己打错了还是码过期了。
+    //    ⚠️ 其它调用点不受影响：createShare 判的是 `!data.code`，
+    //       collectGifts 先判 status===410，错误体里都没有 code / gifts。
+    const data = await r.json().catch(() => null);
+    return { status: r.status, data };
   } catch (_) {
     return { status: 0, data: null };            // 网不通 / 超时 / 被墙，一律当"这次没成"
   } finally {
@@ -71,7 +76,9 @@ export async function createShare(day, records, verdict, note) {
   });
   if (!data || !data.code) return null;
 
-  const rec = { code: data.code, day, expires: data.expires, seen: {} };
+  // qr 一起存下来：卡片右下角那张二维码要指向这一天，而卡是本地画的。
+  // ⚠️ 存在本地是有意的 —— 没网时旧的那些天照样画得出带码的卡。
+  const rec = { code: data.code, day, expires: data.expires, seen: {}, qr: data.qr || null };
   store.shares = [rec, ...(store.shares || [])].slice(0, 60);   // 只留最近 60 条，够用了
   store.persist();
   return rec;
@@ -138,6 +145,24 @@ export async function collectGifts() {
   store.shares = fresh;
   store.persist();
   return { got, again };
+}
+
+// B 在 App 里用 6 位兑换码领他给自己挑的那一枚。
+// 返回 { ok:true, seal } / { error } / null（网不通）。
+// 🔴 领这一枚 = 用掉他"自己送自己"那一次，以后再给自己送都不解锁（用户 8-29 的设计）。
+export async function claimTicket(ticket) {
+  const { status, data } = await call('claim', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ticket: String(ticket || '').trim().toLowerCase(),
+      install: store.ensureInstallId() }),
+  });
+  if (status === 0) return null;                      // 网不通：跟"码不对"要分得开
+  if (data && data.ok) {
+    // 立刻进抽屉，不等下次开机对账 —— 输完码却什么都没发生是最糟的形态
+    if (!store.hidden[data.seal]) { store.hidden[data.seal] = Date.now(); store.persist(); }
+    return data;
+  }
+  return { error: (data && data.error) || 'bad', status };
 }
 
 // 我现在解开了哪几枚封蜡。网不通返回 null（跟"一枚都没有"要分得开）。

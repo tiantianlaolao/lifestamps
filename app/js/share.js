@@ -72,15 +72,19 @@ const QR_PATH = '"M0 0h7v1h-7zM8 0h1v1h-1zM11 0h4v1h-4zM18 0h1v1h-1zM22 0h7v1h-7
 // 卡片落款：署名 + 二维码。
 // ⚠️ 署名以前淡到 45%，截图放大才认得出 —— 它是这张卡唯一的身份，得看得见。
 //    但也不能喧宾夺主：小字 + 松字距，像盖在页脚的一个小印。
-function cornerMark(size = 140) {
+// qr = 服务端随短码一起返回的 {n, path}。给了就用它（扫进去直接是这一天），
+// 没给就回落到写死的那张（指向下载中转页）—— 没网时卡照样出得来，只是扫过去是下载页。
+function cornerMark(size = 140, qr = null) {
   const x = 1080 - 64 - size, y = 1440 - 72 - size;
-  const sc = size / QR_N;
+  const n = qr ? qr.n : QR_N;
+  const path = qr ? qr.path : QR_PATH;
+  const sc = size / n;
   return `<g>
     <!-- ⚠️ 静区用纸色不用纯白：白方块在暖色纸上是个突兀的白斑。
          纸色 #F7F3EB 跟墨色模块的对比度足够扫，实测过。 -->
     <rect x="${x - 12}" y="${y - 12}" width="${size + 24}" height="${size + 24}" rx="8"
       fill="${PAPER}" stroke="rgba(58,54,47,.10)" stroke-width="1.5"/>
-    <g transform="translate(${x},${y}) scale(${sc})"><path d="${QR_PATH}" fill="${INK_C}"/></g>
+    <g transform="translate(${x},${y}) scale(${sc})"><path d="${path}" fill="${INK_C}"/></g>
     <text x="64" y="${1440 - 104}" font-size="42" letter-spacing="8"
       fill="${INK_C}" opacity=".88" font-family="${HAND_CN}">戳了么</text>
     <text x="66" y="${1440 - 64}" font-size="21" letter-spacing="3"
@@ -247,7 +251,7 @@ export async function openShare(y, m) {
 // ============================================================
 const WEEK_CN = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
 
-export function buildDayCard(dk, weather) {
+export function buildDayCard(dk, weather, qr = null) {
   const recs = store.recordsOf(dk);
   const d = new Date(dk + 'T12:00:00');
 
@@ -327,7 +331,7 @@ export function buildDayCard(dk, weather) {
   ${span}
   ${N ? '' : `<text x="540" y="740" text-anchor="middle" font-size="34" fill="${FAINT}"
       font-family="${HAND_CN}">这一天留白着，也很好。</text>`}
-  ${cornerMark()}
+  ${cornerMark(140, qr)}
 </svg>`;
 }
 
@@ -391,10 +395,19 @@ export async function openShareDay(dk) {
   const ov = document.getElementById('ov-share');
   let weather = store.weatherOf(dk);
 
+  // 🔴 先把这一天的分享建出来，再画卡 —— 卡上的二维码要指向它。
+  //    没网 / 建不出来就 rec = null，卡照样出，只是二维码回落成下载中转页。
+  //    ⚠️ 已经建过的那天会直接复用（codeForDay），不会每次开弹层都新建一条。
+  let rec = codeForDay(dk);
+
   async function draw() {
     ov.innerHTML = `<div class="gen">正在盖章…</div>`;
     ov.classList.add('show');
-    const svg = buildDayCard(dk, weather);
+    if (!rec) {
+      try { rec = await createShare(dk, store.recordsOf(dk), verdictOf(store.recordsOf(dk)),
+        store.dayNoteOf(dk) || ''); } catch (_) { rec = null; }
+    }
+    const svg = buildDayCard(dk, weather, rec && rec.qr);
     const dataUrl = await rasterize(svg, 1080, 1440, 1.5);
     const wRow = ['sun','cloud','rain','storm','snow','night'].map(w =>
       `<button class="wbtn ${weather === w ? 'sel' : ''}" data-w="${w}">${weatherSVG(w, 26, weather === w ? '#C94B3C' : '#8C8880')}</button>`).join('');

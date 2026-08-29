@@ -106,6 +106,22 @@
         margin-top:16px; line-height:1.9; letter-spacing:.05em}
   .f-state{text-align:center; padding:90px 20px; color:var(--sub,#6B655C);
          font-family:var(--f-hand,"LXGW WenKai",serif); font-size:15px; line-height:2}
+  /* 「也给自己留一枚」那一段 */
+  .f-ownseal{display:flex; flex-direction:column; align-items:center; gap:6px; margin:4px 0 14px}
+  .f-ownseal .f-nm{font-family:var(--f-hand,"LXGW WenKai",serif); font-size:13px}
+  /* 🔴 兑换码必须能长按选中：微信里剪贴板权限不可靠，
+     只给一个"复制"按钮的话，复制失败就等于这枚章拿不到了。 */
+  .f-code{
+    font-family:ui-monospace,Menlo,Consolas,monospace; font-size:30px; letter-spacing:.42em;
+    text-align:center; color:var(--ink,#252421); background:rgba(120,105,85,.10);
+    border-radius:10px; padding:14px 10px 14px 22px; margin:0 auto; max-width:280px;
+    user-select:text; -webkit-user-select:text;
+  }
+  .f-codehint{font-family:var(--f-hand,"LXGW WenKai",serif); font-size:12.5px;
+    color:var(--sub,#6B655C); text-align:center; margin-top:10px; line-height:1.8}
+  .f-copy{display:block; margin:12px auto 0; padding:9px 22px; border-radius:8px;
+    border:1px solid var(--line,#D8D2C6); background:none; color:var(--sub,#6B655C);
+    font-family:inherit; font-size:13px; letter-spacing:.06em; cursor:pointer}
   .f-hide{display:none}
 </style>
 </head>
@@ -201,6 +217,8 @@ function render() {
     </div>
 
     <div class="f-sect f-hide" id="after"></div>
+    ${/* 送完之后才冒出来：也给自己留一枚 → 6 位兑换码 */''}
+    <div class="f-sect f-hide" id="own"></div>
 
     ${/* 下载入口**常驻**，送之前也看得见（8-29 用户："这样比较顺"）。
          原来它藏在 showAfter() 里，只有送完才冒出来 —— 再叠上那时候整页滚不动，
@@ -356,6 +374,72 @@ function showAfter(mine, justNow) {
   $('#give').querySelector('.f-sect-t').textContent = '你留下的';
   // 送完立刻把其余五枚收走，跟刷新后回来看到的是同一屏
   $('#give').querySelectorAll(`.f-seal:not([data-seal="${mine}"])`).forEach(b => b.remove());
+  showOwnPick();
+}
+
+// ---- 「也给自己留一枚」（8-29 用户拍板）---------------------------------
+// 你给别人留了一枚，所以自己也收一枚 —— 挑完给一个 6 位码，打开 App 输进去就到手。
+// 🔴 这一枚**就是他"自己送自己"那一次**：领了之后，他以后打开自己的分享给自己送，
+//    一枚都解不开。所以文案不能写成"白送你一枚"，那会让人以为是额外福利。
+function showOwnPick() {
+  const box = $('#own');
+  if (!box) return;
+  box.classList.remove('f-hide');
+  box.innerHTML = `
+    <div class="f-sect-t">也给自己留一枚</div>
+    <div class="f-seals">${GIFTS.map(g => `
+      <button class="f-seal" data-own="${g.id}">
+        ${stampSVG({ ...g, kind: 'seal' }, { size: 46 })}
+        <span class="f-nm">${esc(g.name)}</span>
+      </button>`).join('')}</div>`;
+  box.addEventListener('click', onPickOwn);
+}
+
+async function onPickOwn(e) {
+  const btn = e.target.closest('[data-own]');
+  if (!btn || btn.disabled) return;
+  const id = btn.dataset.own;
+  $('#own').querySelectorAll('.f-seal').forEach(b => { b.disabled = true; });
+  const g = GIFTS.find(x => x.id === id);
+  try {
+    const r = await fetch(`${API}/share/${code}/ticket`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ seal: id }),
+    });
+    const j = await r.json().catch(() => null);
+    if (r.status === 409 && j && j.error === 'already_own') {
+      // 他以前领过了。一辈子只能给自己留一枚，说清楚就好，别装作出错了。
+      $('#own').innerHTML = `<div class="f-thanks">你已经给自己留过一枚了。</div>`;
+      return;
+    }
+    if (!r.ok || !j || !j.ticket) throw new Error(String(r.status));
+    showTicket(j.ticket, g);
+  } catch (_) {
+    $('#own').querySelectorAll('.f-seal').forEach(b => { b.disabled = false; });
+    $('#own').querySelector('.f-sect-t').textContent = '没成，再点一下试试';
+  }
+}
+
+function showTicket(ticket, g) {
+  // 🔴 码要能被选中、能长按复制。微信里没有剪贴板权限的可靠做法，
+  //    所以**必须**让人能自己长按选 —— 只放一个"复制"按钮是不够的。
+  $('#own').innerHTML = `
+    <div class="f-sect-t">你给自己留了一枚</div>
+    <div class="f-ownseal">${stampSVG({ ...g, kind: 'seal' }, { size: 76 })}
+      <span class="f-nm">${esc(g.name)}</span></div>
+    <div class="f-code" id="f-code">${esc(ticket)}</div>
+    <div class="f-codehint">打开「戳了么」，在「我的」里输入这个码就能收下。</div>
+    <button class="f-copy" id="f-copy">复制这个码</button>`;
+  const btn = $('#f-copy');
+  btn.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(ticket);
+      btn.textContent = '复制好了';
+    } catch (_) {
+      // 复制失败不当错误处理：码就在上面摆着，长按选中一样能拿走
+      btn.textContent = '长按上面的码也能复制';
+    }
+  };
 }
 
 (async () => {

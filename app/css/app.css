@@ -300,6 +300,30 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .seg button.sel{color:var(--ink); background:rgba(37,36,33,.07)}
 
 /* 抽屉里的章 = 实物：木柄 + 章面。和托盘里同一套语言。 */
+/* 「我的」里收下朋友那边留的那一枚：6 位码输入 + 收下 */
+.claim-box{display:flex; gap:8px; align-items:stretch; margin-top:6px}
+.claim-box input{
+  flex:1; min-width:0; padding:11px 14px; border:1px solid var(--line); border-radius:var(--r3);
+  background:rgba(255,253,248,.8); color:var(--ink); outline:none;
+  /* 码是 6 位小写字母数字，等宽 + 大字距最好认；⚠️ 不能 text-transform:uppercase，
+     码本身是小写的，显示成大写会让人照着大写去核对。 */
+  font-family:ui-monospace,Menlo,Consolas,monospace; font-size:17px; letter-spacing:.24em;
+}
+.claim-box input::placeholder{
+  font-family:var(--f-ui); font-size:13px; letter-spacing:.04em; color:var(--faint);
+}
+.claim-go{
+  flex:0 0 auto; padding:0 20px; border:none; border-radius:var(--r3);
+  background:var(--accent); color:var(--btn-face);
+  font-family:inherit; font-size:14px; letter-spacing:.1em; cursor:pointer;
+}
+.claim-go[disabled]{opacity:.5}
+.claim-msg:empty{display:none}
+.claim-msg{
+  font-family:var(--f-hand); font-size:12.5px; color:var(--sub);
+  line-height:1.8; margin-top:8px;
+}
+
 .dk-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px 2px; margin-top:8px}
 /* 封蜡那一栏底下的一句设定：「每一枚封蜡，来自一个不同的人。」
    ⚠️ 手写体 + 弱化颜色，让它读起来是设定不是说明书。 */

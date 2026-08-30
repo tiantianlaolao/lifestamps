@@ -47,6 +47,8 @@ export const JA = {
   proPitch: 'それぞれの色を、それぞれに返す',
   proDesc: 'カラーインク10色。一度ひらけば、ずっと使えます。',
   proBuy: 'プレミアムインクをひらく · ¥160',
+  proBuyN: 'プレミアムインクをひらく · {price}',
+  proNoneFound: 'この Apple アカウントに購入記録が見つかりません。',
   proLater: '今はいい',
   proOwned: 'ずっと使えます',
   proRestore: '購入を復元',
@@ -68,7 +70,9 @@ export const JA = {
   glyphSub: '数字・文字・曜日・記号 —— 道具なので、コレクションには数えません',
   undo: 'もどす',
   undone: 'もどしました',
-  statMarks: '個の跡', statDays: '日ぶんの記録', statHidden: 'かくれはんこ',
+  // 🔴 8-30 母语者（邢楠）逐条订正：かくれはんこ→シークレット（盲盒文化里"隐藏款"就叫这个）、
+  //    出前→デリバリー（App 点外卖的现代说法）、つくえ→テーブルクロス（桌布；つくえ是桌子本身，译错了）
+  statMarks: '個の跡', statDays: '日ぶんの記録', statHidden: 'シークレット',
   meTitleLabel: '今月の称号',
   addStampHere: 'はんこを足す',
   shareMonthBtn: '今月なにを押した？',
@@ -106,7 +110,7 @@ export const JA = {
   monthBarTitle: '{m}月 · {n} 個',
   coverMonth: '{m}月',
   dayOnly: '{d} 日',
-  drawerHidden: 'かくれはんこ',
+  drawerHidden: 'シークレット',
   giftOnlyHint: '友だちから贈られたときだけ',
   shareGiftHint: '友だちに送ると、この日に封蝋をひとつ残してもらえます —— ひきだしのあの6個は、この道しかありません。',
   giftGotSpark: '✦ だれかが何かを残していきました',
@@ -155,7 +159,7 @@ export const JA = {
   // やさしく・ちょっと自嘲・だれかが「わたしも」と言える一言。数は数えない。
   v_coffee_night: 'カフェインで生きのびた一日',
   v_lie_daze: 'きょうは何もしなかった。えらい',
-  v_takeout_lie: '出前とふとん、きょうの二本柱',
+  v_takeout_lie: 'デリバリーとふとん、きょうの二本柱',
   v_sweet: 'きょうは甘いものに救われた',
   v_stayup_sleepin: '生活リズムは崩れた。後悔はない',
   v_work_night: 'きょうは仕事に持っていかれた',
@@ -193,7 +197,7 @@ export const JA = {
   // 日曜はじまり（weekOffset() がカレンダーの並びを切り替える）
   calHead: ['日', '月', '火', '水', '木', '金', '土'],
   blMost: 'いちばん押したもの',
-  blHidden: '解けたかくれはんこ',
+  blHidden: '解けたシークレット',
   personaTitle: '今 月 の 人 格',
   weekCardTitle: 'この一週間',
   colMe: 'わたし',
@@ -211,7 +215,7 @@ export const JA = {
   coverRose: 'ローズ', coverCream: 'クリーム',
   setFont: 'フォント', fontHand: '手書き', fontPlain: 'ふつう',
   setPaper: '紙', paperDot: 'ドット', paperPlain: '無地',
-  setDesk: 'つくえ', deskFloral: '小花', deskPlain: '無地', deskGrid: '方眼',
+  setDesk: 'テーブルクロス', deskFloral: '小花', deskPlain: '無地', deskGrid: '方眼',
   setSound: '音', setHaptic: '振動',
   setWipe: '記録をぜんぶ消す', wipeBtn: '消す',
   wiped: '消しました。',
@@ -235,8 +239,8 @@ export const JA = {
   },
 
   // ---- シェアカード ----
-  saveShareNat: '保存 / シェア',
   saveImg: '画像を保存',
+  savedAlbum: '写真に保存しました',
   saveFailed: '保存できませんでした。もう一度。',
   weekFull: ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'],
   qrHint: 'スキャンして、あなたの分も',
@@ -319,7 +323,7 @@ export const JA = {
       chill: 'ごろごろ', mood: 'きもち', meet: 'であい',
     },
     stamp: {
-      milktea: 'タピオカ', coffee: 'コーヒー', takeout: '出前', hotpot: 'お鍋',
+      milktea: 'タピオカ', coffee: 'コーヒー', takeout: 'デリバリー', hotpot: 'お鍋',
       burger: 'バーガー', dessert: 'スイーツ', fruit: 'くだもの', nightsnack: '夜食',
       water: 'お水', shower: 'お風呂', laundry: '洗濯', cook: '自炊',
       clean: 'そうじ', goout: 'おでかけ',

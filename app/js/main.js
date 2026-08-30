@@ -5,6 +5,7 @@ import { STAMPS, GLYPHS, isGlyph, HIDDEN, GIFTS, GIFT_WAX, CATEGORIES, INKS, COP
 import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint, inkMainColor, inkCSS, darken, seedOf, weatherSVG } from './stamp.js';
 import { store, dateKey, fmtTime, posOf } from './store.js';
 import { sync } from './sync.js';
+import { iapPrice, iapBuy, iapRestore } from './native.js';
 import { collectGifts, claimTicket } from './net.js';
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked } from './hidden.js';
 import { verdictOf } from './verdict.js';
@@ -627,8 +628,9 @@ function paperHTML(dk, extraCls = '') {
     ${chipsHTML(recs)}
     ${recs.length ? '' : `<div class="canvas-hint">${
       dk > dateKey(Date.now()) ? COPY.emptyFuture : COPY.emptyPast}</div>`}
-    ${note ? `<div class="day-note">${esc(note)}</div>` : ''}
-    ${verdictLine(recs, dk === dateKey(Date.now()))}
+    ${/* 🔴 写了话就不再画判词：两条都渲染会叠在纸的下缘（8-30 用户截图抓到）。
+         规则跟日卡一致 —— 用户自己写的话永远优先于系统替他说的那句。 */''}
+    ${note ? `<div class="day-note">${esc(note)}</div>` : verdictLine(recs, dk === dateKey(Date.now()))}
   </div>`;
 }
 
@@ -1036,6 +1038,9 @@ function renderTabLabels() {
   });
   const st = $('#supply-title'); if (st) st.textContent = COPY.supplyTitle;
   const sf = $('#supply-foot'); if (sf) sf.textContent = COPY.supplyFoot;
+  // 浏览器标签页标题也要跟语言走 —— 8-30 英文残留中文大扫除抓到的：
+  // <title> 写死「戳了么」，英文用户的标签页/分享预览全程是中文。
+  document.title = COPY.appName;
 }
 
 function applyLook() {
@@ -1368,15 +1373,22 @@ async function startPurchase() {
     toast(COPY.proThanks, 1800); haptic();
     return true;
   }
-  // TODO(IAP): 在这里调内购插件，成功后 store.setPro(true)
+  const r = await iapBuy();
+  if (r === 'ok') {
+    store.setPro(true);                          // setPro 里带同步埋点，另一台设备也会亮
+    toast(COPY.proThanks, 1800); haptic();
+    return true;
+  }
+  if (r === 'cancel') return false;              // 人家自己关的面板，不需要被告知"失败了"
   toast(COPY.proFailed, 2000);
   return false;
 }
 
 async function restorePurchase() {
   if (!window.Capacitor) { store.setPro(true); toast(COPY.proRestored, 1800); return true; }
-  // TODO(IAP): 恢复购买
-  toast(COPY.proFailed, 2000);
+  const r = await iapRestore();
+  if (r === 'ok') { store.setPro(true); toast(COPY.proRestored, 1800); return true; }
+  toast(r === 'none' ? COPY.proNoneFound : COPY.proFailed, 2200);
   return false;
 }
 
@@ -1385,9 +1397,20 @@ function bindProCard(root, rerender) {
     b.addEventListener('click', async () => {
       const a = b.dataset.pro;
       if (a === 'later') { store.declinePro(); closeSheets(); return; }
+      // 等 StoreKit 的这几百毫秒里连点会叠单，锁住
+      b.disabled = true;
       const ok = a === 'restore' ? await restorePurchase() : await startPurchase();
+      b.disabled = false;
       if (ok) { rerender(); renderToday(); }
     }));
+  // 价格从 StoreKit 读真值（"¥6.00"/"$0.99" 按商店地区本地化）。
+  // 拿不到（网页版 / 商品还没在 ASC 建 / 没网）就保持词典里的兜底价 —— 文案价随商店走，不再写死。
+  const buy = root.querySelector('[data-pro="buy"]');
+  if (buy && window.Capacitor) {
+    iapPrice().then(ps => {
+      if (ps && buy.isConnected) buy.textContent = COPY.proBuyN.replace('{price}', ps);
+    });
+  }
 }
 
 // 印泥盒的行：今日页的弹层和抽屉页的「印泥盒」段共用同一份，别让两边长歪
@@ -2012,8 +2035,13 @@ function renderMonthView() {
 
   bindShelf();
   bindSeg();
+  // 🔴 点某天的纸面 = 直接翻到那一天（翻页视图里有「补一枚章」，8-30 用户要的少一步）。
+  //    未来的日子没有可补的，保持原来的"选中看看"。
   document.querySelectorAll('.pg-cell[data-dk]').forEach(el =>
-    el.addEventListener('click', () => { memSelDay = el.dataset.dk; renderMonthView(); }));
+    el.addEventListener('click', () => {
+      if (el.classList.contains('future')) { memSelDay = el.dataset.dk; renderMonthView(); return; }
+      openFlip(el.dataset.dk);
+    }));
   $('#booklet')?.addEventListener('click', () => openBooklet(memY, memM));
   bindDayPanel();
   const sm = $('#share-month');

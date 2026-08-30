@@ -24,8 +24,8 @@ export function nativeHaptic() {
 
 /**
  * 把一张 dataURL 图交给系统（写进缓存目录再拉起分享面板，用户在里面选「存储图像」）。
- * 🔴 为什么不直接存相册：那要 @capacitor-community/media + 相册写入权限声明，
- *    还会弹一次权限询问。分享面板零权限、且顺手支持发给别人——对"分享卡"这个场景更对。
+ * ⚠️ 8-30 起它只负责「分享」——「保存」拆成了 saveToAlbum 直接进相册（用户拍板：
+ *    两个动作两颗键，别让存图的人多走一层分享面板）。
  * 抛错就让调用方接住：**原生里绝不能回落到 <a download>**，那玩意在 WKWebView 里是死的。
  */
 export async function shareImage(dataUrl, filename) {
@@ -61,6 +61,62 @@ export async function shareText(text, title) {
 //    见 .github/workflows 里 Inject 那步 —— 改 client id 时那边要一起改。
 const GOOGLE_IOS_CLIENT_ID = '660308568715-esd7k861ujddrg74s694fed1rpabdlmu.apps.googleusercontent.com';
 const GOOGLE_WEB_CLIENT_ID = '660308568715-bnhbfhnm8s7h9r5o65fdoa1pfio4u33p.apps.googleusercontent.com';
+
+/**
+ * 直接把 dataURL 图存进相册（8-30，@capacitor-community/media）。
+ * iOS 上只声明 NSPhotoLibraryAddUsageDescription + 不传相册 id
+ * → 系统走 **add-only** 轻量授权（只问"允许添加照片吗"，不要整个相册的读权限）。
+ * 返回 false = 没有原生桥；抛错（用户拒了权限等）由调用方接住去弹话。
+ */
+export async function saveToAlbum(dataUrl) {
+  const p = P();
+  if (!p || !p.Media) return false;
+  await p.Media.savePhoto({ path: dataUrl });
+  return true;
+}
+
+// ---- 内购（8-30，@capgo/native-purchases）------------------------------------
+// 非消耗型买断一件：高级印泥盒。授权与恢复全归 StoreKit 管，服务端不参与
+// （store.pro 的跨设备同步只是便利标记，真授权凭据永远是 App Store 的购买记录）。
+// 🔴 Product ID 要跟 App Store Connect 里建的商品一字不差 —— 对不上时
+//    getProducts 拿到空、purchase 直接抛，界面只会看到「没能完成」。
+export const IAP_PRODUCT_ID = 'com.tybbtech.lifestamps.premiuminks';
+
+/** 商品的本地化价格（"¥6.00"/"$0.99" 带货币符）。拿不到返回 null，界面用词典兜底价。 */
+export async function iapPrice() {
+  const p = P();
+  if (!p || !p.NativePurchases) return null;
+  try {
+    const { products } = await p.NativePurchases.getProducts({ productIdentifiers: [IAP_PRODUCT_ID] });
+    return (products && products[0] && products[0].priceString) || null;
+  } catch (_) { return null; }
+}
+
+/** 买。返回 'ok' | 'cancel'（用户自己关了面板，别弹失败）| 'fail' | 'nobridge' */
+export async function iapBuy() {
+  const p = P();
+  if (!p || !p.NativePurchases) return 'nobridge';
+  try {
+    const t = await p.NativePurchases.purchaseProduct({
+      productIdentifier: IAP_PRODUCT_ID, productType: 'inapp',
+    });
+    return t && t.transactionId ? 'ok' : 'fail';
+  } catch (e) {
+    // 插件把用户取消也当异常抛出来 —— 取消不是失败，界面要分得开
+    return /cancel/i.test(String(e && e.message)) ? 'cancel' : 'fail';
+  }
+}
+
+/** 恢复购买。返回 'ok' | 'none'（这个 Apple 账号下没有购买记录）| 'fail' | 'nobridge' */
+export async function iapRestore() {
+  const p = P();
+  if (!p || !p.NativePurchases) return 'nobridge';
+  try {
+    await p.NativePurchases.restorePurchases();
+    const { purchases } = await p.NativePurchases.getPurchases({ onlyCurrentEntitlements: true });
+    return (purchases || []).some(x => x.productIdentifier === IAP_PRODUCT_ID) ? 'ok' : 'none';
+  } catch (_) { return 'fail'; }
+}
 
 /**
  * 拉起系统登录界面，回来交出 idToken（一段 JWT，服务端拿去验签）。

@@ -47,6 +47,8 @@ export const EN = {
   proPitch: 'Give every stamp its own color back',
   proDesc: '10 color inks. Unlock once, keep forever.',
   proBuy: 'Unlock the Premium Ink Set · $0.99',
+  proBuyN: 'Unlock the Premium Ink Set · {price}',
+  proNoneFound: 'No purchase found under this Apple account.',
   proLater: 'Not now',
   proOwned: 'Yours forever',
   proRestore: 'Restore purchase',
@@ -236,8 +238,8 @@ export const EN = {
   },
 
   // ---- share card ----
-  saveShareNat: 'Save / Share',
   saveImg: 'Save image',
+  savedAlbum: 'Saved to Photos',
   saveFailed: 'Couldn’t save — try again.',
   weekFull: ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'],
   qrHint: 'scan to start keeping yours',

@@ -84,6 +84,8 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" $PLIST
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" $PLIST
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string com.googleusercontent.apps.660308568715-esd7k861ujddrg74s694fed1rpabdlmu" $PLIST
+          # ③ 保存到相册（8-30 保存/分享拆两键）。只声明 Add 权限 → iOS 走 add-only 轻量授权
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryAddUsageDescription string Saves your stamp cards to your photo library." $PLIST 2>/dev/null || true
 
       # 钥匙串必须先有：不管证书是"我们导进去"还是"Xcode 自己建"，都得有地方放。
       - name: Prepare keychain

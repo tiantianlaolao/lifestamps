@@ -48,6 +48,11 @@ export const ZH = {
   proPitch: '让每枚章盖回它自己的颜色',
   proDesc: '10 款彩色印泥，一次打开，永久使用。',
   proBuy: '打开高级印泥盒 ￥6',   // ⚠️ 用全角 ￥(U+FFE5)：半角 ¥(U+00A5) 三套字体都没有，会掉字
+  // 原生里价格从 StoreKit 读真值填进 {price}（按商店地区本地化）；上面那条是拿不到时的兜底。
+  // ⚠️ StoreKit 回来的价格串带半角 ¥（U+00A5）——三款**源字体**都没有这个字形，
+  //    子集化救不了，会回退到系统字体。看过 ✦ 那条先例：普通货币符回退无碍，放行。
+  proBuyN: '打开高级印泥盒 {price}',
+  proNoneFound: '这个 Apple 账号下没找到购买记录。',
   proLater: '暂时不用',
   proOwned: '永久拥有',
   proRestore: '恢复购买',
@@ -270,8 +275,9 @@ export const ZH = {
   },
 
   // ---- 8-30 从 share.js 迁进来的（分享卡 + 分享弹层）----
-  saveShareNat: '保存 / 分享',
+  // saveShareNat（保存 / 分享合体键）8-30 退场：保存和分享拆成两颗键了
   saveImg: '保存图片',
+  savedAlbum: '已存进相册',
   saveFailed: '没能保存，再试一次吧。',
   // 日付印和月卡日历共用；星期取全称数组（原 WEEK_CN）
   weekFull: ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'],

@@ -2,6 +2,17 @@
 // 印章渲染：滤镜 defs + SVG 工厂（材质：橡皮/木质/光敏）
 // ============================================================
 import { INKS, GIFT_WAX, GIFT_SEAL_PATH } from './data.js';
+import { nameOf } from './i18n.js';
+
+// aria-label 用的名字：en/ja 查字典，zh 用原值（8-30 英文残留中文大扫除抓到的——
+// 看不见但读屏读得到，长按气泡也会露出来）。kind 推断与 main.js 的 dName 同一套。
+function ariaName(def) {
+  if (!def) return '';
+  const kind = def.kind === 'glyph' ? 'glyph'
+    : def.kind === 'seal' ? 'gift'
+    : String(def.id || '').startsWith('h_') ? 'hidden' : 'stamp';
+  return nameOf(kind, def.id, def.name);
+}
 
 // 线条粗细系数。1.0 = 样张原始线宽。
 // ⚠️ 这个数被改过三次，历史都记在这儿，别再来回拉：
@@ -124,7 +135,7 @@ function sealSVG(def, opts = {}) {
   }
   return `<svg class="${opts.cls || ''}" width="${size}" height="${size}" viewBox="0 0 100 100"`
     + ` style="transform:rotate(${rot}deg);${opts.gray ? 'filter:grayscale(1);opacity:.35;' : ''}"`
-    + ` aria-label="${def.name}">`
+    + ` aria-label="${ariaName(def)}">`
     + `<defs><mask id="${mid}">`
     + `<path d="${GIFT_SEAL_PATH}" fill="#fff"/>`
     + `<g fill="#000" stroke="#000">${def.d}</g>`
@@ -152,7 +163,7 @@ export function stampSVG(def, opts = {}) {
   else if (mat === 'w') filterAttr = ` filter="url(#ls-wood${sd % WOOD_N})"`;
   else if (mat !== 'p') filterAttr = ` filter="url(#ls-w${sd % RUB_N})"`;
   let extra = opts.gray ? 'filter:grayscale(1);opacity:.35;' : '';
-  return `<svg class="${opts.cls || ''}" width="${size}" height="${size}" viewBox="0 0 100 100" style="transform:rotate(${rot}deg);${extra}" aria-label="${def.name}">`
+  return `<svg class="${opts.cls || ''}" width="${size}" height="${size}" viewBox="0 0 100 100" style="transform:rotate(${rot}deg);${extra}" aria-label="${ariaName(def)}">`
     + `<g${filterAttr} opacity="${op}">${body}</g></svg>`;
 }
 

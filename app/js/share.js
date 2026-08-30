@@ -14,24 +14,41 @@ import { COPY, getLang, monthArg, timeShort, dateStampLabel, weekOffset } from '
 const LSA = v => (getLang() === 'en' ? 0 : v);
 // 手写体：zh/ja 用文楷起头，en 用拉丁手写栈（文楷的拉丁字重不对）
 const heroFont = () => (getLang() === 'en' ? HAND : HAND_CN);
-import { isNative, shareImage, shareText } from './native.js';
+import { isNative, shareImage, shareText, saveToAlbum } from './native.js';
 import { createShare, shareURL, codeForDay } from './net.js';
 
-// 保存/分享那颗键：浏览器下载，原生壳走系统分享面板
-// 🔴 原生里**绝不回落到 <a download>**——WKWebView 里它是死的，用户点了毫无反应（静默失败最难查）
-// 🔴 文案跟着能力走：原生下真实发生的是「拉起分享面板」，写"保存图片"就是文案说了代码没做的事
+// 「保存」和「分享」8-30 拆成两颗键（用户拍板：存图的人不该多走一层分享面板）。
+// 原生：保存 = 直接进相册（add-only 轻量授权）；分享 = 系统分享面板（sh-share2，模板按 isNative 渲染）。
+// 网页：只有保存 = 下载；🔴 原生里**绝不回落到 <a download>**——WKWebView 里它是死的。
 function bindSaveBtn(btn, dataUrl, filename) {
   if (!btn) return;
-  const nat = isNative();
-  btn.textContent = nat ? COPY.saveShareNat : COPY.saveImg;
+  btn.textContent = COPY.saveImg;
   btn.onclick = async () => {
-    if (nat) {
-      try { await shareImage(dataUrl, filename); }
-      catch (e) { if (!/cancel/i.test(String(e && e.message))) alert(COPY.saveFailed); }
+    if (isNative()) {
+      try {
+        if (await saveToAlbum(dataUrl)) {
+          btn.textContent = COPY.savedAlbum;               // 反馈写在键上，跟「复制好了」同款
+          setTimeout(() => { btn.textContent = COPY.saveImg; }, 2200);
+          return;
+        }
+        // 老包里没有 Media 桥：退回分享面板，至少路是通的
+        await shareImage(dataUrl, filename);
+      } catch (e) {
+        if (!/cancel/i.test(String(e && e.message))) alert(COPY.saveFailed);
+      }
       return;
     }
     const a = document.createElement('a');
     a.href = dataUrl; a.download = filename; a.click();
+  };
+}
+
+// 「分享」那颗键（只在原生渲染）：拉系统分享面板。用户自己取消不算错。
+function bindShareBtn(btn, dataUrl, filename) {
+  if (!btn) return;
+  btn.onclick = async () => {
+    try { await shareImage(dataUrl, filename); }
+    catch (e) { if (!/cancel/i.test(String(e && e.message))) alert(COPY.saveFailed); }
   };
 }
 
@@ -261,8 +278,10 @@ export async function openShare(y, m) {
     ov.innerHTML = `
       <img src="${dataUrl}" alt="${COPY.cardMyMonth.replace('{m}', monthArg(m))}">
       <button class="ov-btn" id="sh-save" style="margin-top:20px">${COPY.saveImg}</button>
+      ${isNative() ? `<button class="ov-btn ghost" id="sh-share2">${COPY.flipShare}</button>` : ''}
       <button class="ov-btn ghost" id="sh-close">${COPY.shClose}</button>`;
     bindSaveBtn(document.getElementById('sh-save'), dataUrl, COPY.monthFileName.replace('{m}', monthArg(m)));
+    bindShareBtn(document.getElementById('sh-share2'), dataUrl, COPY.monthFileName.replace('{m}', monthArg(m)));
     document.getElementById('sh-close').onclick = () => ov.classList.remove('show');
   } catch (e) {
     ov.innerHTML = `<div class="gen">${COPY.genFail}</div>
@@ -440,6 +459,7 @@ export async function openShareDay(dk) {
                placeholder="${COPY.shNotePh}">
       </div>
       <button class="ov-btn" id="sh-save" style="margin-top:8px">${COPY.saveImg}</button>
+      ${isNative() ? `<button class="ov-btn ghost" id="sh-share2" style="margin-top:6px">${COPY.flipShare}</button>` : ''}
       ${/* 🔴 这一句是 A 分享的动力所在，别删。抽屉里那句「只能由朋友送给你」
              要翻到抽屉才看得见，而 A 决定发不发是在这一屏。 */''}
       <div class="share-hint">${COPY.shareGiftHint}</div>
@@ -460,6 +480,7 @@ export async function openShareDay(dk) {
       draw();
     };
     bindSaveBtn(document.getElementById('sh-save'), dataUrl, COPY.dayFileName.replace('{dk}', dk));
+    bindShareBtn(document.getElementById('sh-share2'), dataUrl, COPY.dayFileName.replace('{dk}', dk));
     bindLinkBtn(dk);
     document.getElementById('sh-close').onclick = () => ov.classList.remove('show');
   }

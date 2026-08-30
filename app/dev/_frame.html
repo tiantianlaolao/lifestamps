@@ -1,0 +1,32 @@
+<!doctype html><meta charset="utf-8"><title>取景框</title>
+<!-- 商店截图取景框（8-30）：headless 最小窗宽 ~500 逻辑像素，直接开 430 会"按 500 渲染再裁"。
+     套一层 iframe 定宽就绕开了（跟 phone.html 同理，宽高可参数化）。
+     用法：--window-size=520,932 --force-device-scale-factor=3 截图后，PIL 裁 (0,0,w*3,h*3)。 -->
+<style>body{margin:0;background:#000}iframe{border:none;display:block}</style>
+<iframe id="f"></iframe>
+<script>
+const q = new URLSearchParams(location.search);
+const w = +q.get('w') || 430, h = +q.get('h') || 932;
+q.delete('w'); q.delete('h');
+// seed=today：给**今天**铺一页好看的章（商店截图 01 用）。
+// ⚠️ 不与 demo=1 同用：demo 只在 records 为空时才播种，这里写了它就不动了。
+// ⚠️ demo 的播种逻辑跳过每逢 5 的日子——8-30 当天正好被跳，所以才需要这条。
+if (q.get('seed') === 'today') {
+  q.delete('seed');
+  localStorage.clear();
+  const now = new Date(); const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+  const mk = (sid, hh, mm, ink, px, py, rot) => ({ id: 's' + hh + mm, stampId: sid, ink, mat: 'r',
+    ts: new Date(y, m, d, hh, mm).getTime(), px, py, rot, sc: 1, op: .92 });
+  localStorage.setItem('lifestamps_records', JSON.stringify([
+    mk('coffee', 9, 10, 'tao', 24, 16, -4), mk('goout', 11, 5, 'wu', 64, 20, 3),
+    mk('milktea', 13, 40, 'tao', 40, 38, -2), mk('read', 15, 20, 'song', 72, 50, 4),
+    mk('flower', 17, 2, 'matcha', 22, 60, -3), mk('music', 20, 45, 'dusk', 56, 72, 2),
+    mk('stayup', 23, 30, 'teng', 78, 80, -5),
+  ]));
+  const dk = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  localStorage.setItem('lifestamps_dayMeta', JSON.stringify({ [dk]: { weather: 'sun' } }));
+}
+const f = document.getElementById('f');
+f.width = w; f.height = h;
+f.src = '../index.html?' + q.toString();
+</script>

@@ -1,0 +1,139 @@
+<!doctype html><meta charset="utf-8"><title>同步引擎自测</title>
+<style>body{font:13px/1.7 monospace;background:#111;color:#ddd;padding:16px}
+.p{color:#7c6}.f{color:#f66;font-weight:700}</style>
+<div id="out">running…</div>
+<!-- 🔴 必须在模块 import 之前清库：store.js 在 import 那一刻就读 localStorage，
+     清晚了这一轮跑的就是上一轮的残局（多个 iframe 共库那个坑的近亲）。 -->
+<script>localStorage.clear();</script>
+<script type="module">
+import { store } from '../js/store.js';
+import { sync } from '../js/sync.js';
+
+const out = document.getElementById('out'); out.textContent = '';
+let pass = 0, fail = 0;
+function ok(cond, msg) {
+  const d = document.createElement('div');
+  d.className = cond ? 'p' : 'f';
+  d.textContent = (cond ? 'PASS  ' : 'FAIL  ') + msg;
+  out.appendChild(d);
+  cond ? pass++ : fail++;
+}
+
+// 假服务端：跟 server/account.js 同一套 LWW 语义（那半边有 test.js 94 条守着，
+// 这里只要行为一致，引擎对得上假的就对得上真的）。
+function mockServer() {
+  const items = new Map(); let seqc = 0;
+  const m = {
+    tokenOk: true,
+    items,
+    // 模拟"另一台设备推了一条"
+    inject(kind, id, data, mtime) {
+      items.set(kind + '|' + id, { kind, id, data: data == null ? null : JSON.stringify(data), mtime, seq: ++seqc });
+    },
+    async syncPush(token, cursor, changes) {
+      if (!m.tokenOk || token !== 'TKN') return { status: 401, changes: [], cursor, more: false };
+      for (const c of changes) {
+        const k = c.kind + '|' + c.id;
+        const cur = items.get(k);
+        if (cur && cur.mtime >= c.mtime) continue;
+        items.set(k, { ...c, seq: ++seqc });
+      }
+      const rows = [...items.values()].filter(r => r.seq > cursor).sort((a, b) => a.seq - b.seq).slice(0, 500);
+      return {
+        status: 200,
+        cursor: rows.length ? rows[rows.length - 1].seq : cursor,
+        more: false,
+        changes: rows.map(({ kind, id, data, mtime }) => ({ kind, id, data, mtime })),
+      };
+    },
+    async authLogin() { return { token: 'TKN', uid: 'u1', provider: 'apple', email: 't@example.com' }; },
+    authLogout() {},
+    async nativeLogin() { return 'FAKE_ID_TOKEN'; },
+  };
+  return m;
+}
+
+(async () => {
+ try {
+  const mock = mockServer();
+  Object.assign(sync.net, mock);          // 接缝：只换传输层，引擎原样
+  sync.init();
+
+  // ① 没登录：埋点记 mtime、不入队
+  store.addRecord({ id: 'ra', stampId: 'milktea', ts: Date.now() - 1000, ink: 'zhu' });
+  ok(!!sync.meta['record|ra'], '没登录时变更也记了本地 mtime（LWW 的另一半）');
+  ok(!Object.keys(sync.queue).length, '没登录时不入队（登录那一刻 fullPush 会补上）');
+
+  // ② 登录 = 全量入队 + 立刻推
+  const r1 = await sync.login('apple');
+  await sync.flush();
+  ok(r1.ok && sync.isLoggedIn(), '登录成功，会话在手');
+  ok(mock.items.has('record|ra'), '登录时把已有记录全量推上去了');
+  ok(mock.items.has('settings|settings') && mock.items.has('pro|pro'), 'settings/pro 也跟着上去了');
+  ok(!Object.keys(sync.queue).length, '推完队列清空');
+  const cur1 = sync.cursor.u1;
+  ok(cur1 > 0, '游标推进（' + cur1 + '）');
+
+  // ③ 登录状态下的新变更：入队 → flush 后到服务端
+  store.addRecord({ id: 'rb', stampId: 'coffee', ts: Date.now(), ink: 'tao' });
+  ok(!!sync.queue['record|rb'], '登录后新盖的章入了队');
+  await sync.flush();
+  ok(mock.items.has('record|rb') && !sync.queue['record|rb'], 'flush 后到了服务端、队列摘掉');
+
+  // ④ 另一台设备推的新记录：拉下来进 store，onApplied 响
+  let applied = 0; sync.onApplied = () => applied++;
+  mock.inject('record', 'rx', { id: 'rx', stampId: 'cat', ts: Date.now() }, Date.now() + 5);
+  await sync.flush();
+  ok(store.records.some(r => r.id === 'rx'), '远端新记录应用进了本地');
+  ok(applied === 1, 'onApplied 响了一次（拿去整体重画）');
+
+  // ⑤ LWW：远端旧改动盖不掉本地新的
+  const myMtime = sync.meta['record|rb'];
+  mock.inject('record', 'rb', { id: 'rb', stampId: 'HACKED' }, myMtime - 1000);
+  await sync.flush();
+  ok(store.records.find(r => r.id === 'rb').stampId === 'coffee', 'LWW：远端旧改动被丢弃');
+
+  // ⑥ 墓碑：远端删除传播到本地
+  mock.inject('record', 'ra', null, Date.now() + 10);
+  await sync.flush();
+  ok(!store.records.some(r => r.id === 'ra'), '远端墓碑 → 本地这条也删了');
+
+  // ⑦ settings 回声防线：远端 settings 应用后不能被 persist 钩子再入队
+  mock.inject('settings', 'settings', { ...store.settings, cover: 'cream' }, Date.now() + 20);
+  await sync.flush();
+  ok(store.settings.cover === 'cream', '远端 settings 应用了（cover=cream）');
+  ok(!sync.queue['settings|settings'], '⭐ 应用远端 settings 没有触发回声入队');
+
+  // ⑧ 清空：给云上每条记录发墓碑，settings/pro 不动
+  sync.wipeCloud();
+  ok(!!sync.queue['record|rb'] && sync.queue['record|rb'].data === null, 'wipeCloud 给记录排了墓碑');
+  ok(!sync.queue['settings|settings'] && !sync.queue['pro|pro'], 'wipeCloud 不碰 settings/pro');
+  await sync.flush();
+  ok(mock.items.get('record|rb').data === null, '墓碑推到了服务端');
+
+  // ⑨ 会话失效：401 → 静默掉线，不无限重试
+  mock.tokenOk = false;
+  store.addRecord({ id: 'rc', stampId: 'dog', ts: Date.now() });
+  await sync.flush();
+  ok(!sync.isLoggedIn(), '服务端 401 → 本地静默掉线（会话清掉）');
+
+  // ⑩ 单机恢复路线（用户 8-30 问出来的）：退出态清空本地 → 再登录 → 云上的记录回来
+  //    🔴 这条当时抓到过一个真 bug：不清 meta/cursor 的话，拉回来的全被 stale mtime 丢弃。
+  mock.tokenOk = true;
+  store.wipe();
+  sync.wipeLocal();
+  ok(!store.records.length, '（前提）本地已清空');
+  const r2 = await sync.login('apple');
+  await sync.flush();
+  ok(r2.ok, '重新登录成功');
+  ok(store.records.some(r => r.id === 'rx'), '⭐ 云上活着的记录恢复回来了（rx）');
+  ok(!store.records.some(r => r.id === 'rb'), '云上已删（墓碑）的没有跟着还魂（rb）');
+  ok(!store.records.some(r => r.id === 'rc'), '401 掉线时没推出去的旧队列没渗漏给这次登录（rc）');
+ } catch (e) {
+  ok(false, 'CRASH: ' + (e && e.stack || e));
+ }
+ const d = document.createElement('div');
+ d.textContent = `—— 通过 ${pass} / 失败 ${fail}`;
+ out.appendChild(d);
+})();
+</script>

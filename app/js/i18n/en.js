@@ -293,6 +293,22 @@ export const EN = {
   frCopyCode: 'Copy this code',
   frHoldCopy: 'Press and hold the code to copy it',
 
+  // ---- account & sync ----
+  accTitle: 'Account & Sync',
+  accHint: 'Sign in and your stamps travel between your devices.',
+  accWebOnly: 'Sign in inside the app to sync across your devices.',
+  accLoginApple: 'Sign in with Apple',
+  accLoginGoogle: 'Sign in with Google',
+  accLoggedAs: 'Signed in · {who}',
+  accProviderApple: 'Apple account',
+  accProviderGoogle: 'Google account',
+  accSyncedAt: 'Last synced {t}',
+  accSyncNow: 'Sync now',
+  accLogout: 'Sign out',
+  accBusy: 'Syncing…',
+  accFailed: 'Didn’t sign in — try once more.',
+  accSynced: 'All synced.',
+
   // ---- data-layer names (see i18n内容对照表.md; a few are concept swaps, not translations) ----
   names: {
     ink: {

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sign in with Apple（8-30 账号功能）。Identifier 那边的 capability 用户已勾。
+	     workflow 把这份拷进 ios/App/App/ 并用 CODE_SIGN_ENTITLEMENTS 指过来——
+	     直接改 ios/ 没用，下一次 cap add 就冲掉了（跟图标/Info.plist 同一个道理）。 -->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+</dict>
+</plist>

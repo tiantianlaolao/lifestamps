@@ -56,6 +56,11 @@ export const store = {
   //    ⚠️ 格式必须是 16~64 位小写十六进制——服务端会拿它拼 cookie 名，那边也在校验。
   installId: load('installId', ''),
 
+  // 同步引擎的埋点（sync.js 在 init 里指过来）。⚠️ store 自己**不 import sync**——
+  // 方向只能是 sync 依赖 store，反过来就是环。没登录时这俩钩子也在记本地 mtime，无害。
+  onChange: null,     // (kind, id, data|null) 每处数据变更叫一声；null = 删除
+  onPersist: null,    // persist 尾巴上叫一声（settings 这类"到处直接改"的靠它 diff）
+
   persist() {
     save('records', this.records);
     save('discovered', this.discovered);
@@ -75,6 +80,7 @@ export const store = {
     save('unlocked', this.unlocked);
     save('shares', this.shares);
     save('installId', this.installId);
+    if (this.onPersist) this.onPersist();
   },
 
   // 第一次要用的时候才生成，生成完立刻落盘。
@@ -111,7 +117,11 @@ export const store = {
   // ---- 高级印泥盒（一次性内购）----
   // pro = 买断了没有。买断之后 10 款付费色永久可用、跟免费三款一样不限量。
   isPro() { return !!this.pro; },
-  setPro(v) { this.pro = !!v; this.persist(); },
+  setPro(v) {
+    this.pro = !!v;
+    if (this.onChange) this.onChange('pro', 'pro', { pro: this.pro });
+    this.persist();
+  },
   // 拒绝之后 7 天内不主动提 —— 文档拍板：不追问、不倒计时、不红点。
   // 只是"不主动弹"，用户自己进印泥盒时该看到的还是看得到。
   declinePro() { this.proDeclined = Date.now(); this.persist(); },
@@ -146,20 +156,33 @@ export const store = {
     this.records.push(rec);
     let isNew = false;
     if (markDiscovered && !this.discovered[rec.stampId]) { this.discovered[rec.stampId] = rec.ts; isNew = true; }
+    if (this.onChange) {
+      this.onChange('record', rec.id, rec);
+      if (isNew) this.onChange('discovered', rec.stampId, { ts: rec.ts });
+    }
     this.persist();
     return isNew;
   },
   removeRecord(id) {
     this.records = this.records.filter(r => r.id !== id);
+    if (this.onChange) this.onChange('record', id, null);
     this.persist();
   },
   updateRecordNote(id, note) {
     const r = this.records.find(r => r.id === id);
-    if (r) { if (note) r.note = note; else delete r.note; this.persist(); }
+    if (r) {
+      if (note) r.note = note; else delete r.note;
+      if (this.onChange) this.onChange('record', id, r);
+      this.persist();
+    }
   },
   updateRecordTime(id, ts) {
     const r = this.records.find(r => r.id === id);
-    if (r) { r.ts = ts; this.persist(); }
+    if (r) {
+      r.ts = ts;
+      if (this.onChange) this.onChange('record', id, r);
+      this.persist();
+    }
   },
 
   recordsOf(dkey) { return this.records.filter(r => dateKey(r.ts) === dkey).sort((a, b) => a.ts - b.ts); },
@@ -174,6 +197,7 @@ export const store = {
   unlockStamp(id) {
     if (this.unlocked[id]) return false;
     this.unlocked[id] = Date.now();
+    if (this.onChange) this.onChange('unlocked', id, { ts: this.unlocked[id] });
     this.persist();
     return true;
   },
@@ -181,15 +205,23 @@ export const store = {
   unlockHidden(hid) {
     if (this.hidden[hid]) return false;
     this.hidden[hid] = Date.now();
+    if (this.onChange) this.onChange('hidden', hid, { ts: this.hidden[hid] });
     this.persist();
     return true;
   },
 
   // 往月称号一旦定格就不再改——这个月过完了，它就是那样了
-  sealTitle(month, t) { if (!this.titles[month]) { this.titles[month] = t; this.persist(); } },
+  sealTitle(month, t) {
+    if (!this.titles[month]) {
+      this.titles[month] = t;
+      if (this.onChange) this.onChange('title', month, t);
+      this.persist();
+    }
+  },
 
   setWeather(dkey, w) {
     this.dayMeta[dkey] = { ...(this.dayMeta[dkey] || {}), weather: w || undefined };
+    if (this.onChange) this.onChange('daymeta', dkey, this.dayMeta[dkey]);
     this.persist();
   },
   weatherOf(dkey) { return this.dayMeta[dkey]?.weather || null; },
@@ -197,6 +229,7 @@ export const store = {
   // 天级的一句话（本子翻页视图里「给这天补一句」）。空字符串 = 擦掉
   setDayNote(dkey, text) {
     this.dayMeta[dkey] = { ...(this.dayMeta[dkey] || {}), note: text || undefined };
+    if (this.onChange) this.onChange('daymeta', dkey, this.dayMeta[dkey]);
     this.persist();
   },
   dayNoteOf(dkey) { return this.dayMeta[dkey]?.note || ''; },

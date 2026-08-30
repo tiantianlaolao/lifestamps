@@ -51,3 +51,40 @@ export async function shareText(text, title) {
   await p.Share.share({ title: title || '戳了么', text, dialogTitle: title || '发给朋友' });
   return true;
 }
+
+// ---- 登录（8-30，@capgo/capacitor-social-login）-----------------------------
+// Google 的两个 OAuth Client ID（console.cloud.google.com 的 DayStamp 项目里建的）。
+// ⚠️ 这类 client id 本来就要打进 App 包里，是公开配置不是密钥。
+//    服务端 LS_GOOGLE_AUD 要配**同这两串**（idToken 的 aud 可能是其中任何一个，
+//    插件版本不同行为不同，两串都进白名单最稳）。
+// 🔴 iOS 的反转 URL scheme（com.googleusercontent.apps.660308…）由 CI 注进 Info.plist，
+//    见 .github/workflows 里 Inject 那步 —— 改 client id 时那边要一起改。
+const GOOGLE_IOS_CLIENT_ID = '660308568715-esd7k861ujddrg74s694fed1rpabdlmu.apps.googleusercontent.com';
+const GOOGLE_WEB_CLIENT_ID = '660308568715-bnhbfhnm8s7h9r5o65fdoa1pfio4u33p.apps.googleusercontent.com';
+
+/**
+ * 拉起系统登录界面，回来交出 idToken（一段 JWT，服务端拿去验签）。
+ * provider: 'apple' | 'google'。返回 null = 没有原生桥 / 用户取消 / 插件失败——
+ * 调用方（sync.login）把它统一当「这次没登上」，不区分原因往上抛。
+ */
+export async function nativeLogin(provider) {
+  const p = P();
+  if (!p || !p.SocialLogin) return null;
+  try {
+    // initialize 幂等，每次登录前都调一遍最省心（塞启动流程里反而有时序问题）
+    await p.SocialLogin.initialize({
+      apple: {},
+      google: { iOSClientId: GOOGLE_IOS_CLIENT_ID, webClientId: GOOGLE_WEB_CLIENT_ID },
+    });
+    const r = await p.SocialLogin.login({ provider, options: { scopes: ['email'] } });
+    // ⚠️ idToken 藏的位置各版本不完全一样，摸全再放弃 —— 摸不到就是 null，
+    //    真机验收时开 diag 面板看原始返回（这一层最可能出入）。
+    const res = (r && (r.result || r)) || {};
+    return res.idToken || res.identityToken
+      || (res.authentication && res.authentication.idToken)
+      || (res.credential && res.credential.idToken)
+      || null;
+  } catch (_) {
+    return null;                                   // 用户点了取消也走这儿，安静收场
+  }
+}

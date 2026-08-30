@@ -330,6 +330,23 @@ export const ZH = {
   frCodeHint: '打开「戳了么」，在「我的」里输入这个码就能收下。',
   frCopyCode: '复制这个码',
   frHoldCopy: '长按上面的码也能复制',
+
+  // ---- 账号与同步（8-30，我的页）----
+  // ⛔ 守禁词表照旧；也不写"备份"——同步是"在你的设备之间"，数据不是交给别人。
+  accTitle: '账号与同步',
+  accHint: '登录后，记录会在你的设备之间同步。',
+  accWebOnly: '在 App 里登录后，记录会在设备之间同步。',
+  accLoginApple: '通过 Apple 登录',
+  accLoginGoogle: '通过 Google 登录',
+  accLoggedAs: '已登录 · {who}',
+  accProviderApple: 'Apple 账号',
+  accProviderGoogle: 'Google 账号',
+  accSyncedAt: '上次同步 {t}',
+  accSyncNow: '现在同步',
+  accLogout: '退出登录',
+  accBusy: '正在同步…',
+  accFailed: '没登录上，再试一次。',
+  accSynced: '同步好了。',
   // ⛔ dayDone（「今天收集得不错。」）8-28 退场：它 21 点后才出，绝大多数人永远看不到；
   //    位置让给判词（见下面 v_* 那一组）。
   onboarding: [

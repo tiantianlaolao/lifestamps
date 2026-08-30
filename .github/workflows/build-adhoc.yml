@@ -70,10 +70,20 @@ jobs:
           # 中文显示名
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 戳了么" $PLIST 2>/dev/null \
             || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 戳了么" $PLIST
-          # 出口合规：这个 App 不含任何自研加密（无账号、无网络、全本地）。
+          # 出口合规：只用系统 TLS 和平台登录，不含自研加密算法（豁免类）。
           # 不声明的话包传上去会停在「缺少合规信息」，每次都要去网页上手动答一遍问卷。
           /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" $PLIST 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" $PLIST
+          # ---- 账号功能（8-30）----
+          # ① Sign in with Apple 的 entitlement（capability 在开发者后台已勾）
+          cp ios-assets/App.entitlements ios/App/App/App.entitlements
+          # ② Google 登录的回跳 URL scheme = iOS client id 的反转形式。
+          #    ⚠️ 改 client id 时 native.js 里那两串常量要一起改。
+          /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" $PLIST 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" $PLIST
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" $PLIST
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" $PLIST
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string com.googleusercontent.apps.660308568715-esd7k861ujddrg74s694fed1rpabdlmu" $PLIST
 
       # 钥匙串必须先有：不管证书是"我们导进去"还是"Xcode 自己建"，都得有地方放。
       - name: Prepare keychain
@@ -160,6 +170,7 @@ jobs:
             -authenticationKeyIssuerID $ASC_ISSUER_ID \
             DEVELOPMENT_TEAM=$APPLE_TEAM_ID \
             CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_ENTITLEMENTS=App/App.entitlements \
             COMPILER_INDEX_STORE_ENABLE=NO
 
       - name: Export IPA (ad-hoc)

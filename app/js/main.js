@@ -4,6 +4,7 @@
 import { STAMPS, GLYPHS, isGlyph, HIDDEN, GIFTS, GIFT_WAX, CATEGORIES, INKS, COPY, stampById, hiddenById, monthPersona, lockedMaterial, seriesById } from './data.js';
 import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint, inkMainColor, inkCSS, darken, seedOf, weatherSVG } from './stamp.js';
 import { store, dateKey, fmtTime, posOf } from './store.js';
+import { sync } from './sync.js';
 import { collectGifts, claimTicket } from './net.js';
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked } from './hidden.js';
 import { verdictOf } from './verdict.js';
@@ -238,6 +239,11 @@ function init() {
   // ⚠️ 这里**不弹提示**：开机一次性冒出十几条"发现新章"是噪音，
   //    宣布留给盖章那一刻，开机只把状态补齐。
   checkUnlocks();
+
+  // 跨设备同步（8-30）：埋点挂上 + 登录着就开机对一轮账。
+  // 拉到远端变更后整体重画一次 —— 增量修补哪张纸不值得，全量 render 本来就便宜。
+  sync.onApplied = () => render();
+  sync.init();
 
   renderTabLabels();
   initDiag();               // 真机诊断面板：「我的」页版本号连点 5 下
@@ -2123,6 +2129,47 @@ function renderWeekView() {
 // ============================================================
 // 我的
 // ============================================================
+
+// 账号区块（8-30）。三种态：网页版（只有一句话）/ 没登录（两颗登录键）/ 已登录。
+function accountHTML() {
+  if (!sync.isLoggedIn()) {
+    if (!window.Capacitor) return `<div class="acc-hint">${COPY.accWebOnly}</div>`;
+    return `<div class="acc-hint">${COPY.accHint}</div>
+      <button class="acc-btn dark" id="acc-apple"> ${COPY.accLoginApple}</button>
+      <button class="acc-btn" id="acc-google">${COPY.accLoginGoogle}</button>
+      <div class="acc-msg" id="acc-msg"></div>`;
+  }
+  const a = sync.account;
+  const who = a.email || (a.provider === 'apple' ? COPY.accProviderApple : COPY.accProviderGoogle);
+  const t = sync.lastSyncAt
+    ? `${monthDay(new Date(sync.lastSyncAt))} ${fmtTime(sync.lastSyncAt)}` : '—';
+  return `<div class="acc-row"><span>${COPY.accLoggedAs.replace('{who}', esc(who))}</span></div>
+    <div class="acc-row"><span class="v">${COPY.accSyncedAt.replace('{t}', t)}</span>
+      <button class="pk" id="acc-sync">${COPY.accSyncNow}</button></div>
+    <button class="acc-btn" id="acc-logout">${COPY.accLogout}</button>
+    <div class="acc-msg" id="acc-msg"></div>`;
+}
+
+function bindAccount() {
+  const msg = () => $('#acc-msg');
+  const doLogin = async prov => {
+    if (msg()) msg().textContent = COPY.accBusy;
+    const r = await sync.login(prov);
+    if (r.ok) { toast(COPY.accSynced); renderMe(); return; }
+    // native = 没拉起来/用户取消：不说话，人家自己取消的不需要被告知"失败了"
+    if (r.error === 'native') { if (msg()) msg().textContent = ''; return; }
+    if (msg()) msg().textContent = r.error === 'net' ? COPY.claimNet : COPY.accFailed;
+  };
+  $('#acc-apple')?.addEventListener('click', () => doLogin('apple'));
+  $('#acc-google')?.addEventListener('click', () => doLogin('google'));
+  $('#acc-logout')?.addEventListener('click', async () => { await sync.logout(); renderMe(); });
+  $('#acc-sync')?.addEventListener('click', async () => {
+    if (msg()) msg().textContent = COPY.accBusy;
+    await sync.flush();
+    renderMe();
+  });
+}
+
 function renderMe() {
   const now = new Date();
   const curM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -2165,6 +2212,11 @@ function renderMe() {
       <button class="claim-go" id="claim-go">${COPY.claimGo}</button>
     </div>
     <div class="claim-msg" id="claim-msg"></div>
+
+    ${/* 账号与同步（8-30）。登录只在原生壳里有 —— 网页版没有登录插件，
+         也不该有：网页只是试用渠道，跨设备这件事属于 App。 */''}
+    <div class="ttl-k">${COPY.accTitle}</div>
+    <div class="acc-box">${accountHTML()}</div>
 
     <div class="me-list">
       <div class="me-item"><span class="k">${COPY.setCover}</span>
@@ -2261,9 +2313,18 @@ function renderMe() {
   $('#sw-haptic').onchange = e => { store.settings.haptic = e.target.checked; store.persist(); };
   $('#btn-wipe').onclick = e => {
     const b = e.target;
-    if (b.dataset.arm) { store.wipe(); toast(COPY.wiped); render(); }
-    else { b.dataset.arm = '1'; b.textContent = COPY.wipeConfirm; }
+    if (b.dataset.arm) {
+      // 🔴 登录状态下清空也要清云端（发墓碑）——不然下次同步全"复活"，
+      //    用户以为清了其实没清，比不给这个功能还糟。
+      //    顺序：先 wipeCloud（要读 meta 才知道云上有什么）再 wipeLocal（清基线）。
+      sync.wipeCloud();
+      sync.wipeLocal();
+      store.wipe();
+      toast(COPY.wiped);
+      render();
+    } else { b.dataset.arm = '1'; b.textContent = COPY.wipeConfirm; }
   };
+  bindAccount();
 }
 
 // ============================================================

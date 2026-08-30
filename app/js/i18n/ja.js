@@ -291,6 +291,22 @@ export const JA = {
   frCopyCode: 'このコードをコピー',
   frHoldCopy: '上のコードを長押しでもコピーできます',
 
+  // ---- アカウントと同期 ----
+  accTitle: 'アカウントと同期',
+  accHint: 'ログインすると、記録があなたの端末どうしで同期されます。',
+  accWebOnly: 'アプリでログインすると、端末どうしで同期できます。',
+  accLoginApple: 'Apple でログイン',
+  accLoginGoogle: 'Google でログイン',
+  accLoggedAs: 'ログイン中 · {who}',
+  accProviderApple: 'Apple アカウント',
+  accProviderGoogle: 'Google アカウント',
+  accSyncedAt: '最終同期 {t}',
+  accSyncNow: '今すぐ同期',
+  accLogout: 'ログアウト',
+  accBusy: '同期しています…',
+  accFailed: 'ログインできませんでした。もう一度。',
+  accSynced: '同期しました。',
+
   // ---- データ層の名前 ----
   names: {
     ink: {

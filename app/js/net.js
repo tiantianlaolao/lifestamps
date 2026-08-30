@@ -137,7 +137,7 @@ export async function collectGifts() {
 
   const got = [];
   for (const id of unlocked) {
-    if (!store.hidden[id]) { store.hidden[id] = Date.now(); got.push(id); }
+    if (store.unlockHidden(id)) got.push(id);   // 走 store 方法：同步引擎的埋点在那里面
   }
   // 到了、但没进抽屉的那些（名额用完了，或者这枚本来就有）
   const again = [...new Set(arrived)].filter(id => !got.includes(id));
@@ -159,10 +159,40 @@ export async function claimTicket(ticket) {
   if (status === 0) return null;                      // 网不通：跟"码不对"要分得开
   if (data && data.ok) {
     // 立刻进抽屉，不等下次开机对账 —— 输完码却什么都没发生是最糟的形态
-    if (!store.hidden[data.seal]) { store.hidden[data.seal] = Date.now(); store.persist(); }
+    store.unlockHidden(data.seal);              // 走 store 方法：同步引擎的埋点在那里面
     return data;
   }
   return { error: (data && data.error) || 'bad', status };
+}
+
+// ---- 账号 + 同步（8-30，配 server/account.js）-------------------------------
+// 这三个跟上面一样：失败一律返回 null，绝不抛。会话 token 由 sync.js 保管。
+
+export async function authLogin(provider, idToken, install) {
+  const { status, data } = await call('auth/login', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ provider, token: idToken, install }),
+  });
+  if (status === 0) return null;
+  return data || {};                       // 失败时 data 里有 error，界面拿去挑话
+}
+
+export function authLogout(token) {
+  return call('auth/logout', { method: 'POST', headers: { authorization: 'Bearer ' + token } });
+}
+
+// 推一批变更 + 按游标拉增量。返回 {status, cursor, more, changes} / null（网不通）。
+// 🔴 401 也要原样交上去：sync.js 拿它判断"会话没了该静默掉线"，吞掉就变成永远重试。
+export async function syncPush(token, cursor, changes) {
+  const { status, data } = await call('sync', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
+    body: JSON.stringify({ cursor, changes }),
+  });
+  if (status === 0) return null;
+  if (status === 401) return { status: 401, changes: [], cursor, more: false };
+  if (!data || !Number.isFinite(data.cursor)) return null;
+  return { status, cursor: data.cursor, more: !!data.more, changes: data.changes || [] };
 }
 
 // 我现在解开了哪几枚封蜡。网不通返回 null（跟"一枚都没有"要分得开）。

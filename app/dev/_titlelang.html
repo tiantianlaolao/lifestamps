@@ -1,0 +1,45 @@
+<!doctype html><meta charset="utf-8"><title>往月称号跟语言走</title>
+<!-- 8-30 用户抓到：英文/日文界面下「以前的」还显示中文「民以食为天代言人」。
+     病根 = 定格存了成品文案而不是人格 key。修法 = 存 key + 老数据反查迁移。
+     这页守两件事：①老中文定格在 en 界面显示英文 ②迁移把 key 写回存储（同步能带走）。 -->
+<style>body{font:13px/1.7 monospace;background:#111;color:#ddd;padding:16px}
+.p{color:#7c6}.f{color:#f66;font-weight:700} iframe{border:1px solid #555;margin-top:10px}</style>
+<div id="out"></div><iframe id="f" width="390" height="700"></iframe>
+<script>
+const out = document.getElementById('out'), f = document.getElementById('f');
+let pass = 0, fail = 0;
+const ok = (c, m) => { const d = document.createElement('div');
+  d.className = c ? 'p' : 'f'; d.textContent = (c ? 'PASS  ' : 'FAIL  ') + m;
+  out.appendChild(d); c ? pass++ : fail++; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+(async () => {
+ try {
+  localStorage.clear();
+  // 摆状态：一条 7 月的老式定格（中文成品文案，没有 k）——正是用户手机上的样子
+  localStorage.setItem('lifestamps_titles', JSON.stringify({
+    '2026-07': { title: '民以食为天代言人', line: '吃好喝好，人生第一要义。' },
+  }));
+  f.src = '/index.html?skipob=1&book=open&lang=en&tab=me';
+  await new Promise(r => { f.onload = r; }); await sleep(1600);
+  const d = f.contentDocument;
+  const olds = [...d.querySelectorAll('.ttl-old .ttl-n')].map(e => e.textContent);
+  ok(olds.length === 1, '「以前的」有一条（' + olds.length + '）');
+  ok(olds[0] === 'Certified Foodie', '⭐ 老中文定格在英文界面显示英文：' + JSON.stringify(olds[0]));
+  const stored = JSON.parse(f.contentWindow.localStorage.getItem('lifestamps_titles'));
+  ok(stored['2026-07'] && stored['2026-07'].k === 'food',
+     '⭐ 迁移把 key 写回了存储（同步会带走，别的设备一并修好）：' + JSON.stringify(stored['2026-07']));
+
+  // 再开日文，同一条该显示日文
+  f.src = '/index.html?skipob=1&book=open&lang=ja&tab=me';
+  await new Promise(r => { f.onload = r; }); await sleep(1600);
+  const ja = f.contentDocument.querySelector('.ttl-old .ttl-n');
+  ok(ja && ja.textContent === '花より団子代表', '同一条在日文界面显示日文：' + (ja && ja.textContent));
+ } catch (e) {
+  ok(false, 'CRASH: ' + (e && e.stack || e));
+ }
+ const d2 = document.createElement('div');
+ d2.textContent = `—— 通过 ${pass} / 失败 ${fail}`;
+ out.appendChild(d2);
+})();
+</script>

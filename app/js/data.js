@@ -402,17 +402,20 @@ export const HIDDEN = [
 
 // ---------- 月度人格 ----------
 // countsByCat: {catId: n}，total
-// 8-30 文案本体迁进 i18n 字典（zh.js personas，中文逐字相同）：人格是要跟语言走的，
-// en 的 seal 是两个词的数组（红印上下两行大写），ja 保留四字汉字印。
-export function monthPersona(countsByCat, total) {
-  const P = COPY.personas;
-  if (!total) return P.quiet;
+// 8-30 文案本体迁进 i18n 字典（zh.js personas，中文逐字相同）：人格是要跟语言走的。
+// 🔴 8-30 再修一刀：**判定与取词分开**。往月定格要存 key 不存成品文案 ——
+//    存文案的话，换语言/跨语言设备同步都会露出旧语言（用户抓到「民以食为天」赖在英文界面上）。
+export function personaKey(countsByCat, total) {
+  if (!total) return 'quiet';
   const grow = countsByCat.grow || 0, chill = countsByCat.chill || 0;
   const sorted = Object.entries(countsByCat).sort((a, b) => b[1] - a[1]);
   const [topCat] = sorted[0];
   if (grow >= 5 && chill >= 5 && Math.min(grow, chill) / Math.max(grow, chill) > 0.5)
-    return P.mix;
-  return P[topCat] || P.fallback;
+    return 'mix';
+  return COPY.personas[topCat] ? topCat : 'fallback';
+}
+export function monthPersona(countsByCat, total) {
+  return COPY.personas[personaKey(countsByCat, total)];
 }
 
 // ---------- 初始 12 枚 + 其余 30 枚的解锁条件 ----------

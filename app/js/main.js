@@ -1,7 +1,7 @@
 // ============================================================
 // 戳了么 · 主逻辑（V1.2：手账翻书 / 印泥消耗 / 2.5D 盖章）
 // ============================================================
-import { STAMPS, GLYPHS, isGlyph, HIDDEN, GIFTS, GIFT_WAX, CATEGORIES, INKS, COPY, stampById, hiddenById, monthPersona, lockedMaterial, seriesById } from './data.js';
+import { STAMPS, GLYPHS, isGlyph, HIDDEN, GIFTS, GIFT_WAX, CATEGORIES, INKS, COPY, stampById, hiddenById, monthPersona, personaKey, lockedMaterial, seriesById } from './data.js';
 import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint, inkMainColor, inkCSS, darken, seedOf, weatherSVG } from './stamp.js';
 import { store, dateKey, fmtTime, posOf } from './store.js';
 import { sync } from './sync.js';
@@ -13,7 +13,7 @@ import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.
 import { openShare, openShareDay } from './share.js';
 import { attachCurl } from './curl.js';
 import { initDiag } from './diag.js';
-import { setLang, getLang, detectLang, weekName, monthDay, LANGS, nameOf, weekOffset, monthArg, monthArgShort } from './i18n.js';
+import { setLang, getLang, detectLang, weekName, monthDay, LANGS, nameOf, weekOffset, monthArg, monthArgShort, personaKeyOfTitle } from './i18n.js';
 
 // 数据层名字的显示：zh 直接用 data.js 原值，en/ja 查字典（nameOf 缺词自动回退原值）
 function dName(def) {
@@ -299,6 +299,8 @@ function init() {
 function sealPastTitles() {
   const now = new Date();
   const cur = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  // 🔴 定格存 **key** 不存文案（8-30 用户抓到：换语言后老称号还是中文）。
+  //    文案渲染时按当前语言取 —— 定格的是"那个月你是谁"，不是"当时用什么话说的"。
   const months = new Set(store.records.map(r => dateKey(r.ts).slice(0, 7)));
   for (const m of months) {
     if (m >= cur || store.titles[m]) continue;
@@ -306,9 +308,27 @@ function sealPastTitles() {
     const recs = store.monthRecords(y, mm);
     const catCnt = {};
     for (const r of recs) { const c = stampById[r.stampId]?.cat; if (c) catCnt[c] = (catCnt[c] || 0) + 1; }
-    const p = monthPersona(catCnt, recs.length);
-    store.sealTitle(m, { title: p.title, line: p.line });
+    store.sealTitle(m, { k: personaKey(catCnt, recs.length) });
   }
+  // 老数据迁移：早期定格存的是中文成品文案 → 用中文标题反查成 key，跑一次就静止。
+  // 反查不出的（理论上没有）原样留着，渲染端会兜底显示旧文案。
+  let migrated = false;
+  for (const [m, t] of Object.entries(store.titles)) {
+    if (t.k) continue;
+    const k = personaKeyOfTitle(t.title);
+    if (k) {
+      store.titles[m] = { k };
+      if (store.onChange) store.onChange('title', m, store.titles[m]);   // 同步引擎带走，别的设备也修好
+      migrated = true;
+    }
+  }
+  if (migrated) store.persist();
+}
+
+// 往月称号的显示：新数据按 key 取当前语言；老数据兜底旧文案
+function pastPersona(t) {
+  const k = t.k || personaKeyOfTitle(t.title);
+  return (k && COPY.personas[k]) || t;
 }
 
 function switchTab(name) {
@@ -2144,7 +2164,7 @@ function renderMe() {
     ${past.length ? `<div class="ttl-k">${COPY.meTitlePast}</div>
       <div class="ttl-strip">${past.map(([m, t]) => {
         const mm = +m.slice(5);
-        return `<div class="ttl-old"><div class="ttl-m">${COPY.monLabelSp.replace('{m}', monthArgShort(mm))}</div><div class="ttl-n">${t.title}</div></div>`;
+        return `<div class="ttl-old"><div class="ttl-m">${COPY.monLabelSp.replace('{m}', monthArgShort(mm))}</div><div class="ttl-n">${pastPersona(t).title}</div></div>`;
       }).join('')}</div>` : ''}
 
     ${/* 朋友给你留链接、你也给自己挑了一枚 → 那边给了个 6 位码，在这儿收下。

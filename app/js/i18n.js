@@ -124,6 +124,13 @@ export function monthArgShort(m) {
   return new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date(2000, m - 1, 1));
 }
 
+// 老定格数据的迁移钥匙：早期往月称号存的是中文成品文案，用中文标题反查出人格 key。
+// 查不出返回 null（调用方原样显示旧文案，宁可露中文也别丢内容）。
+export function personaKeyOfTitle(title) {
+  for (const [k, v] of Object.entries(ZH.personas)) if (v.title === title) return k;
+  return null;
+}
+
 // 日付印上的日期：zh/ja「8 · 28」；en「AUG 28」
 export function dateStampLabel(d) {
   if (lang !== 'en') return `${d.getMonth() + 1} · ${d.getDate()}`;

@@ -11,12 +11,11 @@
 //
 // 文体：中国語版と同じ「やわらかい・ちょっと自嘲・命令しない」。
 // 禁止語も引き継ぐ：タスク・習慣・連続・達成率・失敗。
-// ⚠️ アプリ名「ライフスタンプ」は仮称 —— 海外正式名が決まったら
-//    appName と monthFileName の2箇所だけ差し替える。
+// アプリ名：DayStamp = デイスタンプ（8-30 決定）。
 // ============================================================
 
 export const JA = {
-  appName: 'ライフスタンプ',
+  appName: 'デイスタンプ',
 
   tab_today: 'きょう',
   tab_memories: 'ノート',
@@ -245,7 +244,7 @@ export const JA = {
   genBusy: '押しています…',
   genFail: 'うまく作れませんでした。もう一度。',
   shClose: 'とじる',
-  monthFileName: 'わたしの{m}月-ライフスタンプ.png',
+  monthFileName: 'わたしの{m}月-デイスタンプ.png',
   dayFileName: 'きょうの一枚-{dk}.png',
   dayCardAlt: 'きょうのカード',
   shDayEmpty: 'この日はまだ空っぽです。',
@@ -288,7 +287,7 @@ export const JA = {
   frOwnAlready: '自分へのぶんは、もう選んでいます。',
   frOwnRetry: 'できませんでした。もう一度どうぞ',
   frOwnGot: '自分に一個残しました',
-  frCodeHint: '「ライフスタンプ」をひらいて、「わたし」でこのコードを入れると受け取れます。',
+  frCodeHint: '「デイスタンプ」をひらいて、「わたし」でこのコードを入れると受け取れます。',
   frCopyCode: 'このコードをコピー',
   frHoldCopy: '上のコードを長押しでもコピーできます',
 

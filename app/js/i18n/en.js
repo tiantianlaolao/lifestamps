@@ -11,12 +11,11 @@
 //
 // Voice: same as Chinese — gentle, a little self-deprecating, never bossy.
 // Banned words carry over: task, habit, streak, fail, progress, complete.
-// ⚠️ App name "Life Stamps" is a WORKING TITLE — final overseas name TBD (user).
-//    When decided, change appName + monthFileName here and the store listing only.
+// App name: DayStamp（用户 8-30 拍板）— ja はデイスタンプ。
 // ============================================================
 
 export const EN = {
-  appName: 'Life Stamps',
+  appName: 'DayStamp',
 
   tab_today: 'Today',
   tab_memories: 'Journal',
@@ -247,7 +246,7 @@ export const EN = {
   genBusy: 'Stamping…',
   genFail: 'Couldn’t generate it — try again.',
   shClose: 'Close',
-  monthFileName: 'My {m} - Life Stamps.png',
+  monthFileName: 'My {m} - DayStamp.png',
   dayFileName: 'Day card {dk}.png',
   dayCardAlt: 'day card',
   shDayEmpty: 'This day is still empty.',
@@ -290,7 +289,7 @@ export const EN = {
   frOwnAlready: 'You’ve already kept one for yourself.',
   frOwnRetry: 'Didn’t work — tap once more',
   frOwnGot: 'You kept one for yourself',
-  frCodeHint: 'Open Life Stamps and enter this code under “Me”.',
+  frCodeHint: 'Open DayStamp and enter this code under “Me”.',
   frCopyCode: 'Copy this code',
   frHoldCopy: 'Press and hold the code to copy it',
 

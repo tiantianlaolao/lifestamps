@@ -46,7 +46,7 @@ export const JA = {
   proName: 'プレミアムインクセット',
   proPitch: 'それぞれの色を、それぞれに返す',
   proDesc: 'カラーインク10色。一度ひらけば、ずっと使えます。',
-  proBuy: 'プレミアムインクをひらく · ¥160',
+  proBuy: 'プレミアムインクをひらく · ¥150',
   proBuyN: 'プレミアムインクをひらく · {price}',
   proNoneFound: 'この Apple アカウントに購入記録が見つかりません。',
   proLater: '今はいい',

@@ -98,3 +98,34 @@ export function monthDay(d, spaced = false) {
 }
 
 export function locale() { return LOCALE[lang]; }
+
+// ---- 8-30 en/ja 行为差异（zh 路径的输出必须逐字节不变）----
+
+// 周起始：中文周一；en/ja 周日（美国和日本的日历习惯都是周日开头）
+export function weekStartDay() { return lang === 'zh' ? 1 : 0; }
+// 某个 jsDay（getDay() 的 0=周日）在本语言日历里排第几列
+export function weekOffset(jsDay) { return (jsDay + 7 - weekStartDay()) % 7; }
+
+// 时刻：zh/ja 24 小时「10:05」；en 12 小时「10:05 AM」
+export function timeShort(ts) {
+  const d = new Date(ts);
+  if (lang !== 'en') return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(d);
+}
+
+// 词条里的 {m}（月）：zh/ja 数字（「8 月」「8月」），en 用月名（「My August」）
+export function monthArg(m) {
+  if (lang !== 'en') return String(m);
+  return new Intl.DateTimeFormat('en-US', { month: 'long' }).format(new Date(2000, m - 1, 1));
+}
+// 短月名：书脊、翻页栏这类挤地方用（en「Aug」，zh/ja 照旧数字）
+export function monthArgShort(m) {
+  if (lang !== 'en') return String(m);
+  return new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date(2000, m - 1, 1));
+}
+
+// 日付印上的日期：zh/ja「8 · 28」；en「AUG 28」
+export function dateStampLabel(d) {
+  if (lang !== 'en') return `${d.getMonth() + 1} · ${d.getDate()}`;
+  return new Intl.DateTimeFormat('en-US', { month: 'short' }).format(d).toUpperCase() + ' ' + d.getDate();
+}

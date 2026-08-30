@@ -13,6 +13,9 @@
 <div class="wrap"><h2>日卡重做：判词做主角，章放大成证据</h2><div class="row" id="out"></div></div>
 <script type="module">
 import { store } from '../js/store.js';
+import { setLang } from '../js/i18n.js';
+// ?lang=en|ja 比稿其他语言的卡（8-30 三语化加的）
+const _L = new URLSearchParams(location.search).get('lang'); if (_L) setLang(_L);
 import { buildDayCard, buildMonthCard } from '../js/share.js';
 
 // 造几种典型的一天，直接调真正的 buildDayCard —— 不另写一套渲染，

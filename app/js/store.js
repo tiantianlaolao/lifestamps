@@ -1,6 +1,7 @@
 // ============================================================
 // 本地状态：记录 / 已发现 / 隐藏章 / 设置（localStorage，本地优先）
 // ============================================================
+import { timeShort } from './i18n.js';   // 时刻显示跟语言走（en 是 12 小时制）
 const K = 'lifestamps_';
 
 function load(k, d) { try { const v = JSON.parse(localStorage.getItem(K + k)); return v ?? d; } catch { return d; } }
@@ -11,8 +12,7 @@ export function dateKey(ts) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 export function fmtTime(ts) {
-  const d = new Date(ts);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return timeShort(ts);   // zh/ja 24h「10:05」逐字节同原实现；en「10:05 AM」
 }
 
 // 一条记录在纸上的位置（百分比）。

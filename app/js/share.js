@@ -7,7 +7,13 @@ import { INKS, stampById, monthPersona } from './data.js';
 import { defsMarkup, stampSVG, WEATHER, weatherSVG } from './stamp.js';
 import { store, dateKey } from './store.js';
 import { verdictOf } from './verdict.js';
-import { COPY } from './i18n.js';
+import { COPY, getLang, monthArg, timeShort, dateStampLabel, weekOffset } from './i18n.js';
+
+// 中文卡面大量靠 letter-spacing 拉气质，拉丁文照抄是灾难（en.js 头注写的那条）。
+// ⚠️ SVG 光栅化时吃不到 app.css 那条 [data-lang="en"] * 规则，只能在这儿自己管。
+const LSA = v => (getLang() === 'en' ? 0 : v);
+// 手写体：zh/ja 用文楷起头，en 用拉丁手写栈（文楷的拉丁字重不对）
+const heroFont = () => (getLang() === 'en' ? HAND : HAND_CN);
 import { isNative, shareImage, shareText } from './native.js';
 import { createShare, shareURL, codeForDay } from './net.js';
 
@@ -17,11 +23,11 @@ import { createShare, shareURL, codeForDay } from './net.js';
 function bindSaveBtn(btn, dataUrl, filename) {
   if (!btn) return;
   const nat = isNative();
-  btn.textContent = nat ? '保存 / 分享' : '保存图片';
+  btn.textContent = nat ? COPY.saveShareNat : COPY.saveImg;
   btn.onclick = async () => {
     if (nat) {
       try { await shareImage(dataUrl, filename); }
-      catch (e) { if (!/cancel/i.test(String(e && e.message))) alert('没能保存，再试一次吧。'); }
+      catch (e) { if (!/cancel/i.test(String(e && e.message))) alert(COPY.saveFailed); }
       return;
     }
     const a = document.createElement('a');
@@ -48,10 +54,13 @@ function dateStamp(d) {
   let h = 0; for (const c of dk2) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
   const rot = -1 - (h % 4);
   const W = 300, H = 96, X = 66, Y = 128;
+  // en「AUG 28」比「8 · 28」宽：日期字号收一档、星期右移，否则 FRI 被压得只剩 RI（实测截图）
+  const en = getLang() === 'en';
+  const dfs = en ? 44 : 54, wx = en ? X + 218 : X + 208;
   return `<g transform="rotate(${rot} ${X + W / 2} ${Y + H / 2})" opacity=".86">
     <rect x="${X}" y="${Y}" width="${W}" height="${H}" rx="6" fill="none" stroke="${RED}" stroke-width="5" filter="url(#ls-w1)"/>
-    <text x="${X + 26}" y="${Y + 66}" font-size="54" letter-spacing="4" fill="${RED}" font-family="${FONT}">${d.getMonth() + 1} · ${d.getDate()}</text>
-    <text x="${X + 208}" y="${Y + 66}" font-size="24" letter-spacing="2" fill="${RED}" font-family="${FONT}">星期${'日一二三四五六'[d.getDay()]}</text>
+    <text x="${X + 26}" y="${Y + 66}" font-size="${dfs}" letter-spacing="4" fill="${RED}" font-family="${FONT}">${dateStampLabel(d)}</text>
+    <text x="${wx}" y="${Y + 66}" font-size="24" letter-spacing="2" fill="${RED}" font-family="${FONT}">${COPY.weekFull[d.getDay()]}</text>
   </g>`;
 }
 
@@ -86,9 +95,9 @@ function cornerMark(size = 140, qr = null) {
       fill="${PAPER}" stroke="rgba(58,54,47,.10)" stroke-width="1.5"/>
     <g transform="translate(${x},${y}) scale(${sc})"><path d="${path}" fill="${INK_C}"/></g>
     <text x="64" y="${1440 - 104}" font-size="42" letter-spacing="8"
-      fill="${INK_C}" opacity=".88" font-family="${HAND_CN}">戳了么</text>
-    <text x="66" y="${1440 - 64}" font-size="21" letter-spacing="3"
-      fill="${SUB}" opacity=".8" font-family="${FONT}">扫一扫，也开始记你的</text>
+      fill="${INK_C}" opacity=".88" font-family="${HAND_CN}">${COPY.appName}</text>
+    <text x="66" y="${1440 - 64}" font-size="21" letter-spacing="${LSA(3)}"
+      fill="${SUB}" opacity=".8" font-family="${FONT}">${COPY.qrHint}</text>
   </g>`;
 }
 
@@ -103,7 +112,7 @@ export function buildMonthCard(y, m) {
   const now = new Date();
   const isCur = y === now.getFullYear() && m === now.getMonth() + 1;
   const daysInMonth = new Date(y, m, 0).getDate();
-  const offset = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+  const offset = weekOffset(new Date(y, m - 1, 1).getDay());
 
   const byDay = {};
   const cnt = {}, catCnt = {};
@@ -122,15 +131,29 @@ export function buildMonthCard(y, m) {
   //    会让别人说"这也是我"的东西，其余（日历、排行、印泥）都是关于 A 的数据报表。
   //    所以放大到 250、摆到正中，标题跟着它走；日历和排行降级成证据。
   const SEAL = 250, sealX = 540 - SEAL / 2, sealY = 236;
-  const sealChars = (persona.seal || persona.title.replace(/[「」，。]/g, '').slice(0, 4)).padEnd(4, '　');
-  const seal = `
-    <g transform="translate(${sealX},${sealY}) rotate(-3 ${SEAL / 2} ${SEAL / 2})">
-      <g filter="url(#ls-w0)">
-        <rect x="0" y="0" width="${SEAL}" height="${SEAL}" rx="18" fill="${RED}"/>
+  let sealText;
+  if (Array.isArray(persona.seal)) {
+    // en：印面 = 上下两行大写短词（西方橡皮章的母语形态，四字硬凑是翻译腔——对照表 §六 拍板）。
+    // 字号按最长词收缩：大写拉丁均宽约 0.62em，0.9×SEAL 内放得下才不顶边。
+    const [w1, w2] = persona.seal;
+    const fs = Math.round(Math.min(SEAL * 0.26, (SEAL * 0.9) / (Math.max(w1.length, w2.length) * 0.62)));
+    sealText = `
+        <text x="${SEAL / 2}" y="${SEAL * 0.42}" text-anchor="middle" font-size="${fs}"
+          font-weight="700" letter-spacing="2" fill="${PAPER}" font-family="${FONT}">${xesc(w1)}</text>
+        <text x="${SEAL / 2}" y="${SEAL * 0.79}" text-anchor="middle" font-size="${fs}"
+          font-weight="700" letter-spacing="2" fill="${PAPER}" font-family="${FONT}">${xesc(w2)}</text>`;
+  } else {
+    const sealChars = (persona.seal || persona.title.replace(/[「」，。]/g, '').slice(0, 4)).padEnd(4, '　');
+    sealText = `
         <text x="${SEAL / 2}" y="${SEAL * 0.42}" text-anchor="middle" font-size="${SEAL * 0.3}"
           font-weight="700" fill="${PAPER}" font-family="${FONT}">${sealChars.slice(0, 2)}</text>
         <text x="${SEAL / 2}" y="${SEAL * 0.79}" text-anchor="middle" font-size="${SEAL * 0.3}"
-          font-weight="700" fill="${PAPER}" font-family="${FONT}">${sealChars.slice(2, 4)}</text>
+          font-weight="700" fill="${PAPER}" font-family="${FONT}">${sealChars.slice(2, 4)}</text>`;
+  }
+  const seal = `
+    <g transform="translate(${sealX},${sealY}) rotate(-3 ${SEAL / 2} ${SEAL / 2})">
+      <g filter="url(#ls-w0)">
+        <rect x="0" y="0" width="${SEAL}" height="${SEAL}" rx="18" fill="${RED}"/>${sealText}
       </g>
     </g>`;
 
@@ -145,10 +168,13 @@ export function buildMonthCard(y, m) {
   let cal = '';
   for (let r = 0; r <= rows; r++)
     cal += `<line x1="${gridX}" y1="${gridY + r * rowH}" x2="${gridX + colW * 7}" y2="${gridY + r * rowH}" stroke="rgba(58,54,47,.09)"/>`;
-  const wk = ['一', '二', '三', '四', '五', '六', '日'];
-  cal += wk.map((w, i) =>
-    `<text x="${gridX + i * colW + colW / 2}" y="${gridY - 16}" text-anchor="middle" font-size="14" letter-spacing="3"
-      fill="${i === 5 ? '#7593A6' : i === 6 ? RED : SUB}" font-family="${FONT}">${w}</text>`).join('');
+  const wk = COPY.calHead;
+  cal += wk.map((w, i) => {
+    // 周末着色按真实星期算：zh 周一开头时红=第7列(日)，en 周日开头时红=第1列
+    const jsDay = (i + 7 - offset + new Date(y, m - 1, 1).getDay()) % 7;
+    return `<text x="${gridX + i * colW + colW / 2}" y="${gridY - 16}" text-anchor="middle" font-size="14" letter-spacing="3"
+      fill="${jsDay === 6 ? '#7593A6' : jsDay === 0 ? RED : SUB}" font-family="${FONT}">${w}</text>`;
+  }).join('');
   const rots = [-5, 4, -3, 6, -6, 3, 5, -4, 2, -2, 4, -5, 3, -3, 5, -4, 6, -2, 3, -6, 4, -3, -5, 2, 5, -4, 3, -2, 6, -3, 4];
   for (let d = 1; d <= daysInMonth; d++) {
     const pos = offset + d - 1, r = Math.floor(pos / 7), c = pos % 7;
@@ -191,16 +217,16 @@ export function buildMonthCard(y, m) {
     ${[0,1,2,3,4,5,6,7,8,9].map(i => `<rect x="${445 + i * 20}" y="-12" width="10" height="40" fill="#E8B4BE" transform="skewX(-20)" transform-origin="${445 + i * 20} 0"/>`).join('')}
   </g>
   <text x="540" y="126" text-anchor="middle" font-size="17" letter-spacing="9" fill="${SUB}"
-    font-family="${FONT}">MY ${['','JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'][m]} · ${y}</text>
-  <text x="540" y="196" text-anchor="middle" font-size="46" font-weight="600" letter-spacing="5"
-    fill="${INK_C}" font-family="${FONT}">我的 ${m} 月</text>
+    font-family="${FONT}">${COPY.cardTopLine.replace('{MON}', COPY.cardTopMonths[m]).replace('{y}', y)}</text>
+  <text x="540" y="196" text-anchor="middle" font-size="46" font-weight="600" letter-spacing="${LSA(5)}"
+    fill="${INK_C}" font-family="${FONT}">${COPY.cardMyMonth.replace('{m}', monthArg(m))}</text>
   ${recs.length ? seal : ''}
   ${recs.length ? `<text x="540" y="${sealY + SEAL + 76}" text-anchor="middle" font-size="${tSize}"
       letter-spacing="2" fill="${INK_C}" font-family="${HAND_CN}">${xesc(persona.title)}</text>
     <text x="540" y="${sealY + SEAL + 130}" text-anchor="middle" font-size="24" letter-spacing="3"
       fill="${SUB}" font-family="${HAND_CN}">${xesc(persona.line)}</text>` : ''}
-  ${recs.length ? `<text x="540" y="${gridY - 56}" text-anchor="middle" font-size="22" letter-spacing="5"
-    fill="${SUB}" font-family="${FONT}">盖了 ${recs.length} 枚 · 留白 ${blankDays} 天</text>` : ''}
+  ${recs.length ? `<text x="540" y="${gridY - 56}" text-anchor="middle" font-size="22" letter-spacing="${LSA(5)}"
+    fill="${SUB}" font-family="${FONT}">${COPY.notebookMonthSub.replace('{n}', recs.length).replace('{m}', blankDays)}</text>` : ''}
   ${cal}
   ${stats}
   ${cornerMark()}
@@ -227,20 +253,20 @@ export function rasterize(svg, w, h, scale = 2) {
 
 export async function openShare(y, m) {
   const ov = document.getElementById('ov-share');
-  ov.innerHTML = `<div class="gen">正在盖章…</div>`;
+  ov.innerHTML = `<div class="gen">${COPY.genBusy}</div>`;
   ov.classList.add('show');
   try {
     const svg = buildMonthCard(y, m);
     const dataUrl = await rasterize(svg, 1080, 1440, 1.5);
     ov.innerHTML = `
-      <img src="${dataUrl}" alt="我的 ${m} 月">
-      <button class="ov-btn" id="sh-save" style="margin-top:20px">保存图片</button>
-      <button class="ov-btn ghost" id="sh-close">关闭</button>`;
-    bindSaveBtn(document.getElementById('sh-save'), dataUrl, `我的${m}月-戳了么.png`);
+      <img src="${dataUrl}" alt="${COPY.cardMyMonth.replace('{m}', monthArg(m))}">
+      <button class="ov-btn" id="sh-save" style="margin-top:20px">${COPY.saveImg}</button>
+      <button class="ov-btn ghost" id="sh-close">${COPY.shClose}</button>`;
+    bindSaveBtn(document.getElementById('sh-save'), dataUrl, COPY.monthFileName.replace('{m}', monthArg(m)));
     document.getElementById('sh-close').onclick = () => ov.classList.remove('show');
   } catch (e) {
-    ov.innerHTML = `<div class="gen">生成失败了，再试一次吧。</div>
-      <button class="ov-btn ghost" id="sh-close">关闭</button>`;
+    ov.innerHTML = `<div class="gen">${COPY.genFail}</div>
+      <button class="ov-btn ghost" id="sh-close">${COPY.shClose}</button>`;
     document.getElementById('sh-close').onclick = () => ov.classList.remove('show');
   }
 }
@@ -249,8 +275,6 @@ export async function openShare(y, m) {
 // ============================================================
 // 今日手账卡（V1.1 #7）：日期 + 星期 + 天气 + 当日印章按真实落点还原
 // ============================================================
-const WEEK_CN = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
-
 export function buildDayCard(dk, weather, qr = null) {
   const recs = store.recordsOf(dk);
   const d = new Date(dk + 'T12:00:00');
@@ -297,10 +321,8 @@ export function buildDayCard(dk, weather, qr = null) {
       x, y, size, ink: r.ink, mat: r.mat,
       rot: r.rot ?? rotSeq[i % 10], opacity: r.op ?? 0.92,
     });
-    const t = new Date(r.ts);
-    const hh = String(t.getHours()).padStart(2, '0'), mm = String(t.getMinutes()).padStart(2, '0');
     art += `<text x="${x + size / 2}" y="${y + size + 30}" text-anchor="middle" font-size="20"
-      fill="${SUB}" opacity=".75" font-family="${FONT}">${hh}:${mm}</text>`;
+      fill="${SUB}" opacity=".75" font-family="${FONT}">${timeShort(r.ts)}</text>`;
   });
 
   // ---- 只有这一天才有的信息：从几点到几点 ----
@@ -308,9 +330,8 @@ export function buildDayCard(dk, weather, qr = null) {
   let span = '';
   if (N >= 2) {
     const ts = recs.map(r => r.ts).sort((a, b) => a - b);
-    const f = t => `${String(new Date(t).getHours()).padStart(2, '0')}:${String(new Date(t).getMinutes()).padStart(2, '0')}`;
-    span = `<text x="540" y="${top + blockH + 100}" text-anchor="middle" font-size="26" letter-spacing="7"
-      fill="${FAINT}" font-family="${FONT}">${f(ts[0])} — ${f(ts[ts.length - 1])}</text>`;
+    span = `<text x="540" y="${top + blockH + 100}" text-anchor="middle" font-size="26" letter-spacing="${LSA(7)}"
+      fill="${FAINT}" font-family="${FONT}">${timeShort(ts[0])} — ${timeShort(ts[ts.length - 1])}</text>`;
   }
 
   // 主角字号跟着长度走：短句大、长句收，别撑破也别缩成一行小字
@@ -325,12 +346,12 @@ export function buildDayCard(dk, weather, qr = null) {
   </g>
   ${dateStamp(d)}
   ${wSvg}
-  ${hero ? `<text x="540" y="${heroY}" text-anchor="middle" font-size="${heroSize}" letter-spacing="3"
-      fill="${INK_C}" font-family="${HAND_CN}">${xesc(hero)}</text>` : ''}
+  ${hero ? `<text x="540" y="${heroY}" text-anchor="middle" font-size="${heroSize}" letter-spacing="${LSA(3)}"
+      fill="${INK_C}" font-family="${heroFont()}">${xesc(hero)}</text>` : ''}
   ${art}
   ${span}
   ${N ? '' : `<text x="540" y="740" text-anchor="middle" font-size="34" fill="${FAINT}"
-      font-family="${HAND_CN}">这一天留白着，也很好。</text>`}
+      font-family="${heroFont()}">${COPY.emptyPast}</text>`}
   ${cornerMark(140, qr)}
 </svg>`;
 }
@@ -352,17 +373,17 @@ function bindLinkBtn(dk) {
 
   btn.onclick = async () => {
     const recs = store.recordsOf(dk);
-    if (!recs.length) { box.textContent = '这一天还是空的。'; return; }
+    if (!recs.length) { box.textContent = COPY.shDayEmpty; return; }
     btn.disabled = true;
-    btn.textContent = '正在生成…';
+    btn.textContent = COPY.linkBusy;
     const rec = await createShare(dk, recs, verdictOf(recs), store.dayNoteOf(dk) || '');
     btn.disabled = false;
-    btn.textContent = '发个链接给朋友';
-    if (!rec) { box.textContent = '没能生成，检查一下网络再试。'; return; }
+    btn.textContent = COPY.shLinkBtn;
+    if (!rec) { box.textContent = COPY.shLinkFail; return; }
     const url = shareURL(rec.code);
     // 原生：直接拉起系统分享面板，一步发出去
     if (isNative()) {
-      try { if (await shareText(`我今天的样子 ${url}`, '戳了么')) { showLink(url, false); return; } }
+      try { if (await shareText(COPY.shareMsg.replace('{url}', url), COPY.appName)) { showLink(url, false); return; } }
       catch (e) { if (/cancel/i.test(String(e && e.message))) { showLink(url, false); return; } }
     }
     showLink(url, true);
@@ -370,23 +391,23 @@ function bindLinkBtn(dk) {
 
   function showLink(url, justMade) {
     box.innerHTML = `<div class="sh-url">${xesc(url)}</div>
-      <button class="ov-btn ghost sh-copy" id="sh-copy">复制链接</button>
-      <div class="sh-tip">${justMade ? '发给朋友，他们能给你留一枚封蜡。' : '这一天已经有链接了，发同一个。'}
-        七天后自动收起来。</div>`;
+      <button class="ov-btn ghost sh-copy" id="sh-copy">${COPY.shCopy}</button>
+      <div class="sh-tip">${justMade ? COPY.shTipNew : COPY.shTipOld}
+        ${COPY.shTipExpire}</div>`;
     const cp = document.getElementById('sh-copy');
     cp.onclick = async () => {
       // 🔴 clipboard API 在微信内置浏览器和一部分安卓 WebView 里会直接失败，
       //    所以留一条"选中文字自己长按复制"的后路，不能只有一条路。
       try {
         await navigator.clipboard.writeText(url);
-        cp.textContent = '复制好了';
+        cp.textContent = COPY.shCopied;
       } catch (_) {
         const el = box.querySelector('.sh-url');
         const r = document.createRange(); r.selectNodeContents(el);
         const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
-        cp.textContent = '长按上面这行复制';
+        cp.textContent = COPY.shCopyManual;
       }
-      setTimeout(() => { cp.textContent = '复制链接'; }, 2400);
+      setTimeout(() => { cp.textContent = COPY.shCopy; }, 2400);
     };
   }
 }
@@ -401,7 +422,7 @@ export async function openShareDay(dk) {
   let rec = codeForDay(dk);
 
   async function draw() {
-    ov.innerHTML = `<div class="gen">正在盖章…</div>`;
+    ov.innerHTML = `<div class="gen">${COPY.genBusy}</div>`;
     ov.classList.add('show');
     if (!rec) {
       try { rec = await createShare(dk, store.recordsOf(dk), verdictOf(store.recordsOf(dk)),
@@ -412,19 +433,19 @@ export async function openShareDay(dk) {
     const wRow = ['sun','cloud','rain','storm','snow','night'].map(w =>
       `<button class="wbtn ${weather === w ? 'sel' : ''}" data-w="${w}">${weatherSVG(w, 26, weather === w ? '#C94B3C' : '#8C8880')}</button>`).join('');
     ov.innerHTML = `
-      <img src="${dataUrl}" alt="今日手账卡">
-      <div class="weather-row"><span style="font-size:11px;color:var(--sub);letter-spacing:.1em">今天的天气</span>${wRow}</div>
+      <img src="${dataUrl}" alt="${COPY.dayCardAlt}">
+      <div class="weather-row"><span style="font-size:11px;color:var(--sub);letter-spacing:.1em">${COPY.weatherToday}</span>${wRow}</div>
       <div class="share-note">
         <input id="sh-note" maxlength="24" value="${xesc(store.dayNoteOf(dk) || '')}"
-               placeholder="想在卡上写一句话？">
+               placeholder="${COPY.shNotePh}">
       </div>
-      <button class="ov-btn" id="sh-save" style="margin-top:8px">保存图片</button>
+      <button class="ov-btn" id="sh-save" style="margin-top:8px">${COPY.saveImg}</button>
       ${/* 🔴 这一句是 A 分享的动力所在，别删。抽屉里那句「只能由朋友送给你」
              要翻到抽屉才看得见，而 A 决定发不发是在这一屏。 */''}
       <div class="share-hint">${COPY.shareGiftHint}</div>
-      <button class="ov-btn ghost" id="sh-link" style="margin-top:6px">发个链接给朋友</button>
+      <button class="ov-btn ghost" id="sh-link" style="margin-top:6px">${COPY.shLinkBtn}</button>
       <div class="sh-linkbox" id="sh-linkbox"></div>
-      <button class="ov-btn ghost" id="sh-close">关闭</button>`;
+      <button class="ov-btn ghost" id="sh-close">${COPY.shClose}</button>`;
     ov.querySelectorAll('.wbtn').forEach(b => b.onclick = () => {
       weather = weather === b.dataset.w ? null : b.dataset.w;
       store.setWeather(dk, weather);
@@ -438,12 +459,12 @@ export async function openShareDay(dk) {
       store.setDayNote(dk, v);
       draw();
     };
-    bindSaveBtn(document.getElementById('sh-save'), dataUrl, `今日手账-${dk}.png`);
+    bindSaveBtn(document.getElementById('sh-save'), dataUrl, COPY.dayFileName.replace('{dk}', dk));
     bindLinkBtn(dk);
     document.getElementById('sh-close').onclick = () => ov.classList.remove('show');
   }
   try { await draw(); } catch (e) {
-    ov.innerHTML = `<div class="gen">生成失败了，再试一次吧。</div><button class="ov-btn ghost" id="sh-close">关闭</button>`;
+    ov.innerHTML = `<div class="gen">${COPY.genFail}</div><button class="ov-btn ghost" id="sh-close">${COPY.shClose}</button>`;
     document.getElementById('sh-close').onclick = () => ov.classList.remove('show');
   }
 }

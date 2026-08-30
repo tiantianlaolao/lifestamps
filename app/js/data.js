@@ -2,6 +2,7 @@
 // 戳了么 · 数据层：印泥 / 分类 / 印章库 / 隐藏章 / 人格 / 文案
 // 印章绘制约定：viewBox 0 0 100 100，CC = 印泥 paint 占位符
 // ============================================================
+import { COPY } from './i18n.js';   // monthPersona 的文案在字典里（zh.js personas）
 
 // ---------- 印泥 ----------
 // free:true 的三款（朱红/墨色/松绿）是免费档，不耗印泥盒、随便盖 —— 这是
@@ -401,23 +402,17 @@ export const HIDDEN = [
 
 // ---------- 月度人格 ----------
 // countsByCat: {catId: n}，total
+// 8-30 文案本体迁进 i18n 字典（zh.js personas，中文逐字相同）：人格是要跟语言走的，
+// en 的 seal 是两个词的数组（红印上下两行大写），ja 保留四字汉字印。
 export function monthPersona(countsByCat, total) {
-  if (!total) return { title: '安静生活的人类', line: '这个月很安静，也很好。', seal: '安静生活' };
+  const P = COPY.personas;
+  if (!total) return P.quiet;
   const grow = countsByCat.grow || 0, chill = countsByCat.chill || 0;
   const sorted = Object.entries(countsByCat).sort((a, b) => b[1] - a[1]);
   const [topCat] = sorted[0];
   if (grow >= 5 && chill >= 5 && Math.min(grow, chill) / Math.max(grow, chill) > 0.5)
-    return { title: '一边努力，一边摆烂的人类', line: '劳逸结合，是门手艺。', seal: '努力摆烂' };
-  const map = {
-    chill: { title: '快乐摆烂派', line: '什么都不做，也是认真生活。', seal: '快乐摆烂' },
-    food:  { title: '民以食为天代言人', line: '吃好喝好，人生第一要义。', seal: '干饭要紧' },
-    grow:  { title: '上进得让人心疼', line: '记得偶尔也躺一躺。', seal: '上进人类' },
-    meet:  { title: '生活观察员', line: '路边的猫和晚霞，都被你收进来了。', seal: '生活观察' },
-    mood:  { title: '情绪浓度超标选手', line: '大哭大笑，都是活着的证据。', seal: '情绪满格' },
-    fun:   { title: '快乐星球常驻居民', line: '玩，也是正经事。', seal: '快乐星球' },
-    daily: { title: '把日子过成日子的人', line: '认真喝水洗澡的人运气不会差。', seal: '好好生活' },
-  };
-  return map[topCat] || { title: '认真生活的普通人类', line: '普通的一个月，也值得纪念。', seal: '认真生活' };
+    return P.mix;
+  return P[topCat] || P.fallback;
 }
 
 // ---------- 初始 12 枚 + 其余 30 枚的解锁条件 ----------

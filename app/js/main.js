@@ -11,7 +11,16 @@ import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.
 import { openShare, openShareDay } from './share.js';
 import { attachCurl } from './curl.js';
 import { initDiag } from './diag.js';
-import { setLang, getLang, detectLang, weekName, monthDay, LANGS } from './i18n.js';
+import { setLang, getLang, detectLang, weekName, monthDay, LANGS, nameOf, weekOffset, monthArg, monthArgShort } from './i18n.js';
+
+// 数据层名字的显示：zh 直接用 data.js 原值，en/ja 查字典（nameOf 缺词自动回退原值）
+function dName(def) {
+  if (!def) return '';
+  const kind = def.kind === 'glyph' ? 'glyph'
+    : def.kind === 'seal' ? 'gift'
+    : String(def.id || '').startsWith('h_') ? 'hidden' : 'stamp';
+  return nameOf(kind, def.id, def.name);
+}
 
 const $ = s => document.querySelector(s);
 // 星期改走 Intl（i18n.js 的 weekName）。中文输出跟原来的两个数组逐字相同：
@@ -429,7 +438,7 @@ function playOpening(force = false, closing = false) {
   // ⚠️ 封面必须比内页大一圈（各边 +4px）。规格原来写「宽 = 内宽 − 56」，算出来比纸窄 56px——
   //    封面小于内页物理上不成立，翻开的瞬间会露出一张比封面还宽的纸。
   const PAD = 4;
-  const mon = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二'][new Date().getMonth()];
+  const mon = COPY.coverMonNames[new Date().getMonth()];
   const layer = document.createElement('div');
   layer.id = 'opening';
   layer.innerHTML = `<div class="op-book" style="left:${r.left - pr.left - PAD}px;top:${r.top - pr.top - PAD}px;
@@ -438,7 +447,7 @@ function playOpening(force = false, closing = false) {
       <span class="op-spine"></span>
       <span class="op-label">
         <span class="op-tape l"></span><span class="op-tape r"></span>
-        <span class="op-t">戳了么</span><span class="op-mon">${COPY.coverMonth.replace('{m}', mon)}</span>
+        <span class="op-t">${COPY.appName}</span><span class="op-mon">${COPY.coverMonth.replace('{m}', mon)}</span>
       </span>
       ${coverStickers()}
     </div>
@@ -708,7 +717,7 @@ function riddleNoteHTML(secret) {
   return `<div class="riddle-note folded" id="riddle-note">
     <span class="rn-tab" aria-hidden="true">?</span>
     <span class="rn-tape"></span>
-    <span class="rn-face rn-front">${esc(secret.hint)}</span>
+    <span class="rn-face rn-front">${esc(nameOf('hiddenHint', secret.id, secret.hint))}</span>
   </div>`;
 }
 
@@ -747,7 +756,7 @@ function renderDeck() {
   // ⚠️ 放在「全部」后面而不是队尾：分类行是横滚的，排最后要滑一下才看得见（实测被挤出屏幕）。
   const cats = `<button data-cat="all" class="${deckCat === 'all' ? 'sel' : ''}">${COPY.catAll}</button>`
     + `<button data-cat="glyph" class="glyph-chip ${deckCat === 'glyph' ? 'sel' : ''}">${COPY.catGlyph}</button>`
-    + CATEGORIES.map(c => `<button data-cat="${c.id}" class="${deckCat === c.id ? 'sel' : ''}">${c.name}</button>`).join('');
+    + CATEGORIES.map(c => `<button data-cat="${c.id}" class="${deckCat === c.id ? 'sel' : ''}">${nameOf('cat', c.id, c.name)}</button>`).join('');
 
   // 印泥铁盒：盒里那坨墨的直径 = 这盒还剩多少（12px 空 → 26px 满），全 App 不写次数
   const tin = (inner, cls, extra = '') => `<div class="dk-ink ${cls}" ${extra}><span class="can">${inner}</span></div>`;
@@ -762,7 +771,7 @@ function renderDeck() {
       const blob = `<span class="ink${ratio > 0 ? '' : ' faded'}"
         style="width:${ratio > 0 ? d : 23}px;height:${ratio > 0 ? d : 23}px;background:${inkCSS(id)}"></span>`;
       return tin(blob, `${selInk === id ? 'sel' : ''} ${ratio <= 0 ? 'dry' : ''}`,
-        `data-ink="${id}" title="${INKS[id].name}"`);
+        `data-ink="${id}" title="${nameOf('ink', id, INKS[id].name)}"`);
     }).join('');
 
   // 章：立在托盘里（木柄 + 章面）
@@ -780,7 +789,7 @@ function renderDeck() {
           style="color:${inkMainColor(isPhoto ? 'zhu' : (selStamp === s.id ? selInk : usableInk(s.ink)))}">
       <i class="handle"></i>
       <span class="face">${stampSVG(s, { size: 30, ink: selStamp === s.id ? selInk : usableInk(s.ink), mat: selMat })}</span>
-      <span class="nm">${s.kind === 'glyph' ? (s.label || '') : s.name}</span></div>`).join('');
+      <span class="nm">${s.kind === 'glyph' ? (s.label ? dName(s) : '') : dName(s)}</span></div>`).join('');
 
   // 材质 + 状态一句话（没墨了 / 还剩多少，都用话说，不用数字和进度条）
   const mats = lockMat
@@ -1224,7 +1233,7 @@ function placeStamp(clientX, clientY, cv) {
     if (unlocked.length) {
       // 轻一点：不占屏、不弹层。一句话 + 一次触感，跟它"顺手解锁"的性质相称；
       // 隆重的那套（整屏发现动画）留给隐藏章。
-      toast(COPY.stampUnlocked.replace('{n}', unlocked.map(x => x.name).join('、')), 2200);
+      toast(COPY.stampUnlocked.replace('{n}', unlocked.map(x => dName(x)).join(COPY.listJoin)), 2200);
       haptic();
       if (curTab === 'today') renderToday();
     }
@@ -1389,10 +1398,10 @@ function supplyRows() {
     const state = unlimited ? COPY.inkFreeTag
       : left <= 0 ? COPY.padDry
         : COPY.trialLeftHint.replace('{n}', left);
-    return `<div class="ink-well ${ratio <= 0 ? 'dry' : ''}" title="${INKS[id].name} · ${state}">
+    return `<div class="ink-well ${ratio <= 0 ? 'dry' : ''}" title="${nameOf('ink', id, INKS[id].name)} · ${state}">
       <span class="w"><span class="ink${ratio > 0 ? '' : ' faded'}"
         style="width:${ratio > 0 ? d : 34}px;height:${ratio > 0 ? d : 34}px;background:${inkCSS(id)}"></span></span>
-      <span class="nm">${INKS[id].name}</span>
+      <span class="nm">${nameOf('ink', id, INKS[id].name)}</span>
     </div>`;
   }).join('')}</div>`;
 }
@@ -1421,7 +1430,7 @@ function renderSupply() {
 function openActions(rid) {
   const rec = store.records.find(r => r.id === rid); if (!rec) return;
   const def = stampById[rec.stampId];
-  $('#act-title').textContent = `${def.name} · ${fmtTime(rec.ts)}`;
+  $('#act-title').textContent = `${dName(def)} · ${fmtTime(rec.ts)}`;
   $('#act-list').innerHTML = `
     <button data-a="again">${COPY.actAgain}</button>
     <button data-a="time">${COPY.actTime}</button>
@@ -1475,8 +1484,8 @@ function showGiftQueue(ids, again) {
   ov.innerHTML = `
     <div class="ov-spark">${again ? COPY.giftAgainSpark : COPY.giftGotSpark}</div>
     <div class="ov-badge">${stampSVG({ ...g, kind: 'seal' }, { size: 168, rot: -2 })}</div>
-    <div class="ov-name">${g.name}</div>
-    <div class="ov-sub">${again ? COPY.giftAgainSub : g.say}</div>
+    <div class="ov-name">${nameOf('gift', g.id, g.name)}</div>
+    <div class="ov-sub">${again ? COPY.giftAgainSub : nameOf('giftSay', g.id, g.say)}</div>
     <button class="ov-btn" id="hid-ok">${again ? COPY.ovKnow : COPY.ovPutAway}</button>`;
   ov.classList.add('show');
   haptic();
@@ -1495,7 +1504,7 @@ function showOwnGot(g) {
   ov.innerHTML = `
     <div class="ov-spark">${COPY.ownGotSpark}</div>
     <div class="ov-badge">${stampSVG({ ...g, kind: 'seal' }, { size: 168, rot: -2 })}</div>
-    <div class="ov-name">${g.name}</div>
+    <div class="ov-name">${nameOf('gift', g.id, g.name)}</div>
     <div class="ov-sub">${COPY.ownGotSub}</div>
     <button class="ov-btn" id="hid-ok">${COPY.ovPutAway}</button>`;
   ov.classList.add('show');
@@ -1509,7 +1518,7 @@ function showHiddenQueue(list) {
   ov.innerHTML = `
     <div class="ov-spark">${COPY.ovNewFind}</div>
     <div class="ov-badge">${stampSVG(h, { size: 168, rot: -2 })}</div>
-    <div class="ov-name">${h.name}</div>
+    <div class="ov-name">${dName(h)}</div>
     <div class="ov-sub">${COPY.ovNewSub}</div>
     <button class="ov-btn" id="hid-ok">${COPY.ovPutAway}</button>`;
   ov.classList.add('show');
@@ -1583,7 +1592,7 @@ function renderCollection() {
       // 🔴 封蜡必须说「收到」，不能说「解锁」——它是别人给你的，不是你解开的。
       //    说成后者，这枚章存在的全部意义就没了（跟 showGiftQueue 那条红线同源）。
       const tpl = h.kind === 'seal' ? COPY.giftGotAt : COPY.unlockedAt;
-      toast(tpl.replace('{m}', d.getMonth() + 1).replace('{d}', d.getDate()).replace('{name}', h.name));
+      toast(tpl.replace('{m}', d.getMonth() + 1).replace('{d}', d.getDate()).replace('{name}', dName(h)));
     }));
 }
 
@@ -1602,7 +1611,7 @@ function drawerStamps(used, cnt) {
     return got
       ? `<div class="dk-cell" data-${key === 'hid' ? 'hid' : 'sid'}="${s2.id}" style="color:${nameColor}">
           <span class="face inked${s2.kind === 'seal' ? ' seal' : ''}">${stampSVG(s2, { size: 34 })}</span>
-          <span class="nm">${s2.name}</span>
+          <span class="nm">${dName(s2)}</span>
           ${key === 'hid' ? '' : `<span class="ct">${n >= 100 ? COPY.stampWorn : '×' + n}</span>`}</div>`
       : `<div class="dk-cell raw">
           <span class="face carved">${stampSVG(s2, { size: 34, carve: true })}</span>
@@ -1623,7 +1632,7 @@ function drawerStamps(used, cnt) {
   // 用户直接问了"为什么不在上方"（8-27）。两边不一致就是不一致，没有别的理由。
   const cats = `<button data-dcat="all" class="${drawerCat === 'all' ? 'sel' : ''}">${COPY.catAll}</button>`
     + `<button data-dcat="glyph" class="glyph-chip ${drawerCat === 'glyph' ? 'sel' : ''}">${COPY.catGlyph}</button>`
-    + CATEGORIES.map(c => `<button data-dcat="${c.id}" class="${drawerCat === c.id ? 'sel' : ''}">${c.name}</button>`).join('');
+    + CATEGORIES.map(c => `<button data-dcat="${c.id}" class="${drawerCat === c.id ? 'sel' : ''}">${nameOf('cat', c.id, c.name)}</button>`).join('');
 
   // 🔴 8-27 用户：「我盖过的」默认只露**最常盖的 6 枚**，其余折起来。
   //    章一多这一段就长得没边，而绝大多数时候你只想看看常用的那几枚。
@@ -1636,7 +1645,7 @@ function drawerStamps(used, cnt) {
     ? CATEGORIES.map(c => {
       const l = list.filter(s2 => s2.cat === c.id);
       if (!l.length) return '';
-      return `<div class="box-sect"><div class="bs-t">${c.name}</div>
+      return `<div class="box-sect"><div class="bs-t">${nameOf('cat', c.id, c.name)}</div>
         <div class="dk-grid">${l.map(s2 => cell(s2, 'sid')).join('')}</div></div>`;
     }).join('')
     : `<div class="dk-grid">${list.map(s2 => cell(s2, 'sid')).join('')}</div>`;
@@ -1668,7 +1677,7 @@ function drawerStamps(used, cnt) {
     return `<div class="col-sub">${COPY.glyphSub}</div>
       <div class="drawer-cats" id="drawer-cats">${cats}</div>
       <div class="box box-paper">
-        <div class="box-t"><span class="bx-n">${COPY.glyphBox}</span><span class="bx-s">${GLYPHS.length} 枚</span></div>
+        <div class="box-t"><span class="bx-n">${COPY.glyphBox}</span><span class="bx-s">${COPY.nPieces.replace('{n}', GLYPHS.length)}</span></div>
         ${glyphGrid}
       </div>`;
   }
@@ -1676,7 +1685,7 @@ function drawerStamps(used, cnt) {
   return `<div class="col-sub">${COPY.stampsSummary.replace('{used}', used)}</div>
     <div class="drawer-cats" id="drawer-cats">${cats}</div>
     <div class="box box-paper">
-      <div class="box-t"><span class="bx-n">${COPY.drawerMine}</span><span class="bx-s">${mine.length} 枚</span></div>
+      <div class="box-t"><span class="bx-n">${COPY.drawerMine}</span><span class="bx-s">${COPY.nPieces.replace('{n}', mine.length)}</span></div>
       ${mine.length ? mineInner : `<div class="fold-empty">${COPY.foldEmpty}</div>`}
       ${mine.length > TOP_N && drawerMineOpen
         ? `<button class="mine-more" data-fold="mine">${COPY.drawerMineLess}</button>` : ''}
@@ -1718,7 +1727,7 @@ function drawerInks() {
 // ============================================================
 function weekStart(d) {
   const dt = new Date(d); dt.setHours(0, 0, 0, 0);
-  dt.setDate(dt.getDate() - (dt.getDay() + 6) % 7);
+  dt.setDate(dt.getDate() - weekOffset(dt.getDay()));   // zh 周一开头；en/ja 周日开头
   return dt;
 }
 
@@ -1749,7 +1758,7 @@ function renderFlipView() {
 
   $('#page-memories').innerHTML = `
     <div class="flip-bar">
-      <button class="flip-back" id="flip-back">‹ ${COPY.coverMonth.replace('{m}', d.getMonth() + 1)}</button>
+      <button class="flip-back" id="flip-back">‹ ${COPY.coverMonth.replace('{m}', monthArgShort(d.getMonth() + 1))}</button>
       <span class="flip-date">${COPY.dayOnly.replace('{d}', d.getDate())} · ${weekName(d)}${w ? ` <span class="w">${weatherSVG(w, 18)}</span>` : ''}</span>
       ${dk <= todayDk ? `<button class="t-share" id="flip-add">${COPY.addStampHere}</button>` : ''}
       ${recs.length ? `<button class="t-share" id="flip-share">${COPY.flipShare}</button>` : ''}
@@ -1843,7 +1852,7 @@ function dayPanel(dk) {
   // ⚠️ 一行一枚章的话，盖得多的那天这块就无限长（8-26 用户："又是很长"）。
   //    改成紧凑网格 + 封顶滚动：不管那天盖了多少，它只占固定高度。
   const rows = list.length ? `<div class="day-grid">${list.map(r => `
-      <div class="day-cell" title="${stampById[r.stampId].name} · ${fmtTime(r.ts)}">
+      <div class="day-cell" title="${dName(stampById[r.stampId])} · ${fmtTime(r.ts)}">
         <span class="face">${stampSVG(stampById[r.stampId], { size: 30, ink: r.ink, rot: r.rot, mat: r.mat })}</span>
         <span class="tm">${fmtTime(r.ts)}</span>
         <button class="del" data-rid="${r.id}" aria-label="${COPY.delOne}">×</button>
@@ -1889,8 +1898,8 @@ function shelfHTML(selM = memM) {
     const isCur = memY === curY && m === curM;
     const h = 40 + Math.round(Math.min(1, n / 60) * 18);      // 40~58px
     books += `<button class="bk s-${SEASON(m)} ${future ? 'future' : ''} ${m === selM ? 'sel' : ''} ${isCur ? 'cur' : ''}"
-        data-m="${m}" style="height:${h}px" title="${COPY.monthBarTitle.replace('{m}', m).replace('{n}', n)}">
-        <span class="bm">${m}月</span></button>`;
+        data-m="${m}" style="height:${h}px" title="${COPY.monthBarTitle.replace('{m}', monthArgShort(m)).replace('{n}', n)}">
+        <span class="bm">${COPY.coverMonth.replace('{m}', monthArgShort(m))}</span></button>`;
   }
   return `<div class="shelf-wrap">
     <div class="shelf-nav">
@@ -1941,7 +1950,7 @@ function renderMonthView() {
   const now = new Date();
   const recs = store.monthRecords(memY, memM);
   const daysInMonth = new Date(memY, memM, 0).getDate();
-  const offset = (new Date(memY, memM - 1, 1).getDay() + 6) % 7;
+  const offset = weekOffset(new Date(memY, memM - 1, 1).getDay());
   const isCurMonth = memY === now.getFullYear() && memM === now.getMonth() + 1;
   if (memSelDay === null && isCurMonth) memSelDay = dateKey(now.getTime());
 
@@ -1985,12 +1994,12 @@ function renderMonthView() {
   $('#page-memories').innerHTML = `
     ${shelfHTML()}
     <div class="mem-nav">
-      <h2>${memM} 月</h2>
+      <h2>${COPY.monLabelSp.replace('{m}', monthArg(memM))}</h2>
       <div style="display:flex;align-items:center;gap:10px">${memSeg()}</div>
     </div>
     <div class="mem-sub">${COPY.notebookMonthSub
       .replace('{n}', recs.length).replace('{m}', Math.max(0, blank))}</div>
-    <div class="cal-head"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+    <div class="cal-head">${COPY.calHead.map(w => `<span>${w}</span>`).join('')}</div>
     <div class="pg-grid">${cells}</div>
     ${dayPanel(memSelDay)}
     ${recs.length ? `<button class="cta" style="margin-top:18px;letter-spacing:.14em" id="share-month">${COPY.shareMonthBtn}</button>` : ''}`;
@@ -2030,24 +2039,24 @@ function openBooklet(y, m) {
   const ov = $('#ov-booklet');
   ov.innerHTML = `
     <div class="bl-page">
-      <div class="bl-t">${m} 月</div>
+      <div class="bl-t">${COPY.monLabelSp.replace('{m}', monthArg(m))}</div>
       ${recs.length ? `
-        <div class="bl-s">最常盖的</div>
+        <div class="bl-s">${COPY.blMost}</div>
         <div class="sum-row">${top.map(([sid, n]) =>
-          `<div class="sum-item">${stampSVG(stampById[sid], { size: 52 })}<span class="n hand">×${n}</span><span class="l">${stampById[sid].name}</span></div>`).join('')}</div>
-        ${hid.length ? `<div class="bl-s">解开的隐藏章</div>
+          `<div class="sum-item">${stampSVG(stampById[sid], { size: 52 })}<span class="n hand">×${n}</span><span class="l">${dName(stampById[sid])}</span></div>`).join('')}</div>
+        ${hid.length ? `<div class="bl-s">${COPY.blHidden}</div>
           <div class="sum-row">${hid.map(h =>
-            `<div class="sum-item">${stampSVG(h, { size: 46 })}<span class="l">${h.name}</span></div>`).join('')}</div>` : ''}
+            `<div class="sum-item">${stampSVG(h, { size: 46 })}<span class="l">${dName(h)}</span></div>`).join('')}</div>` : ''}
         <div class="bl-blank">${COPY.notebookBooklet2
           .replace('{m}', Math.max(0, passed - days))}</div>
         <div class="persona">
-          <div class="p-t">本 月 人 格</div>
-          <div class="p-n">「${persona.title}」</div>
+          <div class="p-t">${COPY.personaTitle}</div>
+          <div class="p-n">${COPY.personaQuote.replace('{t}', persona.title)}</div>
           <div class="p-l">${persona.line}</div>
         </div>
         <button class="cta" style="margin-top:20px;letter-spacing:.14em" id="bl-share">${COPY.shareMonthBtn}</button>`
       : `<div class="bl-blank">${COPY.notebookQuiet}</div>`}
-      <button class="bl-close" id="bl-close">合上</button>
+      <button class="bl-close" id="bl-close">${COPY.closeBook}</button>
     </div>`;
   ov.classList.add('show');
   $('#bl-close').onclick = () => ov.classList.remove('show');
@@ -2095,10 +2104,10 @@ function renderWeekView() {
     <div class="week-list">${rows}</div>
     ${dayPanel(memSelDay)}
     <div class="card mem-sum">
-      <div class="cd-t">这一周</div>
+      <div class="cd-t">${COPY.weekCardTitle}</div>
       ${total ? `<div class="cd-b" style="color:var(--sub)">${COPY.weekSum.replace('{n}', total)}</div>
         <div class="sum-row" style="margin-top:8px">${top.map(([sid, n]) =>
-          `<div class="sum-item">${stampSVG(stampById[sid], { size: 46 })}<span class="n hand">×${n}</span><span class="l">${stampById[sid].name}</span></div>`).join('')}</div>`
+          `<div class="sum-item">${stampSVG(stampById[sid], { size: 46 })}<span class="n hand">×${n}</span><span class="l">${dName(stampById[sid])}</span></div>`).join('')}</div>`
         : `<div class="cd-b" style="color:var(--sub)">${COPY.weekQuiet}</div>`}
     </div>`;
 
@@ -2126,7 +2135,7 @@ function renderMe() {
   const past = Object.entries(store.titles).sort((a, b) => b[0].localeCompare(a[0]));
 
   $('#page-me').innerHTML = `
-    <div class="col-title">我的</div>
+    <div class="col-title">${COPY.colMe}</div>
     <div class="me-stat">
       <div class="st"><span class="v">${store.records.length}</span><span class="k">${COPY.statMarks}</span></div>
       <div class="st"><span class="v">${store.daysWithRecords()}</span><span class="k">${COPY.statDays}</span></div>
@@ -2142,55 +2151,55 @@ function renderMe() {
     ${past.length ? `<div class="ttl-k">${COPY.meTitlePast}</div>
       <div class="ttl-strip">${past.map(([m, t]) => {
         const mm = +m.slice(5);
-        return `<div class="ttl-old"><div class="ttl-m">${mm} 月</div><div class="ttl-n">${t.title}</div></div>`;
+        return `<div class="ttl-old"><div class="ttl-m">${COPY.monLabelSp.replace('{m}', monthArgShort(mm))}</div><div class="ttl-n">${t.title}</div></div>`;
       }).join('')}</div>` : ''}
 
     ${/* 朋友给你留链接、你也给自己挑了一枚 → 那边给了个 6 位码，在这儿收下。
          🔴 一辈子只能收一次：这一枚就是你"自己送自己"那一次（8-29 用户拍板）。
          ⚠️ 之所以是手输而不是点链接直接开 App：微信里点链接**不会**跳 App
             （微信有意屏蔽），而这条链路基本都发生在微信里。 */''}
-    <div class="ttl-k">朋友那儿留了一枚？</div>
+    <div class="ttl-k">${COPY.claimAsk}</div>
     <div class="claim-box">
       <input id="claim-in" maxlength="6" autocapitalize="off" autocorrect="off"
-             spellcheck="false" placeholder="输入 6 位码">
-      <button class="claim-go" id="claim-go">收下</button>
+             spellcheck="false" placeholder="${COPY.claimPh}">
+      <button class="claim-go" id="claim-go">${COPY.claimGo}</button>
     </div>
     <div class="claim-msg" id="claim-msg"></div>
 
     <div class="me-list">
-      <div class="me-item"><span class="k">本子封面</span>
+      <div class="me-item"><span class="k">${COPY.setCover}</span>
         <span class="cover-pick">
-          <button data-cover="rose" class="cv rose ${(store.settings.cover || 'rose') === 'rose' ? 'on' : ''}" aria-label="藕粉"></button>
-          <button data-cover="cream" class="cv cream ${store.settings.cover === 'cream' ? 'on' : ''}" aria-label="奶油"></button>
+          <button data-cover="rose" class="cv rose ${(store.settings.cover || 'rose') === 'rose' ? 'on' : ''}" aria-label="${COPY.coverRose}"></button>
+          <button data-cover="cream" class="cv cream ${store.settings.cover === 'cream' ? 'on' : ''}" aria-label="${COPY.coverCream}"></button>
         </span></div>
       <div class="me-item"><span class="k">${COPY.settingLang}</span>
         <span class="pick-row">
           ${LANGS.map(L => `<button data-lang-pick="${L}" class="pk ${getLang() === L ? 'on' : ''}">${
-            { zh: '中文', en: 'English', ja: '日本語' }[L]}</button>`).join('')}
+            { zh: '中文', en: 'English', ja: '日本語' }[L] /* i18n-exempt: 语言自称永远用它自己的文字写 */}</button>`).join('')}
         </span></div>
-      <div class="me-item"><span class="k">字体</span>
+      <div class="me-item"><span class="k">${COPY.setFont}</span>
         <span class="pick-row">
-          <button data-font="hand" class="pk ${(store.settings.font || 'hand') === 'hand' ? 'on' : ''}">手写</button>
-          <button data-font="plain" class="pk ${store.settings.font === 'plain' ? 'on' : ''}">常规</button>
+          <button data-font="hand" class="pk ${(store.settings.font || 'hand') === 'hand' ? 'on' : ''}">${COPY.fontHand}</button>
+          <button data-font="plain" class="pk ${store.settings.font === 'plain' ? 'on' : ''}">${COPY.fontPlain}</button>
         </span></div>
-      <div class="me-item"><span class="k">纸</span>
+      <div class="me-item"><span class="k">${COPY.setPaper}</span>
         <span class="pick-row">
-          <button data-paper="dot" class="pk ${(store.settings.paper || 'dot') === 'dot' ? 'on' : ''}">点阵</button>
-          <button data-paper="plain" class="pk ${store.settings.paper === 'plain' ? 'on' : ''}">纯色</button>
+          <button data-paper="dot" class="pk ${(store.settings.paper || 'dot') === 'dot' ? 'on' : ''}">${COPY.paperDot}</button>
+          <button data-paper="plain" class="pk ${store.settings.paper === 'plain' ? 'on' : ''}">${COPY.paperPlain}</button>
         </span></div>
-      <div class="me-item"><span class="k">桌布</span>
+      <div class="me-item"><span class="k">${COPY.setDesk}</span>
         <span class="pick-row">
-          <button data-desk="floral" class="pk dk-sw floral ${(store.settings.desk || 'floral') === 'floral' ? 'on' : ''}" aria-label="碎花"></button>
-          <button data-desk="plain" class="pk dk-sw plain ${store.settings.desk === 'plain' ? 'on' : ''}" aria-label="素色"></button>
-          <button data-desk="grid" class="pk dk-sw grid ${store.settings.desk === 'grid' ? 'on' : ''}" aria-label="细格"></button>
+          <button data-desk="floral" class="pk dk-sw floral ${(store.settings.desk || 'floral') === 'floral' ? 'on' : ''}" aria-label="${COPY.deskFloral}"></button>
+          <button data-desk="plain" class="pk dk-sw plain ${store.settings.desk === 'plain' ? 'on' : ''}" aria-label="${COPY.deskPlain}"></button>
+          <button data-desk="grid" class="pk dk-sw grid ${store.settings.desk === 'grid' ? 'on' : ''}" aria-label="${COPY.deskGrid}"></button>
         </span></div>
-      <div class="me-item"><span class="k">声音</span>
+      <div class="me-item"><span class="k">${COPY.setSound}</span>
         <label class="switch"><input type="checkbox" id="sw-sound" ${store.settings.sound ? 'checked' : ''}><i></i></label></div>
-      <div class="me-item"><span class="k">触感</span>
+      <div class="me-item"><span class="k">${COPY.setHaptic}</span>
         <label class="switch"><input type="checkbox" id="sw-haptic" ${store.settings.haptic ? 'checked' : ''}><i></i></label></div>
-      <div class="me-item"><span class="k">清空所有记录</span><button id="btn-wipe" class="danger">清空</button></div>
+      <div class="me-item"><span class="k">${COPY.setWipe}</span><button id="btn-wipe" class="danger">${COPY.wipeBtn}</button></div>
     </div>
-    <div class="me-foot">戳了么 · V1.18</div>`;
+    <div class="me-foot">${COPY.appName} · V1.18</div>`;
 
   // ⚠️ 一律限定在本页里选，别用全文档选择器——那是上面那个 bug 的另一半原因
   document.querySelectorAll('#page-me [data-font]').forEach(b2 =>
@@ -2230,17 +2239,17 @@ function renderMe() {
     cgo.addEventListener('pointerdown', async ev => {
       ev.preventDefault();
       const t2 = (cin.value || '').trim().toLowerCase();
-      if (!/^[a-z2-9]{6}$/.test(t2)) { cmsg.textContent = '这个码看着不太对，再核对一下。'; return; }
-      cgo.disabled = true; cmsg.textContent = '正在收…';
+      if (!/^[a-z2-9]{6}$/.test(t2)) { cmsg.textContent = COPY.claimBad; return; }
+      cgo.disabled = true; cmsg.textContent = COPY.claimBusy;
       const r = await claimTicket(t2);
       cgo.disabled = false;
-      if (!r) { cmsg.textContent = '网络不太好，待会儿再试。'; return; }
+      if (!r) { cmsg.textContent = COPY.claimNet; return; }
       if (r.error) {
         cmsg.textContent = {
-          used: '这个码已经被用过了。',
-          gone: '这个码不在了 —— 打错了，或者过了三十天。',
-          already_own: '你已经给自己留过一枚了，一辈子只能留一枚。',
-        }[r.error] || '没能收下，再试一次。';
+          used: COPY.claimUsed,
+          gone: COPY.claimGone,
+          already_own: COPY.claimOwnedAlready,
+        }[r.error] || COPY.claimFail;
         return;
       }
       cin.value = ''; cmsg.textContent = '';
@@ -2252,7 +2261,7 @@ function renderMe() {
   $('#sw-haptic').onchange = e => { store.settings.haptic = e.target.checked; store.persist(); };
   $('#btn-wipe').onclick = e => {
     const b = e.target;
-    if (b.dataset.arm) { store.wipe(); toast('已经清空了。'); render(); }
+    if (b.dataset.arm) { store.wipe(); toast(COPY.wiped); render(); }
     else { b.dataset.arm = '1'; b.textContent = COPY.wipeConfirm; }
   };
 }
@@ -2269,8 +2278,8 @@ function showOnboard(step) {
     ${stamps ? `<div class="ob-stamps">${stamps}</div>` : ''}
     <h2>${ob.title}</h2>
     ${ob.body ? `<p>${ob.body}</p>` : ''}
-    <button class="ov-btn" id="ob-next">${ob.cta || '继续'}</button>
-    ${step < 2 ? `<button class="ov-btn ghost" id="ob-skip">先随便看看</button>` : ''}
+    <button class="ov-btn" id="ob-next">${ob.cta || COPY.obNext}</button>
+    ${step < 2 ? `<button class="ov-btn ghost" id="ob-skip">${COPY.obSkip}</button>` : ''}
     <div class="dots">${[0, 1, 2].map(i => `<i class="${i === step ? 'on' : ''}"></i>`).join('')}</div>`;
   ov.classList.add('show');
   $('#ob-next').onclick = () => {

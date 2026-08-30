@@ -40,9 +40,11 @@ def strip_comments(src, is_html):
     keep_lines = lambda m: '\n' * m.group().count('\n')
     src = re.sub(r'/\*.*?\*/', keep_lines, src, flags=re.S)
     src = BLANKS.sub(r'\1', src)
-    src = re.sub(r'(?m)([;,)}\]"\'`])\s*//[^\n]*$', r'\1', src)
-    if is_html:
-        src = re.sub(r'<!--.*?-->', keep_lines, src, flags=re.S)
+    # 行尾 // 注释：只认前面是这些字符的（防误伤 'https://…'）。
+    # `{` 也算——`setTimeout(() => {  // 触纸瞬间` 这种模式占了假阳性的一半。
+    src = re.sub(r'(?m)([;,)}\]{"\'`])\s*//[^\n]*$', r'\1', src)
+    # HTML 注释：JS 模板字符串里也会写 <!-- -->（main.js 的抽屉模板就有），一律剥掉
+    src = re.sub(r'<!--.*?-->', keep_lines, src, flags=re.S)
     return src
 
 
@@ -72,7 +74,8 @@ def scan(rel):
         if i in skip or not CJK.search(line):
             continue
         # 已经走字典的部分不算：COPY.xxx / t('xxx')
-        rest = re.sub(r"COPY\.\w+|COPY\['[^']+'\]|t\('[^']+'\)", '', line)
+        # t( 前面不能是标识符字符：toast('中文') 里也含 t('…')，误放过过一次
+        rest = re.sub(r"COPY\.\w+|COPY\['[^']+'\]|(?<![\w.$])t\('[^']+'\)", '', line)
         if not CJK.search(rest):
             continue
         hits.append((i, line.strip()[:96]))
@@ -92,7 +95,6 @@ def main():
                 print('        %s:%d  %s' % (rel, ln, txt))
     print('\n合计 %d 行' % total)
     print('整份豁免: %s' % ', '.join(SKIP_FILES))
-    print('（share.js 先挂着：分享卡要按新方案重做，现在迁一半是白干）')
     return 0
 
 

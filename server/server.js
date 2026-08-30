@@ -81,6 +81,14 @@ function migrate() {
 migrate();
 db.exec(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
 
+// 账号 + 跨设备同步（8-30）。表在 schema.sql 里刚建好，这里只挂路由。
+// ⚠️ readBody 在下面才定义 —— 用箭头包一层延迟取值，别把 undefined 传进去。
+const account = require('./account.js').mount({
+  db,
+  send: (...a) => send(...a),
+  readBody: (...a) => readBody(...a),
+});
+
 const q = {
   insertShare: db.prepare(
     'INSERT INTO shares (code, day, payload, created, expires, author) VALUES (?, ?, ?, ?, ?, ?)'),
@@ -305,13 +313,14 @@ function send(res, status, obj, setCookie) {
 }
 
 // 读请求体。超过上限直接掐掉连接，不把内存耗在一个恶意请求上。
-function readBody(req) {
+// limit 可覆写：同步接口一次推几百条记录，64K 不够（account.js 传 512K）。
+function readBody(req, limit = BODY_LIMIT) {
   return new Promise((resolve, reject) => {
     let n = 0;
     const chunks = [];
     req.on('data', c => {
       n += c.length;
-      if (n > BODY_LIMIT) {
+      if (n > limit) {
         // ⚠️ 先把 413 回出去再断，别直接 destroy：
         //    直接掐连接的话客户端只会收到 ECONNRESET，看不到任何原因，
         //    正常用户遇到这种"莫名其妙失败"最难排查。
@@ -343,16 +352,23 @@ async function route(req, res, pathname) {
 
   // 预检。204 + 不带 body；Max-Age 让浏览器把结果缓存一天，
   // 否则每一次盖章分享都要多一个来回。
-  // ⚠️ 允许的头只写 content-type —— 我们就发这一个。写多了等于给自己开口子。
+  // ⚠️ 允许的头只写我们真的会发的：content-type + authorization（8-30 账号加的，
+  //    登录后同步/登出都带 Bearer）。写多了等于给自己开口子。
   if (m === 'OPTIONS' && pathname.startsWith('/api/')) {
     res.writeHead(204, {
       'access-control-allow-methods': 'GET, POST, OPTIONS',
-      'access-control-allow-headers': 'content-type',
+      'access-control-allow-headers': 'content-type, authorization',
       'access-control-max-age': '86400',
       'content-length': '0',
     });
     res.end();
     return;                                  // 不是 null = 已经回过了
+  }
+
+  // 账号 + 同步（/api/auth/*、/api/sync）。约定同本函数：null = 没匹配，继续走下面的表。
+  {
+    const hit = await account.route(req, res, pathname);
+    if (hit !== null) return hit;
   }
 
   if (m === 'GET' && pathname === '/api/health') {

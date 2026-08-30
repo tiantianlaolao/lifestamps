@@ -12,6 +12,40 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ls-test-'));
 process.env.LS_DB = path.join(TMP, 'test.db');
 process.env.LS_PORT = '8799';
 
+// ---- 账号测试的假 Apple（8-30）----------------------------------------------
+// 🔴 真的 Apple/Google token 离线测不了，但**验签逻辑本身必须被测**：
+//    把 JWKS 地址指到本地小服务器，用自造的 RSA 钥匙签 token ——
+//    走的是 account.js 里一模一样的验签代码，只有钥匙来源不同。
+//    ⚠️ 环境变量必须在 require('./server.js') 之前设好（account.js 在 require 时读）。
+const crypto = require('node:crypto');
+const http = require('node:http');
+process.env.LS_APPLE_KEYS = 'http://127.0.0.1:8798/keys';
+delete process.env.LS_GOOGLE_AUD;                      // 故意不配：要测 501 那条路
+
+const KP = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+const JWK = { ...KP.publicKey.export({ format: 'jwk' }), kid: 't1', alg: 'RS256', use: 'sig' };
+const b64u = o => Buffer.from(JSON.stringify(o)).toString('base64url');
+function signJwt(payload, { kid = 't1', alg = 'RS256', breakSig = false } = {}) {
+  const h = b64u({ alg, kid });
+  const p = b64u(payload);
+  let sig = crypto.sign('RSA-SHA256', Buffer.from(h + '.' + p), KP.privateKey).toString('base64url');
+  if (breakSig) sig = sig.slice(0, -4) + 'AAAA';
+  return `${h}.${p}.${sig}`;
+}
+function appleToken(over = {}) {
+  return signJwt({
+    iss: 'https://appleid.apple.com', aud: 'com.tybbtech.lifestamps',
+    sub: 'apple-user-001', email: 'a@example.com',
+    exp: Math.floor(Date.now() / 1000) + 600, ...over,
+  });
+}
+const keysSrv = http.createServer((req, res) => {
+  res.writeHead(200, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ keys: [JWK] }));
+});
+keysSrv.listen(8798, '127.0.0.1');
+keysSrv.unref();   // 不占事件循环，测完不用专门关
+
 let pass = 0, fail = 0;
 function ok(cond, msg) {
   if (cond) { pass++; console.log('  PASS  ' + msg); }
@@ -329,6 +363,101 @@ function client() {
   }
   ok(got429, '同一个码一分钟内狂送会被 429 挡住');
 
+  console.log('\n== 账号：登录（8-30）==');
+  const ja = async (m, u, b, tok) => {
+    const headers = {};
+    if (b) headers['content-type'] = 'application/json';
+    if (tok) headers.authorization = 'Bearer ' + tok;
+    const r = await fetch(BASE + u, { method: m, headers, body: b ? JSON.stringify(b) : undefined });
+    return { status: r.status, body: await r.json().catch(() => null) };
+  };
+  const L1 = await ja('POST', '/api/auth/login',
+    { provider: 'apple', token: appleToken(), install: 'test-install-0001' });
+  ok(L1.status === 200 && L1.body.token && L1.body.uid, '合法 Apple token 能登录，拿到会话');
+  ok(L1.body.email === 'a@example.com', '首次登录把 email 存下来了（Apple 只给这一次）');
+
+  const bad1 = await ja('POST', '/api/auth/login', { provider: 'apple', token: appleToken({ aud: 'com.someone.else' }) });
+  ok(bad1.status === 401, '别家 app 的 token（aud 不对）被拒：' + bad1.status);
+  const bad2 = await ja('POST', '/api/auth/login', { provider: 'apple', token: appleToken({ exp: Math.floor(Date.now() / 1000) - 3600 }) });
+  ok(bad2.status === 401, '过期 token 被拒：' + bad2.status);
+  const bad3 = await ja('POST', '/api/auth/login', { provider: 'apple', token: signJwt({ iss: 'https://appleid.apple.com', aud: 'com.tybbtech.lifestamps', sub: 'x', exp: Math.floor(Date.now() / 1000) + 600 }, { breakSig: true }) });
+  ok(bad3.status === 401, '签名被篡改的 token 被拒：' + bad3.status);
+  // 🔴 JWT 经典坑：alg 不许听 token 自己说。HS256 伪造 = 拿公钥当对称密钥
+  const bad4 = await ja('POST', '/api/auth/login', { provider: 'apple', token: appleToken().split('.').map((s, i) => i === 0 ? Buffer.from(JSON.stringify({ alg: 'none', kid: 't1' })).toString('base64url') : s).join('.') });
+  ok(bad4.status === 401, 'alg=none 的 token 被拒（不听 token 自称的算法）：' + bad4.status);
+  const g501 = await ja('POST', '/api/auth/login', { provider: 'google', token: 'whatever' });
+  ok(g501.status === 501, 'Google 没配 client id 时明说 501，不放行：' + g501.status);
+
+  const me1 = await ja('GET', '/api/auth/me', null, L1.body.token);
+  ok(me1.status === 200 && me1.body.uid === L1.body.uid, '/me 带会话能认出自己');
+  const me0 = await ja('GET', '/api/auth/me');
+  ok(me0.status === 401, '/me 不带会话是 401');
+
+  const L2 = await ja('POST', '/api/auth/login', { provider: 'apple', token: appleToken() });
+  ok(L2.status === 200 && L2.body.uid === L1.body.uid && L2.body.token !== L1.body.token,
+    '同一个 Apple 账号再登录 = 同一个 uid、新的会话（第二台设备）');
+
+  const bindRow = srv.db.prepare('SELECT uid FROM installs WHERE install = ?').get('test-install-0001');
+  ok(bindRow && bindRow.uid === L1.body.uid, '安装号绑到了账号上（installs 表）');
+
+  console.log('\n== 账号：跨设备同步（记录级 LWW）==');
+  const s401 = await ja('POST', '/api/sync', { cursor: 0, changes: [] });
+  ok(s401.status === 401, '没登录不能同步：' + s401.status);
+
+  // 设备 1 推两条
+  const p1 = await ja('POST', '/api/sync', {
+    cursor: 0, changes: [
+      { kind: 'record', id: 'r1', data: '{"stampId":"milktea","ts":1000}', mtime: 1000 },
+      { kind: 'daynote', id: '2026-08-30', data: '"よい一日"', mtime: 1500 },
+    ],
+  }, L1.body.token);
+  ok(p1.status === 200 && p1.body.cursor >= 2 && p1.body.changes.length === 2,
+    '设备1 推 2 条，游标推进到 ' + (p1.body && p1.body.cursor));
+
+  // 设备 2 从 0 拉，应看到两条
+  const p2 = await ja('POST', '/api/sync', { cursor: 0, changes: [] }, L2.body.token);
+  ok(p2.status === 200 && p2.body.changes.length === 2, '设备2 从头拉到全部 2 条');
+
+  // LWW：设备2 带着**更旧**的 mtime 改 r1 → 必须被丢弃
+  await ja('POST', '/api/sync', {
+    cursor: p2.body.cursor,
+    changes: [{ kind: 'record', id: 'r1', data: '{"stampId":"HACKED"}', mtime: 500 }],
+  }, L2.body.token);
+  const chk1 = srv.db.prepare(
+    "SELECT data FROM sync_items WHERE kind='record' AND id='r1'").get();
+  ok(chk1 && chk1.data.includes('milktea'), 'LWW：旧改动（mtime 更小）盖不掉新数据');
+
+  // LWW：更新的 mtime 能赢
+  const p3 = await ja('POST', '/api/sync', {
+    cursor: p2.body.cursor,
+    changes: [{ kind: 'record', id: 'r1', data: '{"stampId":"coffee","ts":1000}', mtime: 2000 }],
+  }, L2.body.token);
+  const chk2 = srv.db.prepare(
+    "SELECT data FROM sync_items WHERE kind='record' AND id='r1'").get();
+  ok(chk2 && chk2.data.includes('coffee'), 'LWW：新改动（mtime 更大）正常生效');
+
+  // 墓碑：删除也是一条同步（data 缺省 = null）
+  await ja('POST', '/api/sync', {
+    cursor: p3.body.cursor, changes: [{ kind: 'record', id: 'r1', mtime: 3000 }],
+  }, L2.body.token);
+  const inc = await ja('POST', '/api/sync', { cursor: p3.body.cursor, changes: [] }, L1.body.token);
+  ok(inc.status === 200 && inc.body.changes.length === 1 && inc.body.changes[0].data === null,
+    '墓碑同步：设备1 增量拉到 r1 的删除（data=null）');
+
+  // 增量游标：拉完之后再拉是空的
+  const empty = await ja('POST', '/api/sync', { cursor: inc.body.cursor, changes: [] }, L1.body.token);
+  ok(empty.status === 200 && empty.body.changes.length === 0, '游标之后无新事 = 拉到空');
+
+  const badc = await ja('POST', '/api/sync', {
+    cursor: 0, changes: [{ kind: 'BAD KIND!', id: 'x', data: '1', mtime: 1 }],
+  }, L1.body.token);
+  ok(badc.status === 400, '不合法的 kind 被 400 拒掉：' + badc.status);
+
+  // 登出后同步失效
+  await ja('POST', '/api/auth/logout', null, L2.body.token);
+  const afterOut = await ja('GET', '/api/auth/me', null, L2.body.token);
+  ok(afterOut.status === 401, '登出后旧会话作废');
+
   console.log('\n== 匿名（这条挂了就等于口径变了）==');
   // 直接问正在跑的那个库 —— 零依赖之后没有第二个 sqlite 客户端可开了
   const cols = [
@@ -344,6 +473,17 @@ function client() {
   const uc = srv.db.prepare('PRAGMA table_info(unlocks)').all().map(c => c.name);
   ok(uc.length > 0 && !uc.some(c => /ip|agent|device|nick/.test(c)),
      'unlocks 表里也没有任何身份列（实际列：' + uc.join(',') + '）');
+  // 🔴 8-30 账号加入后的边界（schema.sql 顶部 8-30 那段的执行器）：
+  //    匿名半边五张表里永远不许出现账号体系的列 —— 出现的那一刻，
+  //    「访客与账号零关联」这句口径就塌了。
+  const anonTables = ['shares', 'gifts', 'unlocks', 'tickets', 'bindings'];
+  const crossCols = anonTables.flatMap(t2 =>
+    srv.db.prepare(`PRAGMA table_info(${t2})`).all().map(c => t2 + '.' + c.name.toLowerCase()));
+  ok(crossCols.length > 10 && !crossCols.some(c => /\.(uid|session|token)$/.test(c)),
+     '匿名五张表无 uid/session/token 列（账号与匿名零关联）');
+  ok(!!srv.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get(),
+     '账号表存在（users）—— 两个半边并存，各归各的口径');
   const visitors = srv.db.prepare(
     'SELECT DISTINCT visitor FROM gifts WHERE visitor IS NOT NULL').all().map(r => r.visitor);
   ok(visitors.length > 0 && visitors.every(v => /^[0-9a-f]{24}$/.test(v)),

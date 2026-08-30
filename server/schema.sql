@@ -29,6 +29,18 @@
 --   ① 送：   同一访客 × 同一条分享 = 1 枚          → idx_gifts_once 在守
 --   ② 解锁： 同一访客 × 同一作者   = 最多 1 枚封蜡 → unlocks 的主键在守
 --   ③ A 自己不开特例，走同一套 → 他最多只能帮自己解开一枚
+--
+-- 🔴🔴 2026-08-30 账号加入后的口径修订（海外版要跨设备同步，用户拍板）：
+--   顶上那句「没有账号」现在只对**分享/赠礼这半边**成立
+--   （shares / gifts / unlocks / tickets / bindings —— 这五张表照旧无身份）。
+--   users / sessions / installs / sync_items 是另一半：**用户主动注册**的身份
+--   （Apple / Google 登录），只用于跨设备同步与找回。
+--   如实记两条代价，别把话说过头：
+--   ① installs 把匿名安装号绑到 uid，而安装号同时是 shares.author ——
+--      所以**注册用户的分享作者身份可以关联到他的账号**（同步本来就需要这个能力）。
+--   ② 访客（B 侧）的 visitor / browser 仍然与账号体系零关联：
+--      没有任何查询把它们 join 到 uid。⛔ 谁想加这么一条查询，先回来读这段。
+--   test.js 的边界断言在守：匿名五张表里永远不许出现 uid / token 列。
 
 CREATE TABLE IF NOT EXISTS shares (
   code     TEXT PRIMARY KEY,           -- 6 位短码，去掉了容易看错的字符
@@ -114,3 +126,49 @@ CREATE INDEX IF NOT EXISTS idx_unlocks_author ON unlocks(author);
 -- ⭐ SQLite 里 NULL 之间**不算重复**，所以 8-29 之前那些 visitor 为 NULL 的
 --    老赠礼不会互相冲突、也不用清理，加索引不会失败。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_gifts_once ON gifts(code, visitor);
+
+-- ============================================================
+-- 账号半边（2026-08-30）。口径见顶部 8-30 那段。实现见 account.js。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS users (
+  uid      TEXT PRIMARY KEY,           -- 服务端生成的随机 id（'u'+24hex）
+  provider TEXT NOT NULL,              -- 'apple' | 'google'
+  subject  TEXT NOT NULL,              -- 提供方的稳定用户号（id_token 的 sub）
+  email    TEXT,                       -- 只用来在「我的」里展示"你登录的是哪个号"。
+                                       -- ⚠️ Apple 只在首次授权给一次，之后都拿不到——只在有值时更新
+  created  INTEGER NOT NULL,
+  UNIQUE (provider, subject)
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token   TEXT PRIMARY KEY,            -- 48 位随机 hex，客户端持有（Bearer）
+  uid     TEXT NOT NULL,
+  created INTEGER NOT NULL,
+  seen    INTEGER NOT NULL             -- 最近使用；滑动 400 天过期（account.js 清扫）
+);
+
+-- 匿名安装号 → 账号。登录那一刻建立；同一台设备换号登录 = 改绑（最后登录说了算）。
+-- 🔴 安装号同时是 shares.author：绑上之后老分享/封蜡跟着账号走，规则一个字不用改
+--    （lifestamps-share-gift-rules 里"以后有账号了把安装号换成 uid"说的就是这一步）。
+CREATE TABLE IF NOT EXISTS installs (
+  install TEXT PRIMARY KEY,
+  uid     TEXT NOT NULL,
+  created INTEGER NOT NULL
+);
+
+-- 跨设备同步：记录级 LWW。
+--   kind/id = 客户端命名空间（record/dayNote/weather/…），服务端只当哑仓库不解析 data；
+--   data NULL = 墓碑（删除也要同步，否则删掉的章会从另一台设备"复活"）；
+--   mtime = 客户端修改时间，谁新谁赢（服务端和两端客户端应用同一条规则 → 收敛且幂等）；
+--   seq = 按 uid 单调递增，客户端的增量拉取游标。
+CREATE TABLE IF NOT EXISTS sync_items (
+  uid   TEXT NOT NULL,
+  kind  TEXT NOT NULL,
+  id    TEXT NOT NULL,
+  data  TEXT,
+  mtime INTEGER NOT NULL,
+  seq   INTEGER NOT NULL,
+  PRIMARY KEY (uid, kind, id)
+);
+CREATE INDEX IF NOT EXISTS idx_sync_uid_seq ON sync_items(uid, seq);
+CREATE INDEX IF NOT EXISTS idx_sessions_uid ON sessions(uid);

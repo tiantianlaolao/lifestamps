@@ -31,6 +31,9 @@ const APPLE_KEYS = process.env.LS_APPLE_KEYS || 'https://appleid.apple.com/auth/
 const APPLE_ISS = ['https://appleid.apple.com'];
 const APPLE_AUD = (process.env.LS_APPLE_AUD || 'com.tybbtech.lifestamps').split(',');
 const GOOGLE_CERTS = process.env.LS_GOOGLE_CERTS || 'https://www.googleapis.com/oauth2/v3/certs';
+// 走反代拉 Google 证书时要带的口令（美服 nginx 的 x-proxy-token 校验；直连 googleapis 不用）。
+// ⚠️ 只附给 Google 证书这一个地址 —— 给 Apple 的请求带上等于把口令白送出去。
+const GOOGLE_CERTS_TOKEN = process.env.LS_GOOGLE_CERTS_TOKEN || '';
 const GOOGLE_ISS = ['https://accounts.google.com', 'accounts.google.com'];
 // 🔴 没配 client id 时 Google 登录直接 501 —— 宁可明说"没配置"，
 //    也不要空着 aud 校验放行任何人拿别家 app 的 google token 来登录。
@@ -49,7 +52,9 @@ const PULL_LIMIT = 500;
 const jwksCache = new Map();
 
 async function fetchJwks(url) {
-  const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  const headers = {};
+  if (GOOGLE_CERTS_TOKEN && url === GOOGLE_CERTS) headers['x-proxy-token'] = GOOGLE_CERTS_TOKEN;
+  const r = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
   if (!r.ok) throw new Error('jwks ' + r.status);
   const j = await r.json();
   const keys = new Map();

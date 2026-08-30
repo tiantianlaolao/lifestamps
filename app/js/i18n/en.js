@@ -11,11 +11,11 @@
 //
 // Voice: same as Chinese — gentle, a little self-deprecating, never bossy.
 // Banned words carry over: task, habit, streak, fail, progress, complete.
-// App name: DayStamp（用户 8-30 拍板）— ja はデイスタンプ。
+// App name: Stampday（用户 8-30 拍板）— ja はスタンプデイ。
 // ============================================================
 
 export const EN = {
-  appName: 'DayStamp',
+  appName: 'Stampday',
 
   tab_today: 'Today',
   tab_memories: 'Journal',
@@ -248,7 +248,7 @@ export const EN = {
   genBusy: 'Stamping…',
   genFail: 'Couldn’t generate it — try again.',
   shClose: 'Close',
-  monthFileName: 'My {m} - DayStamp.png',
+  monthFileName: 'My {m} - Stampday.png',
   dayFileName: 'Day card {dk}.png',
   dayCardAlt: 'day card',
   shDayEmpty: 'This day is still empty.',
@@ -291,7 +291,7 @@ export const EN = {
   frOwnAlready: 'You’ve already kept one for yourself.',
   frOwnRetry: 'Didn’t work — tap once more',
   frOwnGot: 'You kept one for yourself',
-  frCodeHint: 'Open DayStamp and enter this code under “Me”.',
+  frCodeHint: 'Open Stampday and enter this code under “Me”.',
   frCopyCode: 'Copy this code',
   frHoldCopy: 'Press and hold the code to copy it',
 

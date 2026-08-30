@@ -1,5 +1,5 @@
 // ============================================================
-// 戳了么 / DayStamp · 账号 + 跨设备同步（2026-08-30，用户拍板：Apple + Google 登录，全量同步）
+// 戳了么 / Stampday · 账号 + 跨设备同步（2026-08-30，用户拍板：Apple + Google 登录，全量同步）
 //
 // 🔴 零依赖，跟 server.js 同一条红线：验签不引 jose/jsonwebtoken，
 //    JWKS 用全局 fetch 拉（Node 22 内置），RS256 用 node:crypto 验。

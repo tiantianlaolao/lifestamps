@@ -53,7 +53,7 @@ export async function shareText(text, title) {
 }
 
 // ---- 登录（8-30，@capgo/capacitor-social-login）-----------------------------
-// Google 的两个 OAuth Client ID（console.cloud.google.com 的 DayStamp 项目里建的）。
+// Google 的两个 OAuth Client ID（console.cloud.google.com 的 Stampday 项目里建的）。
 // ⚠️ 这类 client id 本来就要打进 App 包里，是公开配置不是密钥。
 //    服务端 LS_GOOGLE_AUD 要配**同这两串**（idToken 的 aud 可能是其中任何一个，
 //    插件版本不同行为不同，两串都进白名单最稳）。

@@ -67,9 +67,9 @@ jobs:
           /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations" $PLIST 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations array" $PLIST
           /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" $PLIST
-          # 中文显示名
-          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 戳了么" $PLIST 2>/dev/null \
-            || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 戳了么" $PLIST
+          # 图标下的名字：全球统一 Stampday（8-30 定名；商店名称带后缀是另一个字段）
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Stampday" $PLIST 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Stampday" $PLIST
           # 出口合规：只用系统 TLS 和平台登录，不含自研加密算法（豁免类）。
           # 不声明的话包传上去会停在「缺少合规信息」，每次都要去网页上手动答一遍问卷。
           /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" $PLIST 2>/dev/null || true

@@ -134,9 +134,12 @@
 <script type="module">
 import { stampById, GIFTS, INKS } from '../js/data.js';
 import { defsMarkup, stampSVG } from '../js/stamp.js';
-import { setLang, detectLang, t, monthDay, weekName } from '../js/i18n.js';
+import { setLang, detectLang, t, monthDay, weekName, nameOf, getLang, timeShort } from '../js/i18n.js';
 
-setLang(detectLang());
+// B 是海外朋友时整页跟着系统语言走（8-30 三语化）。?lang= 供验收强制指定。
+setLang(new URLSearchParams(location.search).get('lang') || detectLang());
+document.title = t('appName');
+document.getElementById('state').textContent = t('frOpening');
 document.body.insertAdjacentHTML('afterbegin',
   `<svg width="0" height="0" style="position:absolute" aria-hidden="true">${defsMarkup()}</svg>`);
 
@@ -156,13 +159,14 @@ function sentSeal() { try { return localStorage.getItem(SENT_KEY); } catch (_) {
 function markSent(id) { try { localStorage.setItem(SENT_KEY, id); } catch (_) { /* 存不下就算了 */ } }
 
 function fmtTime(ts) {
+  if (getLang() === 'en') return timeShort(ts);   // en 12 小时制
   const d = new Date(ts);
   return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 function dead(msg, sub) {
   $('#state').innerHTML = esc(msg) + (sub ? `<br><span style="font-size:12.5px;opacity:.7">${esc(sub)}</span>` : '')
-    + `<a class="f-cta" href="../get/" style="max-width:220px">看看这是什么</a>`;
+    + `<a class="f-cta" href="../get/" style="max-width:220px">${esc(t('frWhatIsThis'))}</a>`;
   $('#state').classList.remove('f-hide');
   $('#main').classList.add('f-hide');
 }
@@ -172,8 +176,8 @@ function dead(msg, sub) {
 //    ?debug=1 时把真实错误显示出来（自己排查用，普通人不会带这个参数）。
 const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
 window.addEventListener('error', e => {
-  if (DEBUG) return dead('出错了', String((e.error && e.error.stack) || e.message).slice(0, 400));
-  dead('这一页没能打开。', '换个浏览器或者稍后再试。');
+  if (DEBUG) return dead(t('frErr'), String((e.error && e.error.stack) || e.message).slice(0, 400));
+  dead(t('frPageFail'), t('frPageFailSub'));
 });
 
 let data = null;
@@ -197,22 +201,22 @@ function render() {
 
   $('#main').innerHTML = `
     <div class="f-hdr">
-      <div class="f-who">有人把这一天发给你了</div>
-      <div class="f-dt">${esc(monthDay(d))} · ${esc(weekName(d))} · 盖了 ${data.stamps.length} 枚章</div>
+      <div class="f-who">${esc(t('frTitle'))}</div>
+      <div class="f-dt">${esc(monthDay(d))} · ${esc(weekName(d))} · ${esc(t('frStampsN', { n: data.stamps.length }))}</div>
     </div>
     <div class="f-paper" id="paper">${chips}</div>
     ${verdict ? `<div class="f-verdict">${esc(verdict)}</div>` : ''}
-    ${data.note ? `<div class="f-verdict" style="opacity:.75;font-size:13.5px">「${esc(data.note)}」</div>` : ''}
+    ${data.note ? `<div class="f-verdict" style="opacity:.75;font-size:13.5px">${t('frQuote').replace('{t}', esc(data.note))}</div>` : ''}
 
     <div class="f-sect" id="give">
-      <div class="f-sect-t">给 TA 留一枚</div>
+      <div class="f-sect-t">${esc(t('frGive'))}</div>
       ${/* 已经留过就只摆自己那一枚。把 6 枚全灰着列出来，看起来像页面坏了，
            而且 B 这时候关心的只有"我留的是哪个"。 */''}
       <div class="f-seals">${(already ? GIFTS.filter(g => g.id === already) : GIFTS).map(g => `
         <button class="f-seal" data-seal="${g.id}" ${already ? 'disabled' : ''}>
           ${stampSVG({ ...g, kind: 'seal' }, { size: 46 })}
-          <span class="f-nm">${esc(g.name)}</span>
-          <span class="f-sy">${esc(g.say)}</span>
+          <span class="f-nm">${esc(nameOf('gift', g.id, g.name))}</span>
+          <span class="f-sy">${esc(nameOf('giftSay', g.id, g.say))}</span>
         </button>`).join('')}</div>
     </div>
 
@@ -226,13 +230,13 @@ function render() {
          ⚠️ get/ 中转页现在还写着「先在网页里试试」：ios/android 商店地址都是空的，
             App 一天没上架，这里就一天不许写成「下载 App」。 */''}
     <div class="f-sect" id="getin">
-      <div class="f-sect-t">那你的今天呢？</div>
-      <a class="f-cta" href="../get/">也开始记你的</a>
+      <div class="f-sect-t">${esc(t('frYours'))}</div>
+      <a class="f-cta" href="../get/">${esc(t('frStartYours'))}</a>
     </div>
 
     <div class="f-foot">
-      不用登录，也不会知道你是谁。<br>
-      这一天 ${Math.max(1, Math.ceil((data.expires - Date.now()) / 86400000))} 天后自动收起来。
+      ${esc(t('frAnon'))}<br>
+      ${esc(t('frExpires', { n: Math.max(1, Math.ceil((data.expires - Date.now()) / 86400000)) }))}
     </div>`;
 
   $('#state').classList.add('f-hide');
@@ -296,7 +300,7 @@ async function onPick(e) {
     setTimeout(() => { showAfter(id, true); reserveGiftBack(id); }, 620);
   } catch (_) {
     $('#give').querySelectorAll('.f-seal').forEach(b => { b.disabled = false; });
-    $('#give').querySelector('.f-sect-t').textContent = '没送出去，再点一下试试';
+    $('#give').querySelector('.f-sect-t').textContent = t('frRetry');
   }
 }
 
@@ -357,21 +361,21 @@ function showAfter(mine, justNow) {
   //    条子长度照旧按占比画 —— 它负责"一眼看出谁多"，数字负责"到底几枚"。
   const bars = rows.map(r => `
     <div class="f-bar ${r.g.id === mine ? 'f-mine' : ''}">
-      <span class="f-bn">${esc(r.g.name)}</span>
+      <span class="f-bn">${esc(nameOf('gift', r.g.id, r.g.name))}</span>
       <span class="f-bt"><span class="f-bf" style="width:${Math.round(r.n / total * 100)}%"></span></span>
-      <span class="f-bp">${r.n} 枚</span>
+      <span class="f-bp">${esc(t('nPieces', { n: r.n }))}</span>
     </div>`).join('');
 
   const me = GIFTS.find(g => g.id === mine);
   $('#after').innerHTML = `
     <div class="f-thanks">${justNow
-      ? `「${esc(me ? me.say : '')}」<br>送到了。TA 下次打开就能收到。`
-      : `你留的是「${esc(me ? me.name : '')}」。`}</div>
+      ? `${t('frQuote').replace('{t}', esc(me ? nameOf('giftSay', me.id, me.say) : ''))}<br>${esc(t('frSent'))}`
+      : esc(t('frYouLeft', { name: me ? nameOf('gift', me.id, me.name) : '' }))}</div>
     ${/* ⚠️ 这里原来还有一份「那你的今天呢？」+ CTA。已经搬到 render() 里常驻了，
           别再加回来 —— 两个一样的红按钮上下挨着，读起来像页面出了错。 */''}
-    ${total > 1 ? `<div class="f-sect-t">这一天一共收到 ${total} 枚</div><div class="f-bars">${bars}</div>` : ''}`;
+    ${total > 1 ? `<div class="f-sect-t">${esc(t('frTotal', { n: total }))}</div><div class="f-bars">${bars}</div>` : ''}`;
   $('#after').classList.remove('f-hide');
-  $('#give').querySelector('.f-sect-t').textContent = '你留下的';
+  $('#give').querySelector('.f-sect-t').textContent = t('frYoursLeft');
   // 送完立刻把其余五枚收走，跟刷新后回来看到的是同一屏
   $('#give').querySelectorAll(`.f-seal:not([data-seal="${mine}"])`).forEach(b => b.remove());
   showOwnPick();
@@ -386,11 +390,11 @@ function showOwnPick() {
   if (!box) return;
   box.classList.remove('f-hide');
   box.innerHTML = `
-    <div class="f-sect-t">也给自己留一枚</div>
+    <div class="f-sect-t">${esc(t('frOwnPick'))}</div>
     <div class="f-seals">${GIFTS.map(g => `
       <button class="f-seal" data-own="${g.id}">
         ${stampSVG({ ...g, kind: 'seal' }, { size: 46 })}
-        <span class="f-nm">${esc(g.name)}</span>
+        <span class="f-nm">${esc(nameOf('gift', g.id, g.name))}</span>
       </button>`).join('')}</div>`;
   box.addEventListener('click', onPickOwn);
 }
@@ -409,14 +413,14 @@ async function onPickOwn(e) {
     const j = await r.json().catch(() => null);
     if (r.status === 409 && j && j.error === 'already_own') {
       // 他以前领过了。一辈子只能给自己留一枚，说清楚就好，别装作出错了。
-      $('#own').innerHTML = `<div class="f-thanks">你已经给自己留过一枚了。</div>`;
+      $('#own').innerHTML = `<div class="f-thanks">${esc(t('frOwnAlready'))}</div>`;
       return;
     }
     if (!r.ok || !j || !j.ticket) throw new Error(String(r.status));
     showTicket(j.ticket, g);
   } catch (_) {
     $('#own').querySelectorAll('.f-seal').forEach(b => { b.disabled = false; });
-    $('#own').querySelector('.f-sect-t').textContent = '没成，再点一下试试';
+    $('#own').querySelector('.f-sect-t').textContent = t('frOwnRetry');
   }
 }
 
@@ -424,38 +428,38 @@ function showTicket(ticket, g) {
   // 🔴 码要能被选中、能长按复制。微信里没有剪贴板权限的可靠做法，
   //    所以**必须**让人能自己长按选 —— 只放一个"复制"按钮是不够的。
   $('#own').innerHTML = `
-    <div class="f-sect-t">你给自己留了一枚</div>
+    <div class="f-sect-t">${esc(t('frOwnGot'))}</div>
     <div class="f-ownseal">${stampSVG({ ...g, kind: 'seal' }, { size: 76 })}
-      <span class="f-nm">${esc(g.name)}</span></div>
+      <span class="f-nm">${esc(nameOf('gift', g.id, g.name))}</span></div>
     <div class="f-code" id="f-code">${esc(ticket)}</div>
-    <div class="f-codehint">打开「戳了么」，在「我的」里输入这个码就能收下。</div>
-    <button class="f-copy" id="f-copy">复制这个码</button>`;
+    <div class="f-codehint">${esc(t('frCodeHint'))}</div>
+    <button class="f-copy" id="f-copy">${esc(t('frCopyCode'))}</button>`;
   const btn = $('#f-copy');
   btn.onclick = async () => {
     try {
       await navigator.clipboard.writeText(ticket);
-      btn.textContent = '复制好了';
+      btn.textContent = t('shCopied');
     } catch (_) {
       // 复制失败不当错误处理：码就在上面摆着，长按选中一样能拿走
-      btn.textContent = '长按上面的码也能复制';
+      btn.textContent = t('frHoldCopy');
     }
   };
 }
 
 (async () => {
-  if (!/^[a-z2-9]{6}$/.test(code)) return dead('这个链接不太对。', '再问对方要一次吧。');
+  if (!/^[a-z2-9]{6}$/.test(code)) return dead(t('frBadLink'), t('frBadLinkSub'));
   try {
     const r = await fetch(`${API}/share/${code}`);
-    if (r.status === 410) return dead('这一天已经收起来了。', '分享出去的日子只留七天。');
+    if (r.status === 410) return dead(t('frGone'), t('frGoneSub'));
     if (!r.ok) throw new Error(String(r.status));
     data = await r.json();
-    if (!data.stamps || !data.stamps.length) return dead('这一天是空的。');
+    if (!data.stamps || !data.stamps.length) return dead(t('frEmpty'));
     render();
   } catch (err) {
     // ⚠️ 这个 catch 会把"网络问题"和"渲染代码有 bug"混成同一句话，
     //    排查时非常误导。debug=1 时把真错误露出来。
-    if (DEBUG) return dead('出错了', String(err && (err.stack || err.message)).slice(0, 400));
-    dead('没能打开。', '换个网络再试一次。');
+    if (DEBUG) return dead(t('frErr'), String(err && (err.stack || err.message)).slice(0, 400));
+    dead(t('frFail'), t('frFailSub'));
   }
 })();
 </script>

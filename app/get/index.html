@@ -72,6 +72,48 @@ h1{font-family:"LXGW WenKai",serif;font-size:34px;letter-spacing:.14em;font-weig
   };
   var WEB = '../';                 // 网页版：上架前所有平台都先来这儿
 
+  // 迷你三语：这一页零依赖（不引模块），跟 index.html 模块加载前那段同一做法。
+  // 中文值必须与页面静态文案逐字相同 —— zh 用户看到的一个字都不变。
+  /* i18n-exempt:start */
+  var L = (function () {
+    var l = (navigator.language || '').toLowerCase();
+    var q = /[?&]lang=(zh|en|ja)/.exec(location.search);
+    if (q) return q[1];
+    if (l.indexOf('ja') === 0) return 'ja';
+    if (l.indexOf('zh') === 0) return 'zh';
+    return l ? 'en' : 'zh';
+  })();
+  var DICT = {
+    zh: {
+      title: '戳了么', sub: '用一枚章，把今天的小事留下来。',
+      tryWeb: '先在网页里试试', noteSoon: 'iPhone 和安卓的 App 正在上架，还没好。',
+      toStore: '去 App Store', toApk: '下载安装包', openWeb: '在网页里打开',
+      betterApp: '手机上装 App 更好用。', betterPhone: '手机上打开更合适 —— 它本来就是给手机做的。',
+      wxTip: '点右上角 ···<br>选「在浏览器打开」', wxClose: '（碰一下别处关掉）',
+    },
+    en: {
+      title: 'Life Stamps', sub: 'Keep the small moments of today, one stamp at a time.',
+      tryWeb: 'Try it in the browser first', noteSoon: 'The iPhone and Android apps are on their way.',
+      toStore: 'Get it on the App Store', toApk: 'Download the app', openWeb: 'Open in browser',
+      betterApp: 'It’s nicer as an app on your phone.', betterPhone: 'Best opened on a phone — it was made for one.',
+      wxTip: 'Tap ··· in the corner,<br>choose “Open in Browser”', wxClose: '(tap anywhere to close)',
+    },
+    ja: {
+      title: 'ライフスタンプ', sub: 'きょうの小さなことを、はんこひとつで残す。',
+      tryWeb: 'まずブラウザで試す', noteSoon: 'iPhone と Android のアプリは準備中です。',
+      toStore: 'App Store で入手', toApk: 'アプリをダウンロード', openWeb: 'ブラウザでひらく',
+      betterApp: 'スマホならアプリのほうが快適です。', betterPhone: 'スマホでひらくのがおすすめ —— もともとスマホのために作りました。',
+      wxTip: '右上の ··· をタップ<br>「ブラウザで開く」を選ぶ', wxClose: '（どこかにふれると閉じます）',
+    },
+  };
+  var T = function (k) { return (DICT[L] && DICT[L][k]) || DICT.zh[k]; };
+  /* i18n-exempt:end */
+  document.documentElement.lang = { zh: 'zh-CN', en: 'en', ja: 'ja' }[L];
+  document.title = T('title');
+  document.querySelector('h1').textContent = T('title');
+  document.querySelector('#wx .tip').innerHTML = T('wxTip');
+  document.querySelector('#wx .close').textContent = T('wxClose');
+
   var ua = navigator.userAgent || '';
   var isWx = /MicroMessenger/i.test(ua);
   var isIOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
@@ -81,21 +123,21 @@ h1{font-family:"LXGW WenKai",serif;font-size:34px;letter-spacing:.14em;font-weig
   var cta = document.getElementById('cta');
   var note = document.getElementById('note');
   var sub = document.getElementById('sub');
+  sub.textContent = T('sub');
 
   if (STORE.ready) {
-    if (isIOS && STORE.ios) { cta.href = STORE.ios; cta.textContent = '去 App Store'; note.textContent = ''; }
-    else if (isAndroid && STORE.android) { cta.href = STORE.android; cta.textContent = '下载安装包'; note.textContent = ''; }
-    else { cta.href = WEB; cta.textContent = '在网页里打开'; note.textContent = '手机上装 App 更好用。'; }
+    if (isIOS && STORE.ios) { cta.href = STORE.ios; cta.textContent = T('toStore'); note.textContent = ''; }
+    else if (isAndroid && STORE.android) { cta.href = STORE.android; cta.textContent = T('toApk'); note.textContent = ''; }
+    else { cta.href = WEB; cta.textContent = T('openWeb'); note.textContent = T('betterApp'); }
   } else {
     // ⚠️ 还没上架就别写「下载 App」——那是文案说了代码没做的事。
     cta.href = WEB;
-    cta.textContent = '先在网页里试试';
-    note.textContent = 'iPhone 和安卓的 App 正在上架，还没好。';
+    cta.textContent = T('tryWeb');
+    note.textContent = T('noteSoon');
   }
 
   if (!isMobile) {
-    sub.textContent = '用一枚章，把今天的小事留下来。';
-    note.textContent = '手机上打开更合适 —— 它本来就是给手机做的。';
+    note.textContent = T('betterPhone');
   }
 
   // 微信内打不开应用商店，只能引导去浏览器。

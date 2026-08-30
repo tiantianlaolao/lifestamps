@@ -1869,6 +1869,9 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   --f-ui:"Xiaolai","Hiragino Sans","Yu Gothic","Meiryo",sans-serif;
   --f-hand:"LXGW WenKai","Xiaolai","Hiragino Mincho ProN","Yu Mincho",serif;
 }
+/* 封面标签是按 3 个全角字排的：「ライフスタンプ」7 个字 26px 直接撑破换行，
+   收到 19px 一行放得下（正式日文名定了再回头看这一档）。 */
+:root[data-lang="ja"] .op-cover .op-t{font-size:19px}
 
 /* 英文：走系统拉丁栈。中文字库里是带拉丁字形，但字重和间距都不对（别的项目上踩过），
    而英文这边用户要求不高——能用且全就行，不值得再引一款自托管拉丁字体。 */

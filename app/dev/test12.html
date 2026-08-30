@@ -390,14 +390,15 @@ function clickAt(el, fx=0.5, fy=0.5){
     localStorage.setItem('lifestamps_records', JSON.stringify(many));
     f.src = '../index.html?skipob=1&noopen=1&band=day&tab=memories';
     await new Promise(r => f.onload = r); await sleep(500);
-    const grid = D().querySelector('.day-grid');
-    const panel = D().querySelector('.day-panel');
-    ok('这一天有 20+ 枚章时明细仍然封顶', grid && grid.clientHeight <= 140,
-       grid ? `可视 ${grid.clientHeight}px / 内容 ${grid.scrollHeight}px` : '没找到明细网格');
-    ok('超出的部分在块内滚动而不是撑长页面', grid && grid.scrollHeight > grid.clientHeight,
-       grid ? `内容 ${grid.scrollHeight} vs 可视 ${grid.clientHeight}` : '');
-    ok('整块「这一天」高度受控（<220px）', panel && panel.getBoundingClientRect().height < 220,
-       panel ? Math.round(panel.getBoundingClientRect().height) + 'px' : '');
+    // 8-30 重构：day-panel 随翻页视图一起退役，点某天 = 日页就地摊开（openDayInBook）。
+    // 原来那三条"明细封顶"断言测的是死掉的面板；改守新行为：20+ 枚的日子点开不炸、纸在。
+    ok('本子里没有 day-panel 了（8-30 已退役）', !D().querySelector('.day-panel'), '');
+    const dk20 = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`;
+    const cell20 = D().querySelector(`.pg-cell[data-dk="${dk20}"]`);
+    if (cell20) { cell20.click(); await sleep(900); }
+    ok('20+ 枚的日子点开 = 日页就地摊开（今日 DOM active）',
+       D().getElementById('page-today').classList.contains('active'), '');
+    ok('tab 高亮留在本子', D().querySelector('#tabbar button.active')?.dataset.tab === 'memories', '');
   }
 
   // 8.「写一句话」的可发现性（「盖了么」#1：功能一直有，但没人知道它在那儿）

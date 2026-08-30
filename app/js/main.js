@@ -96,9 +96,12 @@ let pressFreeze = false;         // dev ?pressfreeze=1 → 章体定格在触纸
 
 // ---- 手账页状态 ----
 // 今日页只有今天（规格 §7.1a：它是一张桌子，不是翻页器）。
-// 想看过去哪一天 → 本子页的翻页视图（flipDk），入口是今日纸底下露出的昨日页边。
+// 8-30 重构：日页组件全 App 唯一（就是今日页这套 DOM）。
+// bookMode = 从本子里点开某一天：纸还是这一份，tab 高亮留在「本子」，顶栏给「‹ 本子」。
+// 🔴 绝不复制第二份日页 DOM —— 「暗处旧 DOM」和"能滚就抢手势"两颗雷都是这么埋下的。
+let bookMode = false;
+// 想看过去哪一天 → 今日纸的卷角（不设限，用户 8-30 点名）或本子里点某天（bookMode）。
 let pageDk = dateKey(Date.now());
-let flipDk = null;                 // 本子页翻页视图正在看的那一天；null = 不在翻页视图里
 
 // ---- 时段光照（规格 §7.1a）----
 // 只做一件事：把 <html data-time-band> 换掉，四组 CSS 变量各自跟着变，组件不感知时段。
@@ -165,7 +168,6 @@ function shiftDk(dk, n) {
 let memMode = 'month';           // 'month' | 'week'
 let memY, memM;
 let memWeekStart = null;         // Date（周一）
-let memSelDay = null;            // dateKey
 
 // ============================================================
 // 启动
@@ -277,7 +279,7 @@ function init() {
       else if (again.length) showGiftQueue(again, true);
     }).catch(() => {});
   }
-  if (devPage) openFlip(devPage);
+  if (devPage) openDayInBook(devPage);
   if (params.get('noopen') === '1') noOpening = true;   // dev：一律不出封面
   if (params.get('opening') === '1') playOpening(true);  // dev：强制再演一次
   if (params.get('open') === 'share') openShare(memY, memM);
@@ -310,9 +312,8 @@ function sealPastTitles() {
 }
 
 function switchTab(name) {
-  // 离开本子就退出翻页视图，回来是书架。
-  // 顺手把那一页清空：隐藏的页面留着旧 DOM，会有第二个 #flip-canvas 在暗处等着被选中。
-  if (name !== 'memories' && flipDk) { flipDk = null; $('#page-memories').innerHTML = ''; }
+  // 任何一次真正的 tab 切换都退出 bookMode —— 它只是"本子里摊开某一天"的临时姿势
+  bookMode = false;
   curTab = name;
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
@@ -359,10 +360,13 @@ function renderToday() {
     <div class="lamp dusk"></div><div class="lamp night"></div>
     <div class="t-bar">
       ${bandIconHTML()}
-      <span class="t-bar-mid">${isToday ? '' : `<button class="pg-today-btn" id="pg-today">${COPY.backToToday}</button>`}</span>
+      ${/* bookMode 里主返回是「‹ 本子」；正常态过去的日子给「回到今天」 */''}
+      <span class="t-bar-mid">${bookMode
+        ? `<button class="pg-today-btn" id="bk-back">‹ ${COPY.tab_memories}</button>`
+        : isToday ? '' : `<button class="pg-today-btn" id="pg-today">${COPY.backToToday}</button>`}</span>
       ${recs.length ? `<button class="t-ico" id="share-day" aria-label="${isToday ? COPY.shareToday : COPY.shareThatDay}"
         title="${isToday ? COPY.shareToday : COPY.shareThatDay}">${ICO.share}</button>` : ''}
-      <button class="t-ico" id="close-book" aria-label="${COPY.closeBook}" title="${COPY.closeBook}">${ICO.close}</button>
+      ${bookMode ? '' : `<button class="t-ico" id="close-book" aria-label="${COPY.closeBook}" title="${COPY.closeBook}">${ICO.close}</button>`}
     </div>
     <div class="book">
       ${yesterdayEdge(pageDk)}
@@ -377,7 +381,7 @@ function renderToday() {
         ${chips}
         ${recs.length ? '' : `<div class="canvas-hint">${emptyHint}</div>`}
         ${undoAlive() ? `<button class="undo-btn" id="undo-btn" title="${COPY.undo}">↺</button>` : ''}
-        ${verdictLine(recs, isToday)}
+        ${dayLineHTML(pageDk, recs, isToday, isFuture)}
         <span class="corner-grip" aria-hidden="true"></span>
       </div>
     </div>
@@ -386,6 +390,14 @@ function renderToday() {
     ` : ''}`;
 
   bindToday();
+  $('#bk-back')?.addEventListener('click', () => { bookMode = false; switchTab('memories'); });
+  // 点纸下缘那行字 = 就地改（判词只是默认值）。
+  // ⚠️ 手里拿着章（armed）时这一下是盖章：不拦、让事件冒给纸；橡皮态同理。
+  $('#today-canvas .day-line')?.addEventListener('click', e => {
+    if ((selStamp && !eraser) || eraser) return;
+    e.stopPropagation();
+    openDayNote(pageDk, $('#page-today .book'), () => renderToday());
+  });
   $('#undo-btn')?.addEventListener('click', e => {
     e.stopPropagation();
     if (!undoAlive()) return;
@@ -628,9 +640,11 @@ function paperHTML(dk, extraCls = '') {
     ${chipsHTML(recs)}
     ${recs.length ? '' : `<div class="canvas-hint">${
       dk > dateKey(Date.now()) ? COPY.emptyFuture : COPY.emptyPast}</div>`}
-    ${/* 🔴 写了话就不再画判词：两条都渲染会叠在纸的下缘（8-30 用户截图抓到）。
-         规则跟日卡一致 —— 用户自己写的话永远优先于系统替他说的那句。 */''}
-    ${note ? `<div class="day-note">${esc(note)}</div>` : verdictLine(recs, dk === dateKey(Date.now()))}
+    ${/* 只读预览（卷角垫底页用）：同一个槽位、同一套样式，但不带 data-line（不可点） */''}
+    ${(() => {
+      const t = note || verdictText(recs, dk === dateKey(Date.now()));
+      return t ? `<div class="verdict-line${note ? ' mine' : ''}">${esc(t)}</div>` : '';
+    })()}
   </div>`;
 }
 
@@ -1021,11 +1035,24 @@ function pickStamp(sid) {
 //   · 过去的某天 —— 有 1 枚就出。那天已经完整了，不用等。
 // ⚠️ 它会随着继续盖章变化 —— 这是有意的：你多盖一枚句子就变了，
 //    人自己就明白这句话是从自己的章来的。
-function verdictLine(recs, isToday) {
+function verdictText(recs, isToday) {
   if (isToday && recs.length < 3) return '';
   const key = verdictOf(recs);
-  if (!key) return '';
-  return `<div class="verdict-line">${esc(COPY[key])}</div>`;
+  return key ? COPY[key] : '';
+}
+
+// 纸下缘的那行字 —— 8-30 重构定案：**只有一个槽位**。
+// 优先级：用户自己写的（mine，实墨）> 判词（系统代笔，淡一点）> 「写一句…」占位（更淡）。
+// 「补一句」不再是独立功能：点这行字就地改，改完是你的话，擦了判词回来。
+// 未来的日子什么都不给（那页还没到）；今天全空时中央已有引导，也不加行。
+function dayLineHTML(dk, recs, isToday, isFuture) {
+  if (isFuture) return '';
+  const note = store.dayNoteOf(dk);
+  if (note) return `<div class="verdict-line mine day-line" data-line>${esc(note)}</div>`;
+  const v = verdictText(recs, isToday);
+  if (v) return `<div class="verdict-line day-line" data-line>${esc(v)}</div>`;
+  if (isToday && !recs.length) return '';
+  return `<div class="verdict-line ghost day-line" data-line>${COPY.notePlaceholder}</div>`;
 }
 
 // index.html 里写死的那几处文字，换语言时统一重写。
@@ -1761,80 +1788,36 @@ function weekStart(d) {
 }
 
 function renderMemories() {
-  if (flipDk) return renderFlipView();
   if (memMode === 'month') renderMonthView(); else renderWeekView();
 }
 
-// ---- 翻页视图（规格 §7.2）：本子里的某一天，只读 ----
-// 今日页不再翻页，过去的日子都在这里翻。入口两个：月/周视图点「翻到这一天」、今日页的昨日页边。
-function openFlip(dk) {
-  flipDk = dk;
+// ---- 本子里点开某一天（8-30 重构：翻页视图退役，日页组件唯一）----
+// 纸就是今日页那份 DOM：托盘在、卷角在、那行字可点改 —— 想补就补、想改就改，
+// tab 高亮留在「本子」，顶栏「‹ 本子」回月历。这才是「只留一个盖章面」的完整落法。
+function openDayInBook(dk) {
+  pageDk = dk;
+  bookMode = true;
   const d = new Date(dk + 'T12:00:00');
-  memY = d.getFullYear(); memM = d.getMonth() + 1; memSelDay = dk;
-  switchTab('memories');
-}
-function closeFlip() {
-  flipDk = null;
-  renderMemories();
-}
-function renderFlipView() {
-  const dk = flipDk;
-  const todayDk = dateKey(Date.now());
-  const d = new Date(dk + 'T12:00:00');
-  const recs = store.recordsOf(dk);
-  const w = store.weatherOf(dk);
-  const hasNext = true;      // 本子是提前装订好的，往后翻得到还没写的空白页
-
-  $('#page-memories').innerHTML = `
-    <div class="flip-bar">
-      <button class="flip-back" id="flip-back">‹ ${COPY.coverMonth.replace('{m}', monthArgShort(d.getMonth() + 1))}</button>
-      <span class="flip-date">${COPY.dayOnly.replace('{d}', d.getDate())} · ${weekName(d)}${w ? ` <span class="w">${weatherSVG(w, 18)}</span>` : ''}</span>
-      ${dk <= todayDk ? `<button class="t-share" id="flip-add">${COPY.addStampHere}</button>` : ''}
-      ${recs.length ? `<button class="t-share" id="flip-share">${COPY.flipShare}</button>` : ''}
-    </div>
-    <div class="book">
-      ${paperHTML(dk, 'readonly')}
-    </div>
-    <div class="flip-foot">
-      <button id="flip-prev">${COPY.flipPrev}</button>
-      <button id="flip-note" class="mid">${store.dayNoteOf(dk) ? COPY.flipEditNote : COPY.flipAddNote}</button>
-      <button id="flip-next" ${hasNext ? '' : 'disabled'}>${COPY.flipNext}</button>
-    </div>`;
-
-  const cv = $('#page-memories .book .canvas');
-  if (cv) cv.id = 'flip-canvas';
-
-  $('#flip-back').addEventListener('click', closeFlip);
-  $('#flip-share')?.addEventListener('click', () => openShareDay(dk));
-  // 🔴 本子里这张纸是只读的（paperHTML(dk,'readonly')：没托盘、没 armed、没盖章处理器），
-  //    所以"补盖"不在这儿做——**别把托盘搬进本子**，那等于第二套盖章界面，两边逻辑必然分叉。
-  //    做法是把今日页翻到那一天再切过去：全 App 只有一个盖章面、一条链路。
-  $('#flip-add')?.addEventListener('click', () => {
-    pageDk = dk;
-    switchTab('today');          // 它自己会清掉 flipDk 和本子那页的 DOM
-  });
-  $('#flip-prev').addEventListener('click', () => curl?.turn(-1));
-  $('#flip-next').addEventListener('click', () => { if (hasNext) curl?.turn(1); });
-  $('#flip-note').addEventListener('click', () => openDayNote(dk));
-
-  // 翻页手势：跟今日页共用同一套卷曲组件（js/curl.js）
-  const book = $('#page-memories .book');
-  const curl = book && attachCurl(book, {
-    paper: () => $('#flip-canvas'),
-    canTurn: () => true,
-    pageEl: d2 => paperElement(shiftDk(dk, d2)),
-    commit: d2 => { flipDk = shiftDk(dk, d2); renderFlipView(); },
-  });
+  memY = d.getFullYear(); memM = d.getMonth() + 1;
+  // ⚠️ 不走 switchTab（它会清 bookMode）：手动摆 active 态。
+  //    curTab 指 today —— render() 的路由按它走，bookMode 只管高亮和顶栏。
+  curTab = 'today';
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('#tabbar button').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === 'memories'));
+  $('#page-today').classList.add('active');
+  $('#page-memories').innerHTML = '';    // 别让旧月历 DOM 在暗处等着被选择器撞上
+  renderToday();
 }
 
-// 给这天补一句：天级的一句话，写在纸的下方（跟印记自己的一句话是两回事）
-function openDayNote(dk) {
+// 这一天的那行字（8-30 起唯一入口 = 点纸下缘那行字；判词只是没写时的默认值）
+function openDayNote(dk, host, after) {
   const cur = store.dayNoteOf(dk) || '';
   const box = document.createElement('div');
   box.className = 'daynote-pop';
   box.innerHTML = `<textarea maxlength="30" placeholder="${COPY.dayNoteHint}">${esc(cur)}</textarea>
     <div class="dn-act"><button class="ok">${COPY.noteDone}</button></div>`;
-  $('#page-memories').appendChild(box);
+  host.appendChild(box);
   const ta = box.querySelector('textarea');
   ta.focus(); ta.setSelectionRange(cur.length, cur.length);
   let saved = false;
@@ -1843,7 +1826,7 @@ function openDayNote(dk) {
     saved = true;
     store.setDayNote(dk, ta.value.trim());
     box.remove();
-    renderFlipView();
+    after();
   };
   // 🔴 挂 pointerdown 不能挂 click（8-27 用户真机实测：写完点「写好了」没反应）。
   //    iOS 上键盘弹着的时候点按钮：手指按下 → textarea 失焦 → 键盘收起 → 整个版面往下弹，
@@ -1869,107 +1852,52 @@ function memSeg() {
 }
 function bindSeg() {
   document.querySelectorAll('.mem-seg button').forEach(b =>
-    b.addEventListener('click', () => { memMode = b.dataset.mode; memSelDay = null; renderMemories(); }));
+    b.addEventListener('click', () => { memMode = b.dataset.mode; renderMemories(); }));
 }
 
 // ---- 当日汇总面板（日历/周列表下方） ----
-function dayPanel(dk) {
-  if (!dk) return '';
-  const list = store.recordsOf(dk);
-  const d = new Date(dk + 'T12:00:00');
-  const w = store.weatherOf(dk);
-  // ⚠️ 一行一枚章的话，盖得多的那天这块就无限长（8-26 用户："又是很长"）。
-  //    改成紧凑网格 + 封顶滚动：不管那天盖了多少，它只占固定高度。
-  const rows = list.length ? `<div class="day-grid">${list.map(r => `
-      <div class="day-cell" title="${dName(stampById[r.stampId])} · ${fmtTime(r.ts)}">
-        <span class="face">${stampSVG(stampById[r.stampId], { size: 30, ink: r.ink, rot: r.rot, mat: r.mat })}</span>
-        <span class="tm">${fmtTime(r.ts)}</span>
-        <button class="del" data-rid="${r.id}" aria-label="${COPY.delOne}">×</button>
-      </div>`).join('')}</div>`
-    : `<div class="empty">${COPY.dayEmpty}</div>`;
-  return `<div class="day-panel" id="day-panel">
-    <div class="dp-t">${monthDay(d, true)} · ${weekName(d)}
-      ${w ? `<span class="w">${weatherSVG(w, 22)}</span>` : ''}
-      <button class="dp-flip" data-flip="${dk}">${COPY.notebookFlip} ›</button>
-    </div>
-    ${rows}
-  </div>`;
-}
-function bindDayPanel() {
-  const dp = $('#day-panel'); if (!dp) return;
-  // 翻到这一天：进本子自己的翻页视图（今日页只有今天，不再借它当翻页器）
-  dp.querySelector('[data-flip]')?.addEventListener('click', e => openFlip(e.currentTarget.dataset.flip));
-  dp.querySelectorAll('.del').forEach(b =>
-    b.addEventListener('click', e => {
-      e.stopPropagation();
-      // 两步确认。× 只有 14px，塞不下「删?」两个字，改成整格变红提示再点一次
-      if (b.dataset.arm) { store.removeRecord(b.dataset.rid); renderMemories(); }
-      else {
-        dp.querySelectorAll('.day-cell.arm').forEach(c => { c.classList.remove('arm'); delete c.querySelector('.del').dataset.arm; });
-        b.dataset.arm = '1';
-        b.closest('.day-cell')?.classList.add('arm');
-      }
-    }));
-}
+// dayPanel / bindDayPanel 8-30 随翻页视图一起退役：
+// 点某天直接摊开日页（openDayInBook），面板的看章/删章在纸上都有（长按章）。
 
-// ---- 书架：一年十二本，本子厚度 = 那个月盖了多少 ----
-function shelfHTML(selM = memM) {
+// ---- 一年一本：月份便签（8-30 重构，书架退役）----
+// 本子=一本年册，侧边一排月签像真手账的索引标签：12 个常在，没到的月翻开是空白。
+// 年份切换只在**真的有别的年份的记录**时出现——第一年用户根本不需要"哪一本"这个概念（渐进披露）。
+// 🔴 新红线（用户 8-30 定向）：本子本体永远免费，新年换本子只卖封面/纸样——付费永不碰记录能力。
+const SEASON = m => (m >= 3 && m <= 5) ? 'spring' : (m >= 6 && m <= 8) ? 'summer'
+  : (m >= 9 && m <= 11) ? 'autumn' : 'winter';
+function monthTabsHTML(selM = memM) {
   const now = new Date();
   const curY = now.getFullYear(), curM = now.getMonth() + 1;
-  // 12 本平分书架宽度（8-26 用户：横向 12 个月占满）；
-  // 颜色按春夏秋冬分，高度按那个月盖了多少——书架上的书本来就有高有矮。
-  const SEASON = m => (m >= 3 && m <= 5) ? 'spring' : (m >= 6 && m <= 8) ? 'summer'
-    : (m >= 9 && m <= 11) ? 'autumn' : 'winter';
-  let books = '';
+  const years = new Set(store.records.map(r => dateKey(r.ts).slice(0, 4)));
+  years.add(String(curY));
+  let tabs = '';
   for (let m = 1; m <= 12; m++) {
-    const n = store.monthRecords(memY, m).length;
     const future = memY > curY || (memY === curY && m > curM);
-    const isCur = memY === curY && m === curM;
-    const h = 40 + Math.round(Math.min(1, n / 60) * 18);      // 40~58px
-    books += `<button class="bk s-${SEASON(m)} ${future ? 'future' : ''} ${m === selM ? 'sel' : ''} ${isCur ? 'cur' : ''}"
-        data-m="${m}" style="height:${h}px" title="${COPY.monthBarTitle.replace('{m}', monthArgShort(m)).replace('{n}', n)}">
-        <span class="bm">${COPY.coverMonth.replace('{m}', monthArgShort(m))}</span></button>`;
+    const n = store.monthRecords(memY, m).length;
+    tabs += `<button class="mtab s-${SEASON(m)} ${m === selM ? 'sel' : ''} ${future ? 'future' : ''} ${n ? 'inked' : ''}"
+      data-m="${m}" title="${COPY.monthBarTitle.replace('{m}', monthArgShort(m)).replace('{n}', n)}">${COPY.coverMonth.replace('{m}', monthArgShort(m))}</button>`;
   }
-  return `<div class="shelf-wrap">
-    <div class="shelf-nav">
+  return `${years.size > 1 ? `<div class="mt-year">
       <button id="yprev">‹</button><span class="yr">${memY}</span>
       <button id="ynext" ${memY >= curY ? 'disabled' : ''}>›</button>
-    </div>
-    <div class="shelf">${books}</div>
-  </div>`;
+    </div>` : ''}
+    <div class="month-tabs">${tabs}</div>`;
 }
 
-// 书架的绑定。⚠️ 书架在周视图里也要在——它是整本本子的导航，
-// 不能只挂在月视图上（8-26 用户实测：切到周就再也看不见书架了）。
-function bindShelf() {
-  $('#yprev').onclick = () => { shiftYear(-1); };
-  $('#ynext').onclick = () => { shiftYear(1); };
-  // 书架左右滑 = 切年（书架不横滚，所以横向手势没人跟它抢）
-  const sh = $('.shelf');
-  if (sh) {
-    let sx = 0, sy = 0, pid = null;
-    sh.addEventListener('pointerdown', e => { sx = e.clientX; sy = e.clientY; pid = e.pointerId; });
-    sh.addEventListener('pointerup', e => {
-      if (pid !== e.pointerId) return; pid = null;
-      const dx = e.clientX - sx, dy = e.clientY - sy;
-      if (Math.abs(dx) > 46 && Math.abs(dx) > Math.abs(dy) * 2) {
-        if (dx > 0) shiftYear(-1);
-        else if (memY < new Date().getFullYear()) shiftYear(1);
-      }
-    });
-  }
-  document.querySelectorAll('.shelf .bk').forEach(b =>
+// 月签的绑定。⚠️ 周视图里也要在——它是整本书的导航（书架时代的教训，沿用）。
+function bindMonthTabs() {
+  $('#yprev')?.addEventListener('click', () => shiftYear(-1));
+  $('#ynext')?.addEventListener('click', () => shiftYear(1));
+  document.querySelectorAll('.month-tabs .mtab').forEach(b =>
     b.addEventListener('click', () => {
       memM = +b.dataset.m;
-      memSelDay = null;
-      // 周模式下点一本 = 翻到那个月的第一周，不擅自把用户切回月模式
+      // 周模式下点月签 = 翻到那个月的第一周，不擅自把用户切回月模式
       if (memMode === 'week') memWeekStart = weekStart(new Date(memY, memM - 1, 1));
       renderMemories();
     }));
 }
 function shiftYear(d) {
   memY += d;
-  memSelDay = null;
   if (memMode === 'week') memWeekStart = weekStart(new Date(memY, memM - 1, 1));
   renderMemories();
 }
@@ -1981,7 +1909,6 @@ function renderMonthView() {
   const daysInMonth = new Date(memY, memM, 0).getDate();
   const offset = weekOffset(new Date(memY, memM - 1, 1).getDay());
   const isCurMonth = memY === now.getFullYear() && memM === now.getMonth() + 1;
-  if (memSelDay === null && isCurMonth) memSelDay = dateKey(now.getTime());
 
   const byDay = {};
   for (const r of recs) { const d = new Date(r.ts).getDate(); (byDay[d] = byDay[d] || []).push(r); }
@@ -2005,7 +1932,7 @@ function renderMonthView() {
     // blank = 过去的日子但一枚章都没有。跟"还没到的日子"（future）要分开：
     // 那是"还没轮到"，这是"轮到了、空着"——空着的那张纸该看起来在等人写，不是一个空格子。
     const blank = !future && !list.length;
-    cells += `<div class="pg-cell ${future ? 'future' : ''} ${blank ? 'blank' : ''} ${today ? 'today' : ''} ${memSelDay === dk ? 'selday' : ''}" data-dk="${dk}">
+    cells += `<div class="pg-cell ${future ? 'future' : ''} ${blank ? 'blank' : ''} ${today ? 'today' : ''}" data-dk="${dk}">
       <span class="pg-paper">${minis}</span><span class="d">${d}</span></div>`;
   }
   // 合订本：月网格最后一格，一张对折的纸
@@ -2021,7 +1948,7 @@ function renderMonthView() {
   const persona = monthPersona(catCnt, recs.length);
 
   $('#page-memories').innerHTML = `
-    ${shelfHTML()}
+    ${monthTabsHTML()}
     <div class="mem-nav">
       <h2>${COPY.monLabelSp.replace('{m}', monthArg(memM))}</h2>
       <div style="display:flex;align-items:center;gap:10px">${memSeg()}</div>
@@ -2030,20 +1957,14 @@ function renderMonthView() {
       .replace('{n}', recs.length).replace('{m}', Math.max(0, blank))}</div>
     <div class="cal-head">${COPY.calHead.map(w => `<span>${w}</span>`).join('')}</div>
     <div class="pg-grid">${cells}</div>
-    ${dayPanel(memSelDay)}
     ${recs.length ? `<button class="cta" style="margin-top:18px;letter-spacing:.14em" id="share-month">${COPY.shareMonthBtn}</button>` : ''}`;
 
-  bindShelf();
+  bindMonthTabs();
   bindSeg();
-  // 🔴 点某天的纸面 = 直接翻到那一天（翻页视图里有「补一枚章」，8-30 用户要的少一步）。
-  //    未来的日子没有可补的，保持原来的"选中看看"。
+  // 点某天的纸面 = 那一天就地摊开（想补就补、想改话就改）。未来的页也能翻开看（只读，纸自己管）
   document.querySelectorAll('.pg-cell[data-dk]').forEach(el =>
-    el.addEventListener('click', () => {
-      if (el.classList.contains('future')) { memSelDay = el.dataset.dk; renderMonthView(); return; }
-      openFlip(el.dataset.dk);
-    }));
+    el.addEventListener('click', () => openDayInBook(el.dataset.dk)));
   $('#booklet')?.addEventListener('click', () => openBooklet(memY, memM));
-  bindDayPanel();
   const sm = $('#share-month');
   if (sm) sm.addEventListener('click', () => openShare(memY, memM));
 }
@@ -2106,7 +2027,6 @@ function renderWeekView() {
   const curWs = weekStart(now).getTime();
   const atNow = ws.getTime() >= curWs;
   const todayDk = dateKey(now.getTime());
-  if (memSelDay === null && ws.getTime() === curWs) memSelDay = todayDk;
 
   let rows = '', total = 0; const cnt = {};
   for (let i = 0; i < 7; i++) {
@@ -2118,7 +2038,7 @@ function renderWeekView() {
     const future = d > now;
     const minis = list.slice(0, 8).map(r =>
       stampSVG(stampById[r.stampId], { size: 22, ink: r.ink, rot: r.rot, mat: r.mat, flat: true })).join('');
-    rows += `<div class="week-row ${dk === todayDk ? 'today' : ''} ${memSelDay === dk ? 'selday' : ''}" data-dk="${dk}">
+    rows += `<div class="week-row ${dk === todayDk ? 'today' : ''}" data-dk="${dk}">
       <div class="wd"><div class="d1" style="${future ? 'color:var(--faint)' : ''}">${weekName(d, true)}</div>
         <div class="d2">${d.getMonth() + 1}.${d.getDate()}</div></div>
       <div class="minis">${minis}${list.length > 8 ? `<span class="cal-more">+${list.length - 8}</span>` : ''}</div>
@@ -2129,14 +2049,13 @@ function renderWeekView() {
 
   memY = ws.getFullYear();
   $('#page-memories').innerHTML = `
-    ${shelfHTML(ws.getMonth() + 1)}
+    ${monthTabsHTML(ws.getMonth() + 1)}
     <div class="mem-nav">
       <button id="wprev">‹</button>
       <h2>${ws.getMonth() + 1}.${ws.getDate()} – ${we.getMonth() + 1}.${we.getDate()}</h2>
       <div style="display:flex;align-items:center;gap:10px">${memSeg()}<button id="wnext" ${atNow ? 'disabled' : ''}>›</button></div>
     </div>
     <div class="week-list">${rows}</div>
-    ${dayPanel(memSelDay)}
     <div class="card mem-sum">
       <div class="cd-t">${COPY.weekCardTitle}</div>
       ${total ? `<div class="cd-b" style="color:var(--sub)">${COPY.weekSum.replace('{n}', total)}</div>
@@ -2145,13 +2064,12 @@ function renderWeekView() {
         : `<div class="cd-b" style="color:var(--sub)">${COPY.weekQuiet}</div>`}
     </div>`;
 
-  $('#wprev').onclick = () => { memWeekStart = new Date(ws.getTime() - 7 * 864e5); memSelDay = null; renderWeekView(); };
-  $('#wnext').onclick = () => { memWeekStart = new Date(ws.getTime() + 7 * 864e5); memSelDay = null; renderWeekView(); };
-  bindShelf();
+  $('#wprev').onclick = () => { memWeekStart = new Date(ws.getTime() - 7 * 864e5); renderWeekView(); };
+  $('#wnext').onclick = () => { memWeekStart = new Date(ws.getTime() + 7 * 864e5); renderWeekView(); };
+  bindMonthTabs();
   bindSeg();
   document.querySelectorAll('.week-row[data-dk]').forEach(el =>
-    el.addEventListener('click', () => { memSelDay = el.dataset.dk; renderWeekView(); }));
-  bindDayPanel();
+    el.addEventListener('click', () => openDayInBook(el.dataset.dk)));
 }
 
 // ============================================================

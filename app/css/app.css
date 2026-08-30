@@ -1969,3 +1969,28 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   font-size:13.5px; padding:3px 0; gap:8px}
 .acc-row .v{color:var(--sub); font-size:12px}
 .acc-msg{font-size:12px; color:var(--sub); margin-top:8px; min-height:1em}
+
+/* ---- 8-30 重构：一年一本 · 月份便签（书架 .shelf 系退役，样式留着不碍事）---- */
+.mt-year{display:flex; align-items:center; justify-content:center; gap:10px; margin:2px 0 6px}
+.mt-year .yr{font-family:var(--f-hand); font-size:14px; color:var(--sub); letter-spacing:.08em}
+.mt-year button{border:none; background:none; color:var(--faint); font-size:16px; padding:2px 10px; cursor:pointer}
+.mt-year button:disabled{opacity:.3}
+.month-tabs{display:flex; gap:3px; margin:0 0 10px; align-items:flex-end}
+.mtab{
+  flex:1; min-width:0; border:none; cursor:pointer; padding:5px 0 4px;
+  border-radius:6px 6px 0 0; font-family:var(--f-ui); font-size:10.5px; letter-spacing:0;
+  color:var(--ink); opacity:.55; line-height:1;
+  border-bottom:2px solid transparent; -webkit-tap-highlight-color:transparent;
+}
+.mtab.s-spring{background:var(--season-spring)} .mtab.s-summer{background:var(--season-summer)}
+.mtab.s-autumn{background:var(--season-autumn)} .mtab.s-winter{background:var(--season-winter)}
+.mtab.inked{opacity:.8}
+.mtab.sel{opacity:1; padding-top:8px; border-bottom-color:rgba(63,53,48,.35); font-weight:600}
+.mtab.future{opacity:.25}
+
+/* ---- 8-30 重构：纸下缘那行字的三态 ---- */
+/* mine = 用户自己写的：实墨。系统代笔（默认 .verdict-line 的 .8）比它淡一档，占位再淡 */
+.verdict-line.mine{opacity:1}
+.verdict-line.ghost{opacity:.38; color:var(--sub); font-size:13px}
+/* 可点（只有今日纸上带 data-line 的那份；paperHTML 预览不带，保持 pointer-events:none） */
+#today-canvas .day-line{pointer-events:auto; cursor:pointer}

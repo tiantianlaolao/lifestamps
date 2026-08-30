@@ -1,7 +1,7 @@
-<!doctype html><meta charset="utf-8"><title>判词×补一句 不重叠</title>
-<!-- 8-30 用户截图抓到：写了「给这天补一句」之后，判词还照画在纸的下缘，两行叠在一起。
-     规则修成跟日卡一致：用户自己写的话优先，判词只在没写话时出现。这页守住它别回潮。
-     顺手守同批的另一条改动：月历点过去的日子 = 直接进翻页视图（补盖少一步）。
+<!doctype html><meta charset="utf-8"><title>那行字一个槽位 + 本子里就地摊开</title>
+<!-- 8-30 重构的两条主线在这页守着：
+     ① 纸下缘那行字只有一个槽位：用户的话(mine) > 判词 > 「写一句…」占位，永不共存两条
+     ② 本子月历点某天 = 日页(今日那份 DOM)就地摊开：tab 高亮留在本子、顶栏有「‹ 本子」
      做法照 _drawerclick：iframe 真页，先摆状态再点。 -->
 <style>body{font:13px/1.7 monospace;background:#111;color:#ddd;padding:16px}
 .p{color:#7c6}.f{color:#f66;font-weight:700} iframe{border:1px solid #555;margin-top:10px}</style>
@@ -16,41 +16,50 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 (async () => {
  try {
-  // 摆状态（要在 App 起来之前写 localStorage）：8-20 有 4 枚章（够出判词），先不写话
-  localStorage.clear();
   const dk = '2026-08-20', base = new Date(dk + 'T10:00:00').getTime();
   const recs = ['milktea', 'lie', 'takeout', 'happy'].map((sid, i) =>
     ({ id: 'vn' + i, stampId: sid, ink: 'zhu', ts: base + i * 3600e3 }));
-  localStorage.setItem('lifestamps_records', JSON.stringify(recs));
 
   async function openDay(note) {
-    if (note !== undefined) {
-      const meta = note ? { [dk]: { note } } : {};
-      localStorage.setItem('lifestamps_dayMeta', JSON.stringify(meta));
-    }
-    f.src = '/index.html?demo=0&skipob=1&book=open&tab=memories&day=' + dk;
-    await new Promise(r => { f.onload = r; }); await sleep(1800);
+    localStorage.clear();
+    localStorage.setItem('lifestamps_records', JSON.stringify(recs));
+    if (note) localStorage.setItem('lifestamps_dayMeta', JSON.stringify({ [dk]: { note } }));
+    f.src = '/index.html?skipob=1&book=open&tab=memories';
+    await new Promise(r => { f.onload = r; }); await sleep(1600);
     const d = f.contentDocument;
-    // 月历里点 8-20 的格子 → 应直接进翻页视图
+    // ⚠️ 月签要在点开日页**之前**查：openDayInBook 会清空本子那页的 DOM（防暗处旧 DOM）
+    d._hadTabs = !!d.querySelector('.month-tabs .mtab');
     const cell = d.querySelector(`.pg-cell[data-dk="${dk}"]`);
     if (cell) { cell.click(); await sleep(900); }
-    return d.getElementById('page-memories');
+    return d;
   }
 
-  let pm = await openDay('');
-  ok(!!pm.querySelector('.pg-cell') || !!pm.querySelector('.bookpage'), '本子页起来了');
-  ok(!!pm.querySelector('.bookpage'), '⭐ 点月历格子直接进了那一天（翻页视图）');
-  ok(!!pm.querySelector('.verdict-line'), '没写话时：判词在纸上');
-  ok(!pm.querySelector('.day-note'), '没写话时：没有 day-note');
+  let d = await openDay('');
+  ok(d._hadTabs, '本子页起来了（月份便签在）');
+  ok(d.getElementById('page-today').classList.contains('active'),
+     '⭐ 点月历格子 = 日页（今日那份 DOM）就地摊开');
+  ok(d.querySelector('#tabbar button.active')?.dataset.tab === 'memories',
+     '⭐ tab 高亮留在「本子」——人没被拽出书');
+  ok(!!d.getElementById('bk-back'), '顶栏有「‹ 本子」返回');
+  ok(!!d.querySelector('#deck-strip, .deck'), '托盘就在纸下面（想补就补）');
+  const line1 = d.querySelectorAll('#today-canvas .day-line');
+  ok(line1.length === 1 && !line1[0].classList.contains('mine') && !line1[0].classList.contains('ghost'),
+     '没写话时：只有一行 = 判词（系统代笔态）');
 
-  pm = await openDay('今天过得很好');
-  ok(!!pm.querySelector('.day-note'), '写了话：day-note 在纸上');
-  ok(!pm.querySelector('.verdict-line'), '⭐ 写了话：判词让位，不再重叠');
+  // 「‹ 本子」回月历
+  d.getElementById('bk-back').click(); await sleep(700);
+  ok(!!d.querySelector('#page-memories .pg-grid'), '返回后回到月历');
+
+  d = await openDay('今天过得很好');
+  const line2 = d.querySelectorAll('#today-canvas .day-line');
+  ok(line2.length === 1 && line2[0].classList.contains('mine')
+     && line2[0].textContent.includes('今天过得很好'),
+     '⭐ 写了话：只有一行 = 你的话（mine），判词让位，永不重叠');
  } catch (e) {
   ok(false, 'CRASH: ' + (e && e.stack || e));
  }
- const d = document.createElement('div');
- d.textContent = `—— 通过 ${pass} / 失败 ${fail}`;
- out.appendChild(d);
+ const d2 = document.createElement('div');
+ d2.textContent = `—— 通过 ${pass} / 失败 ${fail}`;
+ out.appendChild(d2);
 })();
 </script>

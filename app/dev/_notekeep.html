@@ -1,0 +1,67 @@
+<!doctype html><meta charset="utf-8"><title>写字框不吃字</title>
+<!-- 8-31 三个同事都撞上的吃字 bug 在这页钉死：
+     盖章埋 10 秒撤销定时器，到期 renderToday() 整页重建把正在打字的输入框
+     连字带框拆掉（innerHTML 重建不派发 blur，「失焦即存」没机会跑）。
+     修法 = renderToday 开头 flushNoteEditors() 先抢救字。
+     ⚠️ 测法必须用**合成 click**（不发 pointerdown）触发重渲染：
+     真手指点页面会先走「点框外=保存」那条路，测不到抢救逻辑本身。
+     材质按钮的 click 处理器里就有一次 renderToday，拿它当扳机。 -->
+<style>body{font:13px/1.7 monospace;background:#111;color:#ddd;padding:16px}
+.p{color:#7c6}.f{color:#f66;font-weight:700} iframe{border:1px solid #555;margin-top:10px}</style>
+<div id="out"></div><iframe id="f" width="390" height="700"></iframe>
+<script>
+const out = document.getElementById('out'), f = document.getElementById('f');
+let pass = 0, fail = 0;
+const ok = (c, m) => { const d = document.createElement('div');
+  d.className = c ? 'p' : 'f'; d.textContent = (c ? 'PASS  ' : 'FAIL  ') + m;
+  out.appendChild(d); c ? pass++ : fail++; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const synthClick = el => el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+(async () => {
+ try {
+  const today = new Date(), pad = n => String(n).padStart(2, '0');
+  const dk = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+  localStorage.clear();
+  localStorage.setItem('lifestamps_records', JSON.stringify([
+    { id: 'nk1', stampId: 'milktea', ink: 'zhu', ts: Date.now() - 3600e3 },
+  ]));
+  f.src = '/index.html?skipob=1&book=open';
+  await new Promise(r => { f.onload = r; }); await sleep(1600);
+  const d = f.contentDocument;
+  const mat = () => d.querySelector('.mat-chip');
+  ok(!!mat(), '（前提）材质按钮在 —— 它的 click 里有一次 renderToday，当扳机用');
+
+  // ① 纸下缘那行字：打字打到一半被整页重建 → 字必须已经保存
+  const line = d.querySelector('#today-canvas .day-line');
+  ok(!!line, '（前提）纸下缘那行字在');
+  synthClick(line); await sleep(400);
+  const ta = d.querySelector('.daynote-pop textarea');
+  ok(!!ta, '点行 → 写字框开了');
+  if (ta) ta.value = '别吃我的字';
+  synthClick(mat()); await sleep(500);
+  ok(!d.querySelector('.daynote-pop'), '整页重建后写字框没有残留');
+  const line2 = d.querySelector('#today-canvas .day-line');
+  ok(!!line2 && line2.classList.contains('mine') && line2.textContent.includes('别吃我的字'),
+     '⭐ 那行字保住了（重建前被抢救进 store）');
+
+  // ② 章底下那句话：同样的死法，同样要保住
+  const chip = d.querySelector('#today-canvas .chip');
+  ok(!!chip, '（前提）纸上有一枚章');
+  synthClick(chip); await sleep(400);
+  const inp = d.querySelector('.note-pop .np-in');
+  ok(!!inp, '点章 → 小气泡写字框开了');
+  if (inp) inp.value = '章上的字';
+  synthClick(mat()); await sleep(500);
+  ok(!d.querySelector('.note-pop'), '整页重建后小气泡没有残留');
+  synthClick(d.querySelector('#today-canvas .chip')); await sleep(400);
+  const inp2 = d.querySelector('.note-pop .np-in');
+  ok(!!inp2 && inp2.value === '章上的字', '⭐ 章上那句话保住了（重开编辑框字还在）');
+ } catch (e) {
+  ok(false, 'CRASH: ' + (e && e.stack || e));
+ }
+ const d2 = document.createElement('div');
+ d2.textContent = `—— 通过 ${pass} / 失败 ${fail}`;
+ out.appendChild(d2);
+})();
+</script>

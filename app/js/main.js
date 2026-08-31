@@ -350,7 +350,16 @@ function render() {
 // ============================================================
 // 今日：上纸 下操作台
 // ============================================================
+// 🔴 整页重建前先把开着的写字框里的字保存下来（8-31 三个同事都撞上的吃字 bug）：
+//    盖章会埋一颗 10 秒的撤销定时器，到期 renderToday() 把正在打字的输入框
+//    连字带框拆掉 —— innerHTML 重建**不派发 blur**，「失焦即存」根本没机会跑。
+//    只存不触发重渲染（_flush 半边），因为调用方自己马上就要重建整页。
+function flushNoteEditors() {
+  document.querySelectorAll('.note-pop, .daynote-pop').forEach(p => p._flush && p._flush());
+}
+
 function renderToday() {
+  flushNoteEditors();
   // ⚠️ renderToday 是整页 innerHTML 重建，托盘里的滚动位置会全丢。
   //    选完章、蘸完墨都会走这里——不存的话：展开态选第四排的章，选完就弹回顶部；
   //    点印泥排最后一个，点完就滑回最左（8-26 用户实测撞到）。
@@ -1282,7 +1291,12 @@ function placeStamp(clientX, clientY, cv) {
   setTimeout(() => {                             // 章体抬走后：整页同步 + 隐藏章
     undoRec = { id: rec.id, at: Date.now() };
     clearTimeout(undoTimer);
-    undoTimer = setTimeout(() => { undoRec = null; if (curTab === 'today') renderToday(); }, UNDO_MS + 50);
+    // 到期那次重渲染只是让「撤销」胶囊消失 —— 有人正在写字就跳过（renderToday 里的
+    // flushNoteEditors 会保住字，但没必要为一个装饰性刷新把人家的输入框合上）。
+    undoTimer = setTimeout(() => {
+      undoRec = null;
+      if (curTab === 'today' && !document.querySelector('.note-pop, .daynote-pop')) renderToday();
+    }, UNDO_MS + 50);
     if (curTab === 'today') renderToday();
     if (curTab === 'today') noteHint(rec.id);   // 「写一句话」这个功能得让人看见
     // 基础章解锁：判据是累计的，所以补盖也算 —— 补的也是真发生过的事。
@@ -1347,12 +1361,18 @@ function openNote(rid) {
   cv.appendChild(pop);
   const input = pop.querySelector('.np-in');
   input.focus();
-  const save = () => {
+  // 🔴 rerender=false 的那条路是给 flushNoteEditors() 用的：整页重建前抢救字，
+  //    调用方自己马上要重渲染，这里再触发一次就是双重重建。
+  let saved = false;
+  const save = (rerender = true) => {
+    if (saved) return;
+    saved = true;
     const v = input.value.trim().slice(0, 30);
     pop.remove();
-    if (v !== (rec.note || '')) { store.updateRecordNote(rid, v); renderToday(); }
+    if (v !== (rec.note || '')) { store.updateRecordNote(rid, v); if (rerender) renderToday(); }
   };
-  input.addEventListener('blur', save);
+  pop._flush = () => save(false);
+  input.addEventListener('blur', () => save());
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter') input.blur();
     if (e.key === 'Escape') { input.value = rec.note || ''; input.blur(); }
@@ -1692,7 +1712,10 @@ function drawerStamps(used, cnt) {
       : `<div class="dk-cell raw">
           <span class="face carved">${stampSVG(s2, { size: 34, carve: true })}</span>
           <span class="nm">${key === 'hid' ? '？' : ''}</span>
-          ${key === 'hid' ? `<span class="hid-hint">${s2.hint}</span>` : ''}</div>`;
+          ${/* 🔴 谜面要走词典（8-31 用户抓到 en/ja 界面里露中文）——纸上便签那份
+               一直走的 nameOf，这里当初漏了。封蜡传进来的 hint 已是词典成品，
+               hiddenHint 表里没有 g_* 键，nameOf 原样回落，不受影响。 */''}
+          ${key === 'hid' ? `<span class="hid-hint">${esc(nameOf('hiddenHint', s2.id, s2.hint))}</span>` : ''}</div>`;
   };
 
   const inCat = s2 => drawerCat === 'all' || s2.cat === drawerCat;
@@ -1841,13 +1864,17 @@ function openDayNote(dk, host, after) {
   const ta = box.querySelector('textarea');
   ta.focus(); ta.setSelectionRange(cur.length, cur.length);
   let saved = false;
-  const done = () => {
-    if (saved) return;
+  // 保存半边单独拆出来给 flushNoteEditors() 用（只存不触发 after 的重渲染）
+  const doSave = () => {
+    if (saved) return false;
     saved = true;
     store.setDayNote(dk, ta.value.trim());
     box.remove();
-    after();
+    document.removeEventListener('pointerdown', outside, true);
+    return true;
   };
+  box._flush = doSave;
+  const done = () => { if (doSave()) after(); };
   // 🔴 挂 pointerdown 不能挂 click（8-27 用户真机实测：写完点「写好了」没反应）。
   //    iOS 上键盘弹着的时候点按钮：手指按下 → textarea 失焦 → 键盘收起 → 整个版面往下弹，
   //    按钮在 click 派发之前就已经从手指底下挪走了，那一下 click 落到空处。

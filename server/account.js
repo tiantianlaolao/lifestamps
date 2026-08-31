@@ -176,8 +176,11 @@ function mount({ db, send, readBody }) {
   async function smsSend(req, res) {
     const b = await readBody(req);
     const phone = String(b.phone || '');
-    if (!PHONE_RE.test(phone)) return send(res, 400, { error: 'phone' });
+    // 🔴 501 判断必须在 400 之前：客户端拿"空请求回 501 还是 400"当能力探测
+    //    （App 里手机号入口只在所连服务端配了短信时才显示）。反过来的话
+    //    空请求两边都回 400，探测就瞎了。
     if (!SMS_TEST_CODE && !sms.configured()) return send(res, 501, { error: 'sms not configured' });
+    if (!PHONE_RE.test(phone)) return send(res, 400, { error: 'phone' });
     const now = Date.now();
     const cur = q.getSms.get(phone);
     if (cur && now - Number(cur.lastSent) < SMS_COOLDOWN_MS) {

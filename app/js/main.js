@@ -6,7 +6,7 @@ import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint
 import { store, dateKey, fmtTime, posOf } from './store.js';
 import { sync } from './sync.js';
 import { iapPrice, iapBuy, iapRestore } from './native.js';
-import { collectGifts, claimTicket, authSmsSend } from './net.js';
+import { collectGifts, claimTicket, authSmsSend, smsSupported } from './net.js';
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked } from './hidden.js';
 import { verdictOf } from './verdict.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
@@ -2123,30 +2123,46 @@ function renderWeekView() {
 // 我的
 // ============================================================
 
-// 手机号登录只在**国内网页版**露头（8-31）：
-// · App 里不露 —— 海外包不能带（隐私问卷 + 海外收不到国内短信），中国区 App 等备案再开；
-// · stampday（美服）网页不露 —— 那台服务端没配短信凭据，露了也是 501。
-// 本地开发（http/127.*）也露，方便调；美服想开的那天只用改这一行的判断。
-const PHONE_LOGIN_OK = !window.Capacitor
-  && /^(www\.tybbtech\.com|localhost|127\.)/.test(location.hostname);
+// 手机号登录入口在哪露头（8-31 两轮定稿）：
+// · 网页版：只在国内站（www）和本地开发露 —— stampday 那台服务端没配短信，露了也是 501；
+// · App 壳：按**能力探测**走 —— 所连服务端支持短信才亮（smsSupported() 空请求看 501/400）。
+//   测试包连国内 1.13 = 亮（提前预览中国区版）；正式包连美服 = 灭，零审核风险，零分叉。
+// 探测是异步的：结果回来且为真时补一次 renderMe（只有 App 壳里会发生这一下）。
+let phoneCapable = false;
+function phoneLoginOK() {
+  if (!window.Capacitor) return /^(www\.tybbtech\.com|localhost|127\.)/.test(location.hostname);
+  return phoneCapable;
+}
+function probePhoneLogin() {
+  if (!window.Capacitor || phoneCapable) return;
+  smsSupported().then(v => {
+    if (v && !phoneCapable) { phoneCapable = true; if (curTab === 'me') renderMe(); }
+  });
+}
+
+// 手机号那两行（网页国内站 / App 连国内服务端时复用同一份）
+function phoneRowsHTML() {
+  return `<div class="acc-row"><input class="acc-input" id="acc-phone" type="tel" maxlength="11"
+      inputmode="numeric" autocomplete="tel" placeholder="${COPY.accPhonePh}">
+      <button class="pk" id="acc-send">${COPY.accSendCode}</button></div>
+    <div class="acc-row"><input class="acc-input" id="acc-code" type="text" maxlength="6"
+      inputmode="numeric" autocomplete="one-time-code" placeholder="${COPY.accCodePh}">
+      <button class="pk dark" id="acc-phlogin">${COPY.accLoginPhone}</button></div>`;
+}
 
 // 账号区块（8-30）。三种态：网页版（一句话；国内站再加手机号登录）/ 没登录 / 已登录。
 function accountHTML() {
   if (!sync.isLoggedIn()) {
     if (!window.Capacitor) {
-      if (!PHONE_LOGIN_OK) return `<div class="acc-hint">${COPY.accWebOnly}</div>`;
+      if (!phoneLoginOK()) return `<div class="acc-hint">${COPY.accWebOnly}</div>`;
       return `<div class="acc-hint">${COPY.accHint}</div>
-        <div class="acc-row"><input class="acc-input" id="acc-phone" type="tel" maxlength="11"
-          inputmode="numeric" autocomplete="tel" placeholder="${COPY.accPhonePh}">
-          <button class="pk" id="acc-send">${COPY.accSendCode}</button></div>
-        <div class="acc-row"><input class="acc-input" id="acc-code" type="text" maxlength="6"
-          inputmode="numeric" autocomplete="one-time-code" placeholder="${COPY.accCodePh}">
-          <button class="pk dark" id="acc-phlogin">${COPY.accLoginPhone}</button></div>
+        ${phoneRowsHTML()}
         <div class="acc-msg" id="acc-msg"></div>`;
     }
     return `<div class="acc-hint">${COPY.accHint}</div>
       <button class="acc-btn dark" id="acc-apple"> ${COPY.accLoginApple}</button>
       <button class="acc-btn" id="acc-google">${COPY.accLoginGoogle}</button>
+      ${phoneLoginOK() ? phoneRowsHTML() : ''}
       <div class="acc-msg" id="acc-msg"></div>`;
   }
   const a = sync.account;
@@ -2223,6 +2239,7 @@ function bindAccount() {
 }
 
 function renderMe() {
+  probePhoneLogin();   // App 壳里探一次服务端支不支持短信，回来为真会补渲染这一页
   const now = new Date();
   const curM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const recs = store.monthRecords(now.getFullYear(), now.getMonth() + 1);

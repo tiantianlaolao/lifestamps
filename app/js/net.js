@@ -191,6 +191,19 @@ export function authLogout(token) {
 }
 
 // ---- 手机号登录（中国线专用；美服没配短信=501，入口在 main.js 里按站点隐藏）----
+// 能力探测：所连服务端支不支持短信。发个空请求——服务端没配短信回 501（判断
+// 排在参数校验前面，专为这里），配了则空手机号回 400。App 壳里入口显不显示靠它：
+// 测试包连国内=亮，正式包连美服=灭，一份代码零分叉。结果缓存，一次会话只探一回。
+let _smsCap = null;
+export async function smsSupported() {
+  if (_smsCap !== null) return _smsCap;
+  const { status } = await call('auth/sms_send', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+  });
+  if (status === 0) return false;          // 网不通：这次不显示，不缓存，下回再探
+  _smsCap = status !== 501;
+  return _smsCap;
+}
 export async function authSmsSend(phone) {
   const { status, data } = await call('auth/sms_send', {
     method: 'POST', headers: { 'content-type': 'application/json' },

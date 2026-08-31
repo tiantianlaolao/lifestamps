@@ -37,16 +37,15 @@ jobs:
       - name: Install Capacitor
         run: npm install
 
-      # 🔴 海外发行（8-31 拆美服）：App 指美服独立实例（stampday.tybbtech.com → 43.173，
-      #    跟国内 www/1.13 是两个用户池）。net.js 的 WEB_BASE 是唯一注入点，
-      #    必须在 cap sync 拷贝 webDir 之前替换。⚠️ build-adhoc 和 build-ios 两个 yml
-      #    都有这一步，改要两边一起。最后 grep 验证 const 那一行真的换掉了
-      #    （净靠 sed 静默失败过太多次；注释里也含 stampday 字样，所以只认 const 行）。
-      - name: Point app at overseas server (stampday)
+      # 🔴 服务器归属（8-31 二轮定稿）：**测试线不注入，走默认 = 国内 www/1.13** ——
+      #    这样测试包能测手机号登录（美服故意没配短信），等于提前预览中国区版；
+      #    海外正式发行的注入只在 build-ios.yml 里（那边把 WEB_BASE 换成 stampday）。
+      #    ⚠️ 两条线连的是两个用户池：测试包里看不到之前美服上的测试数据（数据还在美服）。
+      #    这里 grep 验证默认值没被人改跑偏。
+      - name: Assert app points at China server (test lane)
         run: |
-          sed -i '' "s|^const WEB_BASE = 'https://www.tybbtech.com/lifestamps/';|const WEB_BASE = 'https://stampday.tybbtech.com/lifestamps/';|" app/js/net.js
-          grep -q "^const WEB_BASE = 'https://stampday.tybbtech.com/lifestamps/';" app/js/net.js
-          echo "WEB_BASE 已指向美服"
+          grep -q "^const WEB_BASE = 'https://www.tybbtech.com/lifestamps/';" app/js/net.js
+          echo "测试线 WEB_BASE = 国内 www（默认值，未注入）"
 
       # 原生工程每次现生成：仓里没有 ios/
       - name: Generate iOS project

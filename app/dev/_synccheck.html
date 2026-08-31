@@ -129,6 +129,24 @@ function mockServer() {
   ok(store.records.some(r => r.id === 'rx'), '⭐ 云上活着的记录恢复回来了（rx）');
   ok(!store.records.some(r => r.id === 'rb'), '云上已删（墓碑）的没有跟着还魂（rb）');
   ok(!store.records.some(r => r.id === 'rc'), '401 掉线时没推出去的旧队列没渗漏给这次登录（rc）');
+
+  // ⑪ 手机号登录（8-31）。🔴 上线当天真机就炸过 "net.authLoginPhone is not a function"：
+  //    函数加进了 net.js 却没加进 sync.js 的接缝清单 —— 断言页注入的是假 net，永远抓不到。
+  //    所以这里补两层：a) 接缝完整性 = 引擎源码里用到的每个 net.* 都真在接缝上；
+  //    b) loginPhone 整条路走一遍。
+  const src = await (await fetch('../js/sync.js')).text();
+  const used = [...new Set([...src.matchAll(/net\.(\w+)\(/g)].map(m => m[1]))];
+  const missing = used.filter(n => typeof sync.net[n] !== 'function');
+  ok(!missing.length, '⭐ 接缝完整：引擎用到的 net.* 全在（' + used.join(' ') + '）'
+    + (missing.length ? ' —— 缺 ' + missing.join(' ') : ''));
+  await sync.logout();
+  // ⚠️ 直接写 sync.net —— 开头那次 Object.assign 是拷贝，之后改 mock 传不到接缝上
+  // token 必须是 'TKN' —— mock 的 syncPush 只认它，回别的登录后第一轮 flush 就被 401 打掉线
+  sync.net.authLoginPhone = async () => ({ token: 'TKN', uid: 'u1', provider: 'phone', email: '176****3288' });
+  const r3 = await sync.loginPhone('17600003288', '246810');
+  ok(r3.ok && sync.isLoggedIn() && sync.account && sync.account.provider === 'phone',
+    '手机号登录成功，provider=phone');
+  ok(!!sync.account && sync.account.email === '176****3288', '展示名 = 服务端回的打码手机号');
  } catch (e) {
   ok(false, 'CRASH: ' + (e && e.stack || e));
  }

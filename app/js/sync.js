@@ -22,12 +22,15 @@
 // 队列与游标都按 uid 存：换号登录不会拿着别人的游标乱拉。
 // ============================================================
 import { store } from './store.js';
-import { authLogin, authLogout, syncPush } from './net.js';
+import { authLogin, authLoginPhone, authLogout, syncPush } from './net.js';
 import { nativeLogin } from './native.js';
 
 // 传输层收在一个可替换的对象里：dev/_synccheck.html 换成假服务端来测引擎本身
 // （ES 模块的导出绑定改不了，必须留这个缝，不然引擎只有真机才测得到）。
-const net = { authLogin, authLogout, syncPush, nativeLogin };
+// 🔴 net.js 加了新函数，引擎要用的话**必须同时加进这份清单** ——
+//    漏了的话报错是 "net.xxx is not a function"，而且只有真点按钮才炸
+//    （8-31 手机号登录上线当天就这么炸的，断言页测的是假 net 抓不到）。
+const net = { authLogin, authLoginPhone, authLogout, syncPush, nativeLogin };
 
 const K = 'lifestamps_sync_';
 function load(k, d) { try { const v = JSON.parse(localStorage.getItem(K + k)); return v ?? d; } catch { return d; } }

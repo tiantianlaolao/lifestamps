@@ -17,6 +17,10 @@ import { seedOf } from './stamp.js';
 //    表现是"分享按钮点了没反应"且不报错。所以原生一律用写死的生产地址。
 //    ⚠️ 判据用「有没有 window.Capacitor」，不是判端口或域名：
 //       浏览器里开发、浏览器里验收、线上网页版，这三种都该走相对路径。
+// 🔴 生产主机唯一注入点（原生壳的 API 地址 + 分享链接都从这里出）：
+//    默认 = 国内 www.tybbtech.com（1.13）。海外 iOS 构建由 CI 在 cap sync 之前
+//    把下面这一行整体替换成 https://stampday.tybbtech.com/lifestamps/（美服独立实例，
+//    两个用户池互不相通）。⛔ 别在别处再写第二份生产域名。
 const WEB_BASE = 'https://www.tybbtech.com/lifestamps/';
 const BASE = window.Capacitor
   ? WEB_BASE
@@ -84,10 +88,15 @@ export async function createShare(day, records, verdict, note) {
   return rec;
 }
 
-// 🔴 发给朋友的链接**永远指生产站**，跟当前跑在哪儿无关 ——
-//    本地验收时顺手发出去一个 127.0.0.1 的链接，对方点开只会是打不开。
+// 🔴 链接必须指向「建出这条分享的那台服务端」—— 短码只存在它自己的库里。
+//    两台生产（www=国内 1.13 / stampday=美服 43.173）用户池互不相通：
+//    stampday 网页上建的分享若拼成 www 链接，朋友打开查的是另一个库，必 410。
+//    所以正式 https 域上用当前站点（BASE，跟 API 同源）；
+//    原生壳（BASE 本来就=注入的 WEB_BASE）和本地验收（http/127.*，
+//    别发出去 127.0.0.1 的链接）用 WEB_BASE 兜底 —— 1.13 网页版行为逐字不变。
 export function shareURL(code) {
-  return WEB_BASE + 's/?c=' + code;
+  const onProdWeb = !window.Capacitor && location.protocol === 'https:';
+  return (onProdWeb ? BASE : WEB_BASE) + 's/?c=' + code;
 }
 
 // A：回来看看收到了什么。

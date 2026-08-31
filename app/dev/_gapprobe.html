@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>纸↔托盘 间距探针</title>
+<!-- 8-31：量「今日页收起态，纸底边到托盘顶边的间距」。
+     起因=web 宽窗口纸怼死托盘（用户截图）。判据两条：
+     ① 间距 ≥ 12px（呼吸位真的存在）
+     ② 页面不需要滚（scrollH == clientH，守「能滚就抢手势」那条命）
+     ⚠️ 要先种 bookClosed=false，否则 iframe 里是封面态、量不到纸。 -->
+<style>body{margin:0;font:13px/1.8 monospace;padding:10px}iframe{border:1px solid #999;display:block;margin-bottom:8px}</style>
+<div id="out">跑着…</div>
+<script>
+localStorage.setItem('lifestamps_bookClosed', 'false');
+const SIZES = [[774, 1063], [390, 780], [375, 603], [430, 868]];  // [宽, iframe高≈视口高-地址栏]
+const out = document.getElementById('out');
+let pass = 0, fail = 0;
+function ok(cond, msg) {
+  const d = document.createElement('div');
+  d.className = cond ? 'p' : 'f';
+  d.textContent = (cond ? 'PASS ' : 'FAIL ') + msg;
+  out.appendChild(d);
+  cond ? pass++ : fail++;
+}
+(async () => {
+  for (const [w, h] of SIZES) {
+    const f = document.createElement('iframe');
+    f.width = w; f.height = h;
+    f.src = '../index.html?skipob=1&demo=1';
+    document.body.appendChild(f);
+    await new Promise(r => { f.onload = () => setTimeout(r, 1400); });
+    const doc = f.contentDocument;
+    const book = doc.querySelector('#page-today .book');
+    const deck = doc.querySelector('#page-today .deck');
+    const main = doc.querySelector('main');
+    if (!book || !deck) { ok(false, `${w}x${h} 没找到 book/deck（封面态？）`); continue; }
+    const gap = deck.getBoundingClientRect().top - book.getBoundingClientRect().bottom;
+    ok(gap >= 12, `${w}x${h} 纸↔托盘间距 ${gap.toFixed(1)}px ≥ 12`);
+    ok(main.scrollHeight <= main.clientHeight + 1,
+      `${w}x${h} 今日页收起态不需要滚（scrollH ${main.scrollHeight} vs clientH ${main.clientHeight}）`);
+    f.remove();
+  }
+  const d = document.createElement('div');
+  d.textContent = `—— 通过 ${pass} / 失败 ${fail}`;
+  out.appendChild(d);
+})();
+</script>

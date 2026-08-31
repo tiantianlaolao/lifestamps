@@ -1765,12 +1765,17 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
    🔴 别用 margin:auto 居中：.book 是列向 flex 的子项，横向 auto 外边距会把 stretch 关掉，
       而 .book 的内容全是绝对定位的层 + width:100% 的纸 → 宽度算成 2px，整张纸消失
       （实测四个尺寸全 2×2）。要显式 width:100% + align-self:center。 */
+/* 高度预算 348 = 头行+托盘收起+标签栏+页内边距（≈320）+ 纸和托盘之间的呼吸位。
+   🔴 8-31 用户指出 web 宽窗口纸底怼死托盘：手机上纸被「宽度」先卡住、
+   托盘 margin-top:auto 贴底自然有空隙；宽窗口纸被「高度」顶满预算，预算里
+   没留一像素间距就贴死。margin-bottom 在手机上被 auto margin 吸收=零变化。 */
 #page-today .book{
   width:100%; align-self:center;
-  max-width:calc((100vh - 320px) * 0.769);
+  margin-bottom:14px;
+  max-width:calc((100vh - 348px) * 0.769);
 }
 @supports (height:100dvh){
-  #page-today .book{max-width:calc((100dvh - 320px) * 0.769)}
+  #page-today .book{max-width:calc((100dvh - 348px) * 0.769)}
 }
 
 /* 展开态右上角那句「按住一枚章能拎起来」（8-27 新手势的可发现性）

@@ -43,13 +43,36 @@ function bindSaveBtn(btn, dataUrl, filename) {
   };
 }
 
-// 「分享」那颗键（只在原生渲染）：拉系统分享面板。用户自己取消不算错。
+// 「分享」那颗键。8-31 起网页也有（用户对照 mock 提的：保存/分享要并列）——
+// 手机浏览器走 Web Share API 的系统面板；桌面等不支持的环境干脆不渲染这颗键，
+// ⛔ 别渲染一颗点了没反应的按钮。用户自己取消（AbortError）不算错。
+const canShare = () => isNative() || !!navigator.share;
 function bindShareBtn(btn, dataUrl, filename) {
   if (!btn) return;
   btn.onclick = async () => {
-    try { await shareImage(dataUrl, filename); }
-    catch (e) { if (!/cancel/i.test(String(e && e.message))) alert(COPY.saveFailed); }
+    try {
+      if (isNative()) { await shareImage(dataUrl, filename); return; }
+      const blob = await (await fetch(dataUrl)).blob();
+      const file = new File([blob], filename, { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file] });
+      } else {
+        // 支持 share 但带不了文件的老浏览器：回落成下载，至少图到手了
+        const a = document.createElement('a');
+        a.href = dataUrl; a.download = filename; a.click();
+      }
+    } catch (e) {
+      if (!/cancel|abort/i.test(String((e && (e.name + e.message)) || e))) alert(COPY.saveFailed);
+    }
   };
+}
+
+// 保存 + 分享并列一行（mock 的排法；分享不可用时只剩保存一颗占满）
+function actionRowHTML() {
+  return `<div class="sh-actions">
+    <button class="ov-btn" id="sh-save">${COPY.saveImg}</button>
+    ${canShare() ? `<button class="ov-btn line" id="sh-share2">${COPY.flipShare}</button>` : ''}
+  </div>`;
 }
 
 const PAPER = '#F7F3EB', INK_C = '#3A362F', SUB = '#969084', FAINT = '#C9C3B7', RED = '#C94B3C';
@@ -191,7 +214,7 @@ export function buildMonthCard(y, m) {
       fill="${INK_C}" font-family="${heroFont()}">${xesc(quoted)}</text>
     <text x="66" y="326" font-size="25" letter-spacing="2" fill="${SUB}"
       font-family="${heroFont()}">${xesc(persona.line)}</text>
-    <text x="66" y="392" font-size="27" letter-spacing="${LSA(2)}" fill="${INK_C}"
+    <text x="66" y="382" font-size="27" letter-spacing="${LSA(2)}" fill="${INK_C}"
       font-family="${FONT}">${statsLine}</text>` : ''}`;
 
   // 板块标题：居中一行字 + 下面一条浅浅的手涂横线（mock 里那种荧光笔感）
@@ -235,7 +258,9 @@ export function buildMonthCard(y, m) {
       <text x="${bx}" y="${by + 8}" text-anchor="middle" font-size="21" font-weight="600"
         fill="${RED}" font-family="${HAND}">+${n2}</text></g>`;
   };
-  const gridX = 66, colW = (1080 - 132) / 7, rowH = 124, gridY = 508;
+  // 8-31 二轮：整卡收短（弹层里要一屏放得下）——行高 124→112、各板块间距各紧一档。
+  // ⚠️ gridY 别低于 496：板块标题画在 gridY-62，再低就压到统计行（截图撞过一次）。
+  const gridX = 66, colW = (1080 - 132) / 7, rowH = 112, gridY = 496;
   const rows = Math.ceil((offset + daysInMonth) / 7);
   const wk = COPY.calHead;
   let cal = secHead(COPY.cardCalTitle, gridY - 62);
@@ -273,13 +298,13 @@ export function buildMonthCard(y, m) {
     top.forEach(([sid, n], i) => {
       const def = stampById[sid]; if (!def) return;
       const ix = startX + i * itemW + itemW / 2;
-      statsRow += placedStamp(def, { x: ix - 33, y: cursor + 62, size: 66, rot: rots[i * 3] - 1 });
-      statsRow += `<text x="${ix}" y="${cursor + 168}" text-anchor="middle" font-size="22"
+      statsRow += placedStamp(def, { x: ix - 33, y: cursor + 56, size: 66, rot: rots[i * 3] - 1 });
+      statsRow += `<text x="${ix}" y="${cursor + 156}" text-anchor="middle" font-size="22"
         fill="${INK_C}" font-family="${HAND_CN}">${xesc(nameOf('stamp', sid, def.name))}</text>
-      <text x="${ix}" y="${cursor + 200}" text-anchor="middle" font-size="19"
+      <text x="${ix}" y="${cursor + 186}" text-anchor="middle" font-size="19"
         fill="${SUB}" font-family="${HAND}">×${n}</text>`;
     });
-    cursor += 250;
+    cursor += 216;
   }
 
   // ---- 解开的隐藏章（本月有才显示，整块可无）----
@@ -295,15 +320,15 @@ export function buildMonthCard(y, m) {
     const itemW = 190, startX = 540 - (foundThisMonth.length * itemW) / 2;
     foundThisMonth.forEach((h, i) => {
       const ix = startX + i * itemW + itemW / 2;
-      hiddenRow += placedStamp(h, { x: ix - 38, y: cursor + 58, size: 76, rot: rots[(i * 5 + 2) % 31] });
-      hiddenRow += `<text x="${ix}" y="${cursor + 172}" text-anchor="middle" font-size="22"
+      hiddenRow += placedStamp(h, { x: ix - 38, y: cursor + 54, size: 76, rot: rots[(i * 5 + 2) % 31] });
+      hiddenRow += `<text x="${ix}" y="${cursor + 164}" text-anchor="middle" font-size="22"
         fill="${INK_C}" font-family="${HAND_CN}">${xesc(nameOf(h.kind === 'seal' ? 'gift' : 'hidden', h.id, h.name))}</text>`;
     });
-    cursor += 220;
+    cursor += 196;
   }
 
-  // ---- 落款带 + 动态总高（内容多的月更长，最短也不低于 3:4）----
-  const H = Math.max(1440, cursor + 240);
+  // ---- 落款带 + 动态总高（内容多的月更长，最短也不低于 1400）----
+  const H = Math.max(1400, cursor + 224);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="${H}" viewBox="0 0 1080 ${H}">
   ${defsMarkup()}
@@ -350,8 +375,7 @@ export async function openShare(y, m) {
     const dataUrl = await rasterize(svg, 1080, H, 1.5);
     ov.innerHTML = `
       <img src="${dataUrl}" alt="${COPY.cardMyMonth.replace('{m}', monthArg(m))}">
-      <button class="ov-btn" id="sh-save" style="margin-top:20px">${COPY.saveImg}</button>
-      ${isNative() ? `<button class="ov-btn ghost" id="sh-share2">${COPY.flipShare}</button>` : ''}
+      ${actionRowHTML()}
       <button class="ov-btn ghost" id="sh-close">${COPY.shClose}</button>`;
     bindSaveBtn(document.getElementById('sh-save'), dataUrl, COPY.monthFileName.replace('{m}', monthArg(m)));
     bindShareBtn(document.getElementById('sh-share2'), dataUrl, COPY.monthFileName.replace('{m}', monthArg(m)));
@@ -531,8 +555,7 @@ export async function openShareDay(dk) {
         <input id="sh-note" maxlength="24" value="${xesc(store.dayNoteOf(dk) || '')}"
                placeholder="${COPY.shNotePh}">
       </div>
-      <button class="ov-btn" id="sh-save" style="margin-top:8px">${COPY.saveImg}</button>
-      ${isNative() ? `<button class="ov-btn ghost" id="sh-share2" style="margin-top:6px">${COPY.flipShare}</button>` : ''}
+      ${actionRowHTML()}
       ${/* 🔴 这一句是 A 分享的动力所在，别删。抽屉里那句「只能由朋友送给你」
              要翻到抽屉才看得见，而 A 决定发不发是在这一屏。 */''}
       <div class="share-hint">${COPY.shareGiftHint}</div>

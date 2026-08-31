@@ -263,7 +263,13 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 }
 .ov-btn.ghost{background:none; border:1px solid var(--line); color:var(--sub); margin-top:12px; letter-spacing:.1em; font-size:13px}
 
-#ov-share img{max-width:100%; max-height:56dvh; border:1px solid var(--line); border-radius:var(--r2)}
+/* 8-31 月卡变长后 56dvh 限高会把宽度压成一条（用户："图太小/太晃"）。
+   图放大到 64dvh，省出来的竖向空间靠下面保存/分享并列一行找回——
+   目标是弹层内容整体 ≤ 一屏，居中固定不滚（跟改版前一个手感）。 */
+#ov-share img{max-width:94%; max-height:64dvh; border:1px solid var(--line); border-radius:var(--r2)}
+.sh-actions{display:flex; gap:12px; margin-top:18px; width:min(94%,420px)}
+.sh-actions .ov-btn{margin-top:0; flex:1; padding:12px 10px; white-space:nowrap}
+.sh-actions .ov-btn.line{background:none; border:1px solid var(--line); color:var(--ink)}
 #ov-share .gen{color:var(--sub); font-size:13px; letter-spacing:.2em}
 
 /* 引导 */

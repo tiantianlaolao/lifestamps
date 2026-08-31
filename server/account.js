@@ -25,6 +25,20 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const sms = require('./sms.js');
+
+// ---- 手机号登录（2026-08-31，中国线专用）------------------------------------
+// 美服不配短信凭据 → sms.configured()=false → 这条路 501（跟 Google 没配 aud 同款处理）。
+// 🔴 LS_SMS_TEST_CODE 是 test.js 专用钩子：设了就不真发短信、验证码固定为它。
+//    ⛔ 生产环境永远不配这个变量 —— 配了等于所有人都知道验证码。
+const SMS_TEST_CODE = process.env.LS_SMS_TEST_CODE || '';
+const SMS_TTL_MIN = 5;                               // 跟短信模板里的 {2} 一致
+const SMS_TTL_MS = SMS_TTL_MIN * 60 * 1000;
+const SMS_COOLDOWN_MS = 60 * 1000;                   // 同号 60 秒才能再发
+const SMS_DAY_MAX = 8;                               // 同号每天最多 8 条（护钱包）
+const SMS_MAX_TRIES = 5;                             // 同一条码错 5 次作废（防爆破）
+const PHONE_RE = /^1[3-9]\d{9}$/;                    // 中国大陆手机号
+const sha256 = s => crypto.createHash('sha256').update(String(s)).digest('hex');
 
 // ---- 配置 ------------------------------------------------------------------
 const APPLE_KEYS = process.env.LS_APPLE_KEYS || 'https://appleid.apple.com/auth/keys';
@@ -127,6 +141,15 @@ function mount({ db, send, readBody }) {
       'SELECT kind, id, data, mtime, seq FROM sync_items WHERE uid = ? AND seq > ?'
       + ' ORDER BY seq LIMIT ' + PULL_LIMIT),
     countRows: db.prepare('SELECT COUNT(*) AS c FROM sync_items WHERE uid = ?'),
+    getSms: db.prepare('SELECT * FROM sms_codes WHERE phone = ?'),
+    putSms: db.prepare(
+      'INSERT INTO sms_codes (phone, hash, expires, tries, lastSent, dayKey, dayCount)'
+      + ' VALUES (?, ?, ?, 0, ?, ?, ?)'
+      + ' ON CONFLICT(phone) DO UPDATE SET hash = excluded.hash, expires = excluded.expires,'
+      + ' tries = 0, lastSent = excluded.lastSent, dayKey = excluded.dayKey,'
+      + ' dayCount = excluded.dayCount'),
+    bumpSmsTries: db.prepare('UPDATE sms_codes SET tries = tries + 1 WHERE phone = ?'),
+    dropSms: db.prepare('DELETE FROM sms_codes WHERE phone = ?'),
   };
 
   // 会话过期清扫：跟 server.js 的 sweep 一个节奏，但归自己管（unref，不挡退出）
@@ -147,11 +170,64 @@ function mount({ db, send, readBody }) {
     return s;
   }
 
+  // 发验证码。成功只回 {ok}，失败的话（冷却/当日上限/短信通道挂了）分开回，
+  // 客户端拿 error 挑话。⚠️ dayKey 用 UTC 日期，中国的"一天"会错开 8 小时 ——
+  // 它只管每日上限这一件事，错开无害，别为它引时区库。
+  async function smsSend(req, res) {
+    const b = await readBody(req);
+    const phone = String(b.phone || '');
+    if (!PHONE_RE.test(phone)) return send(res, 400, { error: 'phone' });
+    if (!SMS_TEST_CODE && !sms.configured()) return send(res, 501, { error: 'sms not configured' });
+    const now = Date.now();
+    const cur = q.getSms.get(phone);
+    if (cur && now - Number(cur.lastSent) < SMS_COOLDOWN_MS) {
+      return send(res, 429, {
+        error: 'cooldown',
+        wait: Math.ceil((SMS_COOLDOWN_MS - (now - Number(cur.lastSent))) / 1000),
+      });
+    }
+    const dayKey = new Date(now).toISOString().slice(0, 10);
+    const dayCount = cur && cur.dayKey === dayKey ? Number(cur.dayCount) : 0;
+    if (dayCount >= SMS_DAY_MAX) return send(res, 429, { error: 'daily' });
+    // crypto.randomInt 而不是 Math.random：验证码是安全凭据
+    const code = SMS_TEST_CODE || String(crypto.randomInt(100000, 1000000));
+    if (!SMS_TEST_CODE) {
+      const sent = await sms.sendCode(phone, code, SMS_TTL_MIN);
+      if (!sent) return send(res, 502, { error: 'sms failed' });
+    }
+    // 发送成功才落库计数（发失败不占额度也不进冷却；腾讯云自己还有一层频控兜底）
+    q.putSms.run(phone, sha256(code), now + SMS_TTL_MS, now, dayKey, dayCount + 1);
+    return send(res, 200, { ok: true, ttl: SMS_TTL_MS / 1000 });
+  }
+
   async function login(req, res) {
     const b = await readBody(req);
     let payload;
+
+    // 手机号这条路不走 id_token 验签，先单独处理完再进 try（那里面的 catch 是给验签的）。
+    if (b.provider === 'phone') {
+      const phone = String(b.phone || '');
+      if (!PHONE_RE.test(phone)) return send(res, 400, { error: 'phone' });
+      const row = q.getSms.get(phone);
+      const now0 = Date.now();
+      // 没发过 / 过期 / 试错太多次 → 一律 'expired'（让用户重发一条，不区分是哪种没了）
+      if (!row || Number(row.expires) < now0 || Number(row.tries) >= SMS_MAX_TRIES) {
+        return send(res, 401, { error: 'expired' });
+      }
+      if (sha256(String(b.code || '')) !== row.hash) {
+        q.bumpSmsTries.run(phone);
+        return send(res, 401, { error: 'code' });
+      }
+      q.dropSms.run(phone);                     // 一码一用，登上就作废
+      // 跟 id_token 路径同形：sub = 提供方的稳定用户号，手机号就是它自己。
+      // email 字段语义是「展示你登录的是哪个号」→ 存打码手机号正合适（客户端零改动）。
+      payload = { sub: phone, email: phone.slice(0, 3) + '****' + phone.slice(7) };
+    }
+
     try {
-      if (b.provider === 'apple') {
+      if (payload) {
+        // phone 已经验完了，跳过验签
+      } else if (b.provider === 'apple') {
         payload = await verifyIdToken(b.token, { keysUrl: APPLE_KEYS, iss: APPLE_ISS, aud: APPLE_AUD });
       } else if (b.provider === 'google') {
         if (!GOOGLE_AUD) return send(res, 501, { error: 'google not configured' });
@@ -251,6 +327,7 @@ function mount({ db, send, readBody }) {
   // 必须显式 return true —— 拿 undefined 当"已处理"会跟 null 语义撞车（栽过：双重响应）。
   async function route(req, res, pathname) {
     const m = req.method;
+    if (m === 'POST' && pathname === '/api/auth/sms_send') { await smsSend(req, res); return true; }
     if (m === 'POST' && pathname === '/api/auth/login') { await login(req, res); return true; }
     if (m === 'POST' && pathname === '/api/auth/logout') {
       const s = sessionOf(req);

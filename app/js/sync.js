@@ -84,8 +84,20 @@ export const sync = {
     const idToken = await net.nativeLogin(provider);
     if (!idToken) return { error: 'native' };
     const r = await net.authLogin(provider, idToken, store.ensureInstallId());
+    return this._adopt(r);
+  },
+
+  // 手机号登录（中国线；网页也能用 —— 这是它存在的理由）。
+  // 验证码在服务端验，这里拿到的 r 跟 Apple/Google 同形。
+  async loginPhone(phone, code) {
+    const r = await net.authLoginPhone(phone, code, store.ensureInstallId());
+    return this._adopt(r);
+  },
+
+  // 登录成功后的公共动作（三种 provider 一条路，别抄三份）
+  _adopt(r) {
     if (!r) return { error: 'net' };
-    if (!r.token) return { error: 'auth' };
+    if (!r.token) return { error: 'auth', why: r.error || '' };
     this.account = { token: r.token, uid: r.uid, provider: r.provider, email: r.email || '' };
     // 🔴 登录一律把游标清零、从头拉一遍：重装、清过本地、换设备都靠这一下恢复。
     //    LWW + meta 保证幂等，代价只是一次全量拉 —— 这点数据不值得省。

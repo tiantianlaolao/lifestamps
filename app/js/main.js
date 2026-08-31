@@ -6,7 +6,7 @@ import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint
 import { store, dateKey, fmtTime, posOf } from './store.js';
 import { sync } from './sync.js';
 import { iapPrice, iapBuy, iapRestore } from './native.js';
-import { collectGifts, claimTicket } from './net.js';
+import { collectGifts, claimTicket, authSmsSend } from './net.js';
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked } from './hidden.js';
 import { verdictOf } from './verdict.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
@@ -2096,17 +2096,35 @@ function renderWeekView() {
 // 我的
 // ============================================================
 
-// 账号区块（8-30）。三种态：网页版（只有一句话）/ 没登录（两颗登录键）/ 已登录。
+// 手机号登录只在**国内网页版**露头（8-31）：
+// · App 里不露 —— 海外包不能带（隐私问卷 + 海外收不到国内短信），中国区 App 等备案再开；
+// · stampday（美服）网页不露 —— 那台服务端没配短信凭据，露了也是 501。
+// 本地开发（http/127.*）也露，方便调；美服想开的那天只用改这一行的判断。
+const PHONE_LOGIN_OK = !window.Capacitor
+  && /^(www\.tybbtech\.com|localhost|127\.)/.test(location.hostname);
+
+// 账号区块（8-30）。三种态：网页版（一句话；国内站再加手机号登录）/ 没登录 / 已登录。
 function accountHTML() {
   if (!sync.isLoggedIn()) {
-    if (!window.Capacitor) return `<div class="acc-hint">${COPY.accWebOnly}</div>`;
+    if (!window.Capacitor) {
+      if (!PHONE_LOGIN_OK) return `<div class="acc-hint">${COPY.accWebOnly}</div>`;
+      return `<div class="acc-hint">${COPY.accHint}</div>
+        <div class="acc-row"><input class="acc-input" id="acc-phone" type="tel" maxlength="11"
+          inputmode="numeric" autocomplete="tel" placeholder="${COPY.accPhonePh}">
+          <button class="pk" id="acc-send">${COPY.accSendCode}</button></div>
+        <div class="acc-row"><input class="acc-input" id="acc-code" type="text" maxlength="6"
+          inputmode="numeric" autocomplete="one-time-code" placeholder="${COPY.accCodePh}">
+          <button class="pk dark" id="acc-phlogin">${COPY.accLoginPhone}</button></div>
+        <div class="acc-msg" id="acc-msg"></div>`;
+    }
     return `<div class="acc-hint">${COPY.accHint}</div>
       <button class="acc-btn dark" id="acc-apple"> ${COPY.accLoginApple}</button>
       <button class="acc-btn" id="acc-google">${COPY.accLoginGoogle}</button>
       <div class="acc-msg" id="acc-msg"></div>`;
   }
   const a = sync.account;
-  const who = a.email || (a.provider === 'apple' ? COPY.accProviderApple : COPY.accProviderGoogle);
+  const who = a.email || (a.provider === 'apple' ? COPY.accProviderApple
+    : a.provider === 'phone' ? COPY.accProviderPhone : COPY.accProviderGoogle);
   const t = sync.lastSyncAt
     ? `${monthDay(new Date(sync.lastSyncAt))} ${fmtTime(sync.lastSyncAt)}` : '—';
   return `<div class="acc-row"><span>${COPY.accLoggedAs.replace('{who}', esc(who))}</span></div>
@@ -2128,6 +2146,47 @@ function bindAccount() {
   };
   $('#acc-apple')?.addEventListener('click', () => doLogin('apple'));
   $('#acc-google')?.addEventListener('click', () => doLogin('google'));
+
+  // ---- 手机号登录（只在国内网页版渲染出来，见 PHONE_LOGIN_OK）----
+  let coolTimer = null;
+  const startCooldown = sec => {
+    const btn = $('#acc-send');
+    if (!btn) return;
+    let left = sec;
+    btn.disabled = true;
+    const tick = () => {
+      const b = $('#acc-send');
+      if (!b) { clearInterval(coolTimer); return; }        // 页面重渲染了就停
+      if (left <= 0) { clearInterval(coolTimer); b.disabled = false; b.textContent = COPY.accSendCode; return; }
+      b.textContent = COPY.accResend.replace('{s}', left--);
+    };
+    tick();
+    clearInterval(coolTimer);
+    coolTimer = setInterval(tick, 1000);
+  };
+  $('#acc-send')?.addEventListener('click', async () => {
+    const phone = ($('#acc-phone')?.value || '').trim();
+    if (!/^1[3-9]\d{9}$/.test(phone)) { if (msg()) msg().textContent = COPY.accPhoneBad; return; }
+    if (msg()) msg().textContent = '';
+    const r = await authSmsSend(phone);
+    if (!r) { if (msg()) msg().textContent = COPY.claimNet; return; }
+    if (r.ok) { if (msg()) msg().textContent = COPY.accSmsSent; startCooldown(60); return; }
+    if (r.error === 'cooldown') { startCooldown(r.wait || 60); return; }
+    if (msg()) msg().textContent = r.error === 'daily' ? COPY.accSmsDaily : COPY.accSmsFail;
+  });
+  $('#acc-phlogin')?.addEventListener('click', async () => {
+    const phone = ($('#acc-phone')?.value || '').trim();
+    const code = ($('#acc-code')?.value || '').trim();
+    if (!/^1[3-9]\d{9}$/.test(phone)) { if (msg()) msg().textContent = COPY.accPhoneBad; return; }
+    if (!/^\d{6}$/.test(code)) { if (msg()) msg().textContent = COPY.accCodeBad; return; }
+    if (msg()) msg().textContent = COPY.accBusy;
+    const r = await sync.loginPhone(phone, code);
+    if (r.ok) { toast(COPY.accSynced); renderMe(); return; }
+    if (msg()) {
+      msg().textContent = r.error === 'net' ? COPY.claimNet
+        : r.why === 'expired' ? COPY.accCodeExpired : COPY.accCodeBad;
+    }
+  });
   $('#acc-logout')?.addEventListener('click', async () => { await sync.logout(); renderMe(); });
   $('#acc-sync')?.addEventListener('click', async () => {
     if (msg()) msg().textContent = COPY.accBusy;

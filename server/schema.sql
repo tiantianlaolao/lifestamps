@@ -132,8 +132,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_gifts_once ON gifts(code, visitor);
 -- ============================================================
 CREATE TABLE IF NOT EXISTS users (
   uid      TEXT PRIMARY KEY,           -- 服务端生成的随机 id（'u'+24hex）
-  provider TEXT NOT NULL,              -- 'apple' | 'google'
-  subject  TEXT NOT NULL,              -- 提供方的稳定用户号（id_token 的 sub）
+  provider TEXT NOT NULL,              -- 'apple' | 'google' | 'phone'（8-31 加，中国线专用）
+  subject  TEXT NOT NULL,              -- 提供方的稳定用户号（id_token 的 sub；phone = 11 位手机号）
   email    TEXT,                       -- 只用来在「我的」里展示"你登录的是哪个号"。
                                        -- ⚠️ Apple 只在首次授权给一次，之后都拿不到——只在有值时更新
   created  INTEGER NOT NULL,
@@ -172,3 +172,17 @@ CREATE TABLE IF NOT EXISTS sync_items (
 );
 CREATE INDEX IF NOT EXISTS idx_sync_uid_seq ON sync_items(uid, seq);
 CREATE INDEX IF NOT EXISTS idx_sessions_uid ON sessions(uid);
+
+-- 手机号登录的验证码（2026-08-31，中国线专用；美服不配短信凭据 = 这条路 501）。
+-- 口径：手机号是**用户主动提交**的身份，归账号半边（users.subject 存它）；
+--   验证码本身只存 sha256，不存明文；这张表跟匿名五张表一样不存 ip/UA。
+-- 一个号同一时刻只有一条有效验证码（重发覆盖旧的 = 旧码作废）。
+CREATE TABLE IF NOT EXISTS sms_codes (
+  phone    TEXT PRIMARY KEY,           -- 11 位手机号
+  hash     TEXT NOT NULL,              -- sha256(验证码)
+  expires  INTEGER NOT NULL,           -- 毫秒。5 分钟
+  tries    INTEGER NOT NULL DEFAULT 0, -- 错误尝试次数；≥5 这条码作废（防爆破）
+  lastSent INTEGER NOT NULL,           -- 上次发送毫秒（60 秒冷却）
+  dayKey   TEXT,                       -- 'YYYY-MM-DD'：当天计数的日期
+  dayCount INTEGER NOT NULL DEFAULT 0  -- 当天已发条数；每号每天最多 8 条（护钱包）
+);

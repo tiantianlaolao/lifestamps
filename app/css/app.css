@@ -1969,6 +1969,14 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   font-size:13.5px; padding:3px 0; gap:8px}
 .acc-row .v{color:var(--sub); font-size:12px}
 .acc-msg{font-size:12px; color:var(--sub); margin-top:8px; min-height:1em}
+/* 手机号登录（8-31，国内网页版）。输入框吃满一行剩余宽，按钮保持内容宽。 */
+.acc-input{flex:1; min-width:0; padding:10px 12px; border-radius:10px;
+  border:1px solid var(--line,#D8D2C6); background:var(--paper,#F7F3EB);
+  font-family:inherit; font-size:14.5px; color:var(--ink); outline:none}
+.acc-input::placeholder{color:var(--faint)}
+.acc-row .pk{white-space:nowrap}
+.acc-row .pk.dark{background:#252421; color:#F7F3EB; border-color:#252421}
+.acc-row .pk:disabled{opacity:.45; cursor:default}
 
 /* ---- 8-30 重构：一年一本 · 月份便签（书架 .shelf 系退役，样式留着不碍事）---- */
 .mt-year{display:flex; align-items:center; justify-content:center; gap:10px; margin:2px 0 6px}

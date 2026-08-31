@@ -190,6 +190,25 @@ export function authLogout(token) {
   return call('auth/logout', { method: 'POST', headers: { authorization: 'Bearer ' + token } });
 }
 
+// ---- 手机号登录（中国线专用；美服没配短信=501，入口在 main.js 里按站点隐藏）----
+export async function authSmsSend(phone) {
+  const { status, data } = await call('auth/sms_send', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ phone }),
+  });
+  if (status === 0) return null;
+  return { status, ...(data || {}) };
+}
+
+export async function authLoginPhone(phone, code, install) {
+  const { status, data } = await call('auth/login', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ provider: 'phone', phone, code, install }),
+  });
+  if (status === 0) return null;
+  return data || {};
+}
+
 // 推一批变更 + 按游标拉增量。返回 {status, cursor, more, changes} / null（网不通）。
 // 🔴 401 也要原样交上去：sync.js 拿它判断"会话没了该静默掉线"，吞掉就变成永远重试。
 export async function syncPush(token, cursor, changes) {

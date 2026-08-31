@@ -21,6 +21,9 @@ const crypto = require('node:crypto');
 const http = require('node:http');
 process.env.LS_APPLE_KEYS = 'http://127.0.0.1:8798/keys';
 delete process.env.LS_GOOGLE_AUD;                      // 故意不配：要测 501 那条路
+// 🔴 手机号登录（8-31）：测试钩子固定验证码、不真发短信。生产永远不配这个变量。
+process.env.LS_SMS_TEST_CODE = '246810';
+delete process.env.LS_SMS_SECRET_ID;                   // 确保测试不可能碰真短信通道
 
 const KP = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
 const JWK = { ...KP.publicKey.export({ format: 'jwk' }), kid: 't1', alg: 'RS256', use: 'sig' };
@@ -399,6 +402,42 @@ function client() {
 
   const bindRow = srv.db.prepare('SELECT uid FROM installs WHERE install = ?').get('test-install-0001');
   ok(bindRow && bindRow.uid === L1.body.uid, '安装号绑到了账号上（installs 表）');
+
+  console.log('\n== 账号：手机号登录（8-31，中国线）==');
+  const PH = '13800001111';
+  const badPhone = await ja('POST', '/api/auth/sms_send', { phone: '12345' });
+  ok(badPhone.status === 400, '不像手机号的号被 400 拒掉：' + badPhone.status);
+  const send1 = await ja('POST', '/api/auth/sms_send', { phone: PH });
+  ok(send1.status === 200 && send1.body && send1.body.ok, '发验证码成功（测试钩子不真发短信）');
+  const cool = await ja('POST', '/api/auth/sms_send', { phone: PH });
+  ok(cool.status === 429 && cool.body && cool.body.error === 'cooldown',
+    '60 秒内重发被 429 cooldown 挡住');
+  const wrong = await ja('POST', '/api/auth/login', { provider: 'phone', phone: PH, code: '000000' });
+  ok(wrong.status === 401 && wrong.body && wrong.body.error === 'code', '错的验证码 401 code');
+  const P1 = await ja('POST', '/api/auth/login',
+    { provider: 'phone', phone: PH, code: '246810', install: 'test-install-ph01' });
+  ok(P1.status === 200 && P1.body && P1.body.token, '对的验证码能登录，拿到会话');
+  ok(P1.body && P1.body.provider === 'phone', '登录结果 provider=phone');
+  ok(P1.body && P1.body.email === '138****1111', '展示名 = 打码手机号（email 字段语义=展示用）');
+  const reuse = await ja('POST', '/api/auth/login', { provider: 'phone', phone: PH, code: '246810' });
+  ok(reuse.status === 401 && reuse.body && reuse.body.error === 'expired',
+    '一码一用：登过之后同一条码再登被拒（expired）');
+  const meP = await ja('GET', '/api/auth/me', null, P1.body.token);
+  ok(meP.status === 200 && meP.body && meP.body.uid === P1.body.uid, '/me 认得手机号会话');
+  // 试错烧穿：重新发一条码，连错 5 次后正确的码也不能用了
+  srv.db.prepare('UPDATE sms_codes SET lastSent = 0 WHERE phone = ?').run(PH);   // 绕开冷却，只为测试
+  await ja('POST', '/api/auth/sms_send', { phone: PH });
+  for (let i = 0; i < 5; i++) await ja('POST', '/api/auth/login', { provider: 'phone', phone: PH, code: '999999' });
+  const burned = await ja('POST', '/api/auth/login', { provider: 'phone', phone: PH, code: '246810' });
+  ok(burned.status === 401 && burned.body && burned.body.error === 'expired',
+    '连错 5 次后这条码作废，正确的码也 401 expired');
+  // 同一手机号再登录 = 同一个 uid（稳定身份）
+  srv.db.prepare('UPDATE sms_codes SET lastSent = 0 WHERE phone = ?').run(PH);
+  await ja('POST', '/api/auth/sms_send', { phone: PH });
+  const P2 = await ja('POST', '/api/auth/login', { provider: 'phone', phone: PH, code: '246810' });
+  ok(P2.status === 200 && P2.body && P2.body.uid === P1.body.uid, '同一手机号再登录 = 同一个 uid');
+  const smsRow = srv.db.prepare('SELECT * FROM sms_codes WHERE phone = ?').get(PH);
+  ok(!smsRow || !/246810/.test(JSON.stringify(smsRow)), '库里不存验证码明文（只有 hash）');
 
   console.log('\n== 账号：跨设备同步（记录级 LWW）==');
   const s401 = await ja('POST', '/api/sync', { cursor: 0, changes: [] });

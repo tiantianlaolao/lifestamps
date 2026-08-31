@@ -54,8 +54,10 @@ person by us.</li>
 
 <h2>3. Account &amp; sync (optional)</h2>
 <ul>
-<li>You may sign in with Apple or Google to sync your journal between your devices. This is optional.</li>
-<li>When you sign in we store: your provider (Apple/Google), the stable user identifier the provider
+<li>You may sign in with Apple or Google to sync your journal between your devices. This is optional.
+(On the China web version, phone-number sign-in is also available; the phone number is stored as your
+account identifier and used only to send a verification code — never for marketing.)</li>
+<li>When you sign in we store: your provider (Apple/Google/phone), the stable user identifier the provider
 gives us, and — if provided — your email address (shown only to you, so you can see which account
 you are signed into).</li>
 <li>With sync on, your journal data (stamps, day notes, settings) is stored on our servers so your
@@ -107,7 +109,9 @@ the share service’s data and are not used to identify users.</p>
 
 <h2>3. アカウントと同期（任意）</h2>
 <ul>
-<li>Apple / Google でログインすると、端末間で記録を同期できます（任意です）。</li>
+<li>Apple / Google でログインすると、端末間で記録を同期できます（任意です）。
+（中国版ウェブでは電話番号ログインも利用できます。電話番号はアカウント識別子として保存され、
+認証コードの送信のみに使用します。マーケティングには使いません。）</li>
 <li>保存するのは：プロバイダ種別、プロバイダが発行する安定した利用者ID、（提供された場合）メールアドレス
 （どのアカウントでログイン中かを本人に示す目的のみ）。</li>
 <li>同期を使うと、記録（はんこ・ひとこと・設定）が当社サーバーに保存され、他の端末から取得できます。</li>
@@ -157,9 +161,11 @@ the share service’s data and are not used to identify users.</p>
 
 <h2>3. 账号与同步（可选）</h2>
 <ul>
-<li>你可以用 Apple 或 Google 登录，在自己的设备之间同步记录。这是可选的。</li>
-<li>登录时我们存储：登录方式（Apple/Google）、登录服务商发给我们的稳定用户标识、
+<li>你可以用 Apple、Google 或手机号登录，在自己的设备之间同步记录。这是可选的。</li>
+<li>登录时我们存储：登录方式（Apple/Google/手机号）、登录服务商发给我们的稳定用户标识、
 以及（如提供）你的邮箱地址（仅向你本人展示，用于识别登录的是哪个账号）。</li>
+<li>用手机号登录时，我们存储你的手机号（作为你的账号标识），并通过腾讯云短信向该号码发送
+验证码。验证码只保存加密摘要，不保存明文，验证后即作废。手机号不用于任何营销用途。</li>
 <li>开启同步后，你的记录（印章、每天的话、设置）会保存在我们的服务器上，供你的其他设备取回。</li>
 <li>App 内的「清空所有记录」会同时删除服务器上已同步的记录。要彻底删除账号，请联系我们（见下）。</li>
 </ul>

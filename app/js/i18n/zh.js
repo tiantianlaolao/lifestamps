@@ -355,6 +355,19 @@ export const ZH = {
   accBusy: '正在同步…',
   accFailed: '没登录上，再试一次。',
   accSynced: '同步好了。',
+  // 手机号登录（8-31，只在国内网页版露头）
+  accPhonePh: '手机号',
+  accCodePh: '验证码',
+  accSendCode: '发验证码',
+  accResend: '{s} 秒后可重发',
+  accLoginPhone: '登录',
+  accProviderPhone: '手机号',
+  accPhoneBad: '手机号看着不太对。',
+  accSmsSent: '验证码发出去了，注意查收。',
+  accSmsDaily: '今天发得有点多了，明天再试。',
+  accSmsFail: '短信没发出去，稍后再试。',
+  accCodeBad: '验证码不对。',
+  accCodeExpired: '这条验证码不能用了，重新发一条。',
   // ⛔ dayDone（「今天收集得不错。」）8-28 退场：它 21 点后才出，绝大多数人永远看不到；
   //    位置让给判词（见下面 v_* 那一组）。
   onboarding: [

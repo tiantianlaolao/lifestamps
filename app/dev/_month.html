@@ -1,18 +1,28 @@
 <!doctype html><meta charset="utf-8"><title>月卡</title>
-<style>body{margin:0;background:#DDD8CC;padding:0}svg{width:540px;height:720px;display:block;margin:0}</style>
+<!-- 8-31 改版后卡高是动态的（隐藏章板块可无），svg 定高会压扁——宽定高自适应 -->
+<style>body{margin:0;background:#DDD8CC;padding:0}svg{width:540px;height:auto;display:block;margin:0}</style>
 <div id="out"></div>
 <script type="module">
 import { store } from '../js/store.js';
+import { setLang } from '../js/i18n.js';
 import { buildMonthCard } from '../js/share.js';
+setLang(new URLSearchParams(location.search).get('lang') || 'zh');
 const R = []; let k = 0;
 const pool = ['work','read','study','lie','stayup','daze','milktea','takeout','water','goout','happy','tired','series','coffee'];
 for (let day = 1; day <= 28; day++) {
   if (day % 6 === 0) continue;
-  for (let i = 0; i < 1 + (day % 3); i++)
-    R.push({ id: 'm' + (k++), stampId: pool[(day * 3 + i) % pool.length], ink: 'zhu', mat: 'r',
+  for (let i = 0; i < 1 + (day % 3); i++) {
+    const inks = ['zhu', 'mo', 'song', 'jie', 'wu', 'ou', 'tao', 'teng'];
+    R.push({ id: 'm' + (k++), stampId: pool[(day * 3 + i) % pool.length], ink: inks[(day + i) % inks.length], mat: 'r',
              ts: new Date(2026, 7, day, 9 + i * 4, 10).getTime(), rot: [-4,3,-2,5][k % 4], op: .92 });
+  }
 }
 store.records = R; store.dayMeta = {};
+// 种两枚隐藏章：14 号（当天还有别的记录 → 验证"稀有优先 + 角标=当天全部记录数"）、
+// 12 号是空白日（→ 验证空白日也能被稀有章占格）。顺带把「解开的隐藏章」板块点亮。
+const keepHidden = store.hidden;
+store.hidden = { h_meal: new Date(2026, 7, 14, 12, 0).getTime(),
+                 h_night: new Date(2026, 7, 12, 23, 40).getTime() };
 document.getElementById('out').innerHTML = buildMonthCard(2026, 8);
-store.records = [];
+store.records = []; store.hidden = keepHidden;
 </script>

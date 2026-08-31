@@ -1,13 +1,13 @@
 // ============================================================
 // 分享图：月度手账卡（1080×1440），SVG 组装 → canvas → PNG
 // ============================================================
-import { INKS, stampById, monthPersona } from './data.js';
+import { INKS, stampById, monthPersona, HIDDEN, GIFTS } from './data.js';
 // ⛔ inkSwatchPaint 随「本月用过的印泥」那一行 8-28 一起退场（月卡放不下，
 //    而三块证据里它对别人最没信息量）。
 import { defsMarkup, stampSVG, WEATHER, weatherSVG } from './stamp.js';
 import { store, dateKey } from './store.js';
 import { verdictOf } from './verdict.js';
-import { COPY, getLang, monthArg, timeShort, dateStampLabel, weekOffset } from './i18n.js';
+import { COPY, getLang, monthArg, timeShort, dateStampLabel, weekOffset, nameOf } from './i18n.js';
 
 // 中文卡面大量靠 letter-spacing 拉气质，拉丁文照抄是灾难（en.js 头注写的那条）。
 // ⚠️ SVG 光栅化时吃不到 app.css 那条 [data-lang="en"] * 规则，只能在这儿自己管。
@@ -100,8 +100,8 @@ const QR_PATH = '"M0 0h7v1h-7zM8 0h1v1h-1zM11 0h4v1h-4zM18 0h1v1h-1zM22 0h7v1h-7
 //    但也不能喧宾夺主：小字 + 松字距，像盖在页脚的一个小印。
 // qr = 服务端随短码一起返回的 {n, path}。给了就用它（扫进去直接是这一天），
 // 没给就回落到写死的那张（指向下载中转页）—— 没网时卡照样出得来，只是扫过去是下载页。
-function cornerMark(size = 140, qr = null) {
-  const x = 1080 - 64 - size, y = 1440 - 72 - size;
+function cornerMark(size = 140, qr = null, H = 1440) {
+  const x = 1080 - 64 - size, y = H - 72 - size;
   const n = qr ? qr.n : QR_N;
   const path = qr ? qr.path : QR_PATH;
   const sc = size / n;
@@ -111,9 +111,9 @@ function cornerMark(size = 140, qr = null) {
     <rect x="${x - 12}" y="${y - 12}" width="${size + 24}" height="${size + 24}" rx="8"
       fill="${PAPER}" stroke="rgba(58,54,47,.10)" stroke-width="1.5"/>
     <g transform="translate(${x},${y}) scale(${sc})"><path d="${path}" fill="${INK_C}"/></g>
-    <text x="64" y="${1440 - 104}" font-size="42" letter-spacing="8"
+    <text x="64" y="${H - 104}" font-size="42" letter-spacing="8"
       fill="${INK_C}" opacity=".88" font-family="${HAND_CN}">${COPY.appName}</text>
-    <text x="66" y="${1440 - 64}" font-size="21" letter-spacing="${LSA(3)}"
+    <text x="66" y="${H - 64}" font-size="21" letter-spacing="${LSA(3)}"
       fill="${SUB}" opacity=".8" font-family="${FONT}">${COPY.qrHint}</text>
   </g>`;
 }
@@ -143,11 +143,10 @@ export function buildMonthCard(y, m) {
   const persona = monthPersona(catCnt, recs.length);
   const blankDays = daysInMonth - Object.keys(byDay).length;
 
-  // ---- 主角：人格印章 ----
-  // 🔴 旧版这枚印只有 128px、缩在统计区右边角上 —— 而它是整张卡上**唯一**
-  //    会让别人说"这也是我"的东西，其余（日历、排行、印泥）都是关于 A 的数据报表。
-  //    所以放大到 250、摆到正中，标题跟着它走；日历和排行降级成证据。
-  const SEAL = 250, sealX = 540 - SEAL / 2, sealY = 236;
+  // ---- 8-31 改版（用户拍板）：日历升主角、人格印挪右上角但放大一档（折中 190）。
+  //    8-28「人格印 250 摆正中」那条定案被明确推翻——卡的定位从"引共鸣的海报"
+  //    改成"晒生活的月报"，日历里每天摆一枚代表章。高度从固定 1440 改为随内容算。
+  const SEAL = 190, sealX = 1080 - 66 - SEAL, sealY = 88;
   let sealText;
   if (Array.isArray(persona.seal)) {
     // en：印面 = 上下两行大写短词（西方橡皮章的母语形态，四字硬凑是翻译腔——对照表 §六 拍板）。
@@ -168,85 +167,156 @@ export function buildMonthCard(y, m) {
           font-weight="700" fill="${PAPER}" font-family="${FONT}">${sealChars.slice(2, 4)}</text>`;
   }
   const seal = `
-    <g transform="translate(${sealX},${sealY}) rotate(-3 ${SEAL / 2} ${SEAL / 2})">
+    <g transform="translate(${sealX},${sealY}) rotate(-4 ${SEAL / 2} ${SEAL / 2})">
       <g filter="url(#ls-w0)">
-        <rect x="0" y="0" width="${SEAL}" height="${SEAL}" rx="18" fill="${RED}"/>${sealText}
+        <rect x="0" y="0" width="${SEAL}" height="${SEAL}" rx="16" fill="${RED}"/>${sealText}
       </g>
     </g>`;
 
-  // 称号：字数多的收一档，别撑破
-  const tSize = persona.title.length <= 8 ? 54 : persona.title.length <= 12 ? 46 : 40;
+  // ---- 左侧头部：年月 / 我的N月 / 「判词」/ 副句 / 统计行（数字标红）----
+  const quoted = getLang() === 'en' ? persona.title : `「${persona.title}」`;
+  const tSize = quoted.length <= 12 ? 44 : quoted.length <= 16 ? 38 : 33;
+  // 统计句里的数字标红：先转义再替换占位符，{} 不受转义影响
+  const statsLine = xesc(COPY.cardStats)
+    .replace('{n}', `<tspan fill="${RED}" font-weight="600">${recs.length}</tspan>`)
+    .replace('{d}', `<tspan fill="${RED}" font-weight="600">${Object.keys(byDay).length}</tspan>`)
+    .replace('{b}', `<tspan fill="${RED}" font-weight="600">${blankDays}</tspan>`);
+  const header = `
+  <text x="66" y="112" font-size="22" letter-spacing="${LSA(6)}" fill="${SUB}"
+    font-family="${FONT}">${COPY.cardTopLine.replace('{MON}', COPY.cardTopMonths[m]).replace('{y}', y)}</text>
+  <text x="66" y="192" font-size="60" font-weight="600" letter-spacing="${LSA(6)}"
+    fill="${RED}" font-family="${heroFont()}">${COPY.cardMyMonth.replace('{m}', monthArg(m))}</text>
+  ${recs.length ? seal : ''}
+  ${recs.length ? `<text x="66" y="272" font-size="${tSize}" letter-spacing="1"
+      fill="${INK_C}" font-family="${heroFont()}">${xesc(quoted)}</text>
+    <text x="66" y="326" font-size="25" letter-spacing="2" fill="${SUB}"
+      font-family="${heroFont()}">${xesc(persona.line)}</text>
+    <text x="66" y="392" font-size="27" letter-spacing="${LSA(2)}" fill="${INK_C}"
+      font-family="${FONT}">${statsLine}</text>` : ''}`;
 
-  // ---- 证据一：日历（降级）----
-  // 保留是因为它一眼就能传达"一个月的生活"这个质感，但不再是主角：
-  // 行高压到 76、日期数字缩小、每天最多摆 2 枚。
-  const gridX = 88, gridY = 726, colW = 129.1, rowH = 66;
+  // 板块标题：居中一行字 + 下面一条浅浅的手涂横线（mock 里那种荧光笔感）
+  const secHead = (label, yy) => {
+    const w = Math.max(120, label.length * (getLang() === 'en' ? 15 : 34) + 16);
+    return `<rect x="${540 - w / 2}" y="${yy - 9}" width="${w}" height="14" rx="7"
+        fill="#F0D3BC" opacity=".55" filter="url(#ls-w1)"/>
+      <text x="540" y="${yy}" text-anchor="middle" font-size="26" letter-spacing="${LSA(6)}"
+        fill="${INK_C}" font-family="${FONT}">${label}</text>`;
+  };
+
+  // ---- 主角：本月印记（日历，每天一枚代表章）----
+  // 代表章规则（8-31 用户拍板）：① 当天解锁的隐藏章 / 收到的封蜡（稀有事件优先，
+  // 哪怕那天还盖了 9 枚奶茶）② 当天次数最多 ③ 平局取最后盖下的。
+  // +N = 那天除代表章外还有几枚（稀有日 = 全部记录数，因为代表章本身不是记录）。
+  const repOf = (d) => {
+    const list = byDay[d] || [];
+    const dk2 = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const rare = [...HIDDEN, ...GIFTS.map(g => ({ ...g, kind: 'seal' }))]
+      .find(h => store.hidden[h.id] && dateKey(store.hidden[h.id]) === dk2);
+    if (rare) return { def: rare, extra: list.length };
+    if (!list.length) return null;
+    const byId = {};
+    for (const r of list) (byId[r.stampId] = byId[r.stampId] || []).push(r);
+    let best = null;
+    for (const rs of Object.values(byId)) {
+      const last = rs.reduce((a, b) => (a.ts > b.ts ? a : b));
+      if (!best || rs.length > best.n || (rs.length === best.n && last.ts > best.rec.ts)) {
+        best = { n: rs.length, rec: last };
+      }
+    }
+    const def = stampById[best.rec.stampId];
+    return def ? { def, rec: best.rec, extra: list.length - 1 } : null;
+  };
+  // +N 角标：纸底红描边的小手写牌，微微歪着——⛔ 不用实心红圆（iOS 通知角标味，用户点过）
+  const badge = (bx, by, n2) => {
+    const bw = n2 >= 10 ? 56 : 44;
+    return `<g transform="rotate(6 ${bx} ${by})">
+      <rect x="${bx - bw / 2}" y="${by - 15}" width="${bw}" height="30" rx="9"
+        fill="${PAPER}" stroke="${RED}" stroke-width="2.4" filter="url(#ls-w1)" opacity=".95"/>
+      <text x="${bx}" y="${by + 8}" text-anchor="middle" font-size="21" font-weight="600"
+        fill="${RED}" font-family="${HAND}">+${n2}</text></g>`;
+  };
+  const gridX = 66, colW = (1080 - 132) / 7, rowH = 124, gridY = 508;
   const rows = Math.ceil((offset + daysInMonth) / 7);
-  let cal = '';
-  for (let r = 0; r <= rows; r++)
-    cal += `<line x1="${gridX}" y1="${gridY + r * rowH}" x2="${gridX + colW * 7}" y2="${gridY + r * rowH}" stroke="rgba(58,54,47,.09)"/>`;
   const wk = COPY.calHead;
+  let cal = secHead(COPY.cardCalTitle, gridY - 62);
   cal += wk.map((w, i) => {
-    // 周末着色按真实星期算：zh 周一开头时红=第7列(日)，en 周日开头时红=第1列
+    // 周末着色按真实星期算：zh 周一开头时红=第7列(日)，en/ja 周日开头时红=第1列
     const jsDay = (i + 7 - offset + new Date(y, m - 1, 1).getDay()) % 7;
-    return `<text x="${gridX + i * colW + colW / 2}" y="${gridY - 16}" text-anchor="middle" font-size="14" letter-spacing="3"
+    return `<text x="${gridX + i * colW + colW / 2}" y="${gridY - 6}" text-anchor="middle" font-size="17" letter-spacing="3"
       fill="${jsDay === 6 ? '#7593A6' : jsDay === 0 ? RED : SUB}" font-family="${FONT}">${w}</text>`;
   }).join('');
   const rots = [-5, 4, -3, 6, -6, 3, 5, -4, 2, -2, 4, -5, 3, -3, 5, -4, 6, -2, 3, -6, 4, -3, -5, 2, 5, -4, 3, -2, 6, -3, 4];
   for (let d = 1; d <= daysInMonth; d++) {
     const pos = offset + d - 1, r = Math.floor(pos / 7), c = pos % 7;
-    const cx = gridX + c * colW, cy = gridY + r * rowH;
-    const future = isCur && d > now.getDate();
-    cal += `<text x="${cx + 8}" y="${cy + 19}" font-size="14" fill="${future ? FAINT : SUB}"
-      opacity=".7" font-family="${HAND}">${d}</text>`;
-    if (isCur && d === now.getDate())
-      cal += `<ellipse cx="${cx + 14}" cy="${cy + 14}" rx="15" ry="12" fill="none" stroke="${RED}" stroke-width="2.2" filter="url(#ls-w1)"/>`;
-    const list = (byDay[d] || []).slice(0, 2);
-    list.forEach((rec, j) => {
-      const def = stampById[rec.stampId]; if (!def) return;
-      const size = list.length > 1 ? 32 : 38;
-      const x = cx + (list.length > 1 ? (j === 0 ? 16 : 62) : 46);
-      const yy = cy + (list.length > 1 ? (j === 0 ? 22 : 30) : 22);
-      cal += placedStamp(def, { x, y: yy, size, ink: rec.ink, mat: rec.mat, rot: rots[(d + j * 7) % 31] });
-    });
+    const cx = gridX + c * colW + colW / 2, cy = gridY + r * rowH;
+    const rep = repOf(d);
+    if (rep) {
+      const S = 58;
+      cal += placedStamp(rep.def, {
+        x: cx - S / 2, y: cy + 22, size: S,
+        ink: rep.rec?.ink, mat: rep.rec?.mat, rot: rots[(d - 1) % 31],
+      });
+      if (rep.extra > 0) cal += badge(cx + S / 2 + 8, cy + 26, rep.extra);
+    } else {
+      const future = isCur && d > now.getDate();
+      cal += `<text x="${cx}" y="${cy + 62}" text-anchor="middle" font-size="30"
+        fill="${future ? FAINT : SUB}" opacity=".75" font-family="${HAND}">${d}</text>`;
+    }
   }
-  const calBottom = gridY + rows * rowH;
+  let cursor = gridY + rows * rowH + 30;
 
-  // ---- 证据二：收集最多的（降级成一行小图）----
-  // 🔴 底部这一条塞了三样东西（收集最多的 / 统计句 / 落款），第一版全挤在同一水平带上：
-  //    ×N 直接压在「戳了么」署名上、「盖了 N 枚」被二维码切掉半句。
-  //    改法：统计句挪到日历**上方**当日历的说明，top5 缩小上移，最底那条只留落款。
-  const statY = calBottom + 40;
-  let stats = '';
-  top.forEach(([sid, n], i) => {
-    const def = stampById[sid]; if (!def) return;
-    const x = 88 + i * 112;
-    stats += placedStamp(def, { x, y: statY, size: 62, rot: rots[i * 3] - 1 });
-    stats += `<text x="${x + 31}" y="${statY + 90}" text-anchor="middle" font-size="17"
-      fill="${INK_C}" font-family="${HAND}">×${n}</text>`;
-  });
+  // ---- 本月常用（与本子·这个月同一套"最常盖"逻辑：按次数排序取前 5）----
+  let statsRow = '';
+  if (top.length) {
+    statsRow += secHead(COPY.cardTopTitle, cursor + 26);
+    const itemW = 168, startX = 540 - (top.length * itemW) / 2;
+    top.forEach(([sid, n], i) => {
+      const def = stampById[sid]; if (!def) return;
+      const ix = startX + i * itemW + itemW / 2;
+      statsRow += placedStamp(def, { x: ix - 33, y: cursor + 62, size: 66, rot: rots[i * 3] - 1 });
+      statsRow += `<text x="${ix}" y="${cursor + 168}" text-anchor="middle" font-size="22"
+        fill="${INK_C}" font-family="${HAND_CN}">${xesc(nameOf('stamp', sid, def.name))}</text>
+      <text x="${ix}" y="${cursor + 200}" text-anchor="middle" font-size="19"
+        fill="${SUB}" font-family="${HAND}">×${n}</text>`;
+    });
+    cursor += 250;
+  }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1440" viewBox="0 0 1080 1440">
+  // ---- 解开的隐藏章（本月有才显示，整块可无）----
+  const foundThisMonth = [...HIDDEN, ...GIFTS.map(g => ({ ...g, kind: 'seal' }))].filter(h => {
+    const ts = store.hidden[h.id];
+    if (!ts) return false;
+    const dt = new Date(ts);
+    return dt.getFullYear() === y && dt.getMonth() + 1 === m;
+  }).slice(0, 5);
+  let hiddenRow = '';
+  if (foundThisMonth.length) {
+    hiddenRow += secHead(COPY.cardHiddenTitle, cursor + 26);
+    const itemW = 190, startX = 540 - (foundThisMonth.length * itemW) / 2;
+    foundThisMonth.forEach((h, i) => {
+      const ix = startX + i * itemW + itemW / 2;
+      hiddenRow += placedStamp(h, { x: ix - 38, y: cursor + 58, size: 76, rot: rots[(i * 5 + 2) % 31] });
+      hiddenRow += `<text x="${ix}" y="${cursor + 172}" text-anchor="middle" font-size="22"
+        fill="${INK_C}" font-family="${HAND_CN}">${xesc(nameOf(h.kind === 'seal' ? 'gift' : 'hidden', h.id, h.name))}</text>`;
+    });
+    cursor += 220;
+  }
+
+  // ---- 落款带 + 动态总高（内容多的月更长，最短也不低于 3:4）----
+  const H = Math.max(1440, cursor + 240);
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="${H}" viewBox="0 0 1080 ${H}">
   ${defsMarkup()}
-  <rect width="1080" height="1440" fill="${PAPER}"/>
+  <rect width="1080" height="${H}" fill="${PAPER}"/>
   <g transform="rotate(-2.5 540 8)" opacity=".82">
     <rect x="445" y="-12" width="190" height="40" fill="#F3D9DD"/>
     ${[0,1,2,3,4,5,6,7,8,9].map(i => `<rect x="${445 + i * 20}" y="-12" width="10" height="40" fill="#E8B4BE" transform="skewX(-20)" transform-origin="${445 + i * 20} 0"/>`).join('')}
   </g>
-  <text x="540" y="126" text-anchor="middle" font-size="17" letter-spacing="9" fill="${SUB}"
-    font-family="${FONT}">${COPY.cardTopLine.replace('{MON}', COPY.cardTopMonths[m]).replace('{y}', y)}</text>
-  <text x="540" y="196" text-anchor="middle" font-size="46" font-weight="600" letter-spacing="${LSA(5)}"
-    fill="${INK_C}" font-family="${FONT}">${COPY.cardMyMonth.replace('{m}', monthArg(m))}</text>
-  ${recs.length ? seal : ''}
-  ${recs.length ? `<text x="540" y="${sealY + SEAL + 76}" text-anchor="middle" font-size="${tSize}"
-      letter-spacing="2" fill="${INK_C}" font-family="${HAND_CN}">${xesc(persona.title)}</text>
-    <text x="540" y="${sealY + SEAL + 130}" text-anchor="middle" font-size="24" letter-spacing="3"
-      fill="${SUB}" font-family="${HAND_CN}">${xesc(persona.line)}</text>` : ''}
-  ${recs.length ? `<text x="540" y="${gridY - 56}" text-anchor="middle" font-size="22" letter-spacing="${LSA(5)}"
-    fill="${SUB}" font-family="${FONT}">${COPY.notebookMonthSub.replace('{n}', recs.length).replace('{m}', blankDays)}</text>` : ''}
+  ${header}
   ${cal}
-  ${stats}
-  ${cornerMark()}
+  ${statsRow}
+  ${hiddenRow}
+  ${cornerMark(140, null, H)}
 </svg>`;
 }
 
@@ -274,7 +344,10 @@ export async function openShare(y, m) {
   ov.classList.add('show');
   try {
     const svg = buildMonthCard(y, m);
-    const dataUrl = await rasterize(svg, 1080, 1440, 1.5);
+    // 8-31 起月卡高度随内容走（隐藏章板块可无），从 svg 标签里取——别写死 1440，
+    // 写死的话多出来的部分会被光栅化直接裁掉，而且不报错。
+    const H = Number((svg.match(/height="(\d+)"/) || [])[1]) || 1440;
+    const dataUrl = await rasterize(svg, 1080, H, 1.5);
     ov.innerHTML = `
       <img src="${dataUrl}" alt="${COPY.cardMyMonth.replace('{m}', monthArg(m))}">
       <button class="ov-btn" id="sh-save" style="margin-top:20px">${COPY.saveImg}</button>

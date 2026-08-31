@@ -285,6 +285,11 @@ export const ZH = {
   weekFull: ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'],
   qrHint: '扫一扫，也开始记你的',
   cardMyMonth: '我的 {m} 月',
+  // 8-31 月卡改版（日历升主角）新增四条
+  cardStats: '盖了 {n} 枚 · 记录 {d} 天 · 留白 {b} 天',
+  cardCalTitle: '本月印记',
+  cardTopTitle: '本月常用',
+  cardHiddenTitle: '解开的隐藏章',
   // 月卡顶上那行装饰性小字（中文卡上用英文月名是有意的装饰；en 版另排）
   cardTopLine: 'MY {MON} · {y}',
   cardTopMonths: ['', 'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'],

@@ -409,6 +409,9 @@ export function personaKey(countsByCat, total) {
   if (!total) return 'quiet';
   const grow = countsByCat.grow || 0, chill = countsByCat.chill || 0;
   const sorted = Object.entries(countsByCat).sort((a, b) => b[1] - a[1]);
+  // 9-01 起记录里会出现没有 cat 的章（隐藏章/封蜡）：total>0 但 catCnt 可能是空的，
+  // 不挡这一下 sorted[0] 解构直接抛 —— 我的页/月历整页白屏
+  if (!sorted.length) return 'quiet';
   const [topCat] = sorted[0];
   if (grow >= 5 && chill >= 5 && Math.min(grow, chill) / Math.max(grow, chill) > 0.5)
     return 'mix';
@@ -533,6 +536,20 @@ L27,44 L25,49 L16,42 Q21,25 37,20 Z"/>
 <ellipse cx="79" cy="49" rx="7" ry="9" transform="rotate(28 79 49)"/>`},
 ];
 
+// 收到的封蜡落在纸上哪儿（9-01：封蜡要留在纸上）。
+// 用「短码:章:第几枚」播种的伪随机 —— 同一枚在 A 的 App、B 的分享页、
+// A 的另一台设备（同步）上都落在同一个位置；范围抄分享页 dropWax 的落点
+// （横 26~74、纵 58~84，纸的下半区，压不到日期章）。
+export function giftPos(code, sealId, seq) {
+  let h = 0;
+  for (const c of `${code}:${sealId}:${seq}`) h = (h * 131 + c.charCodeAt(0)) >>> 0;
+  return {
+    x: +(26 + (h % 481) / 10).toFixed(1),
+    y: +(58 + ((h >>> 9) % 261) / 10).toFixed(1),
+    rot: +(((h >>> 18) % 121) / 10 - 6).toFixed(1),
+  };
+}
+
 // ---------- 文案 ----------
 // ---------- 系列（一盒章）----------
 // 系列 = 按盒卖、按盒收纳的单位，和「分类」正交：奶茶的分类是「吃喝」，系列是「基础章」。
@@ -596,7 +613,8 @@ export const GLYPHS = [
 
 // 记录里可能引用字形章，所以查表要把它们算上（但统计口径不算，见上面红字）
 // 赠礼章也进来 —— 记录里会引用它们的 id
-export const stampById = Object.fromEntries([...STAMPS, ...GLYPHS, ...GIFTS.map(g => ({ ...g, kind: 'seal' }))].map(s => [s.id, s]));
+// 隐藏章也进来（9-01 拍板：解锁后进托盘可继续盖）—— 不在这张表里，纸面就画不出它的印记
+export const stampById = Object.fromEntries([...STAMPS, ...GLYPHS, ...HIDDEN, ...GIFTS.map(g => ({ ...g, kind: 'seal' }))].map(s => [s.id, s]));
 export const isGlyph = id => stampById[id]?.kind === 'glyph';
 export const hiddenById = Object.fromEntries(HIDDEN.map(h => [h.id, h]));
 export const TOTAL_COLLECTIBLE = STAMPS.length + HIDDEN.length;

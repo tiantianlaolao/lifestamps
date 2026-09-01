@@ -61,7 +61,10 @@ function cumulative(c, all) {
 
 // 盖完章之后调用：返回这一次新解锁的基础章
 export function checkUnlocks() {
-  const all = store.records.filter(r => !isGlyph(r.stampId));
+  // 封蜡记录（别人送的，9-01 起会落在纸上）不算你的盖章行为，
+  // 不滤掉的话 total 类判据（rainbowsky 的 60）会被白白凑数
+  const all = store.records.filter(r =>
+    !isGlyph(r.stampId) && stampById[r.stampId]?.kind !== 'seal');
   const newly = [];
   for (const [id, cond] of Object.entries(UNLOCK)) {
     if (isUnlocked(id)) continue;
@@ -102,7 +105,9 @@ function satisfied(h, todayRecs) {
 
 // 盖章后调用：返回本次新解锁的隐藏章列表
 export function checkHidden() {
-  const todayRecs = store.todayRecords();
+  // 同 checkUnlocks：封蜡不算你的行为（late 类按当天记录数数，封蜡的 ts 还是编的）
+  const todayRecs = store.todayRecords()
+    .filter(r => stampById[r.stampId]?.kind !== 'seal');
   const newly = [];
   for (const h of HIDDEN) {
     if (store.hidden[h.id]) continue;

@@ -71,7 +71,10 @@ function inRange(h, from, to) {
 
 // 给一天的记录挑一句判词，返回 key。records 为空时返回 null（空白的一天不生成卡）。
 export function verdictOf(records) {
-  if (!records || !records.length) return null;
+  // 收到的封蜡也躺在当天的记录里（9-01 起），但判词说的是"你今天做了什么"——
+  // 别人送的东西不是你的行为，进了统计会把句子带歪（「只有一枚」那类判据首当其冲）。
+  records = (records || []).filter(r => stampById[r.stampId]?.kind !== 'seal');
+  if (!records.length) return null;
   const total = records.length;
   const cnt = {};
   const catCnt = {};

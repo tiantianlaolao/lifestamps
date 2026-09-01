@@ -72,6 +72,7 @@ export const ZH = {
   notePlaceholder: '写一句…',
   noteHint: '写一句',   // 前面那支铅笔现在是内联 SVG（见 main.js:noteHint），别再往文案里塞符号
   catGlyph: '字',
+  catSecret: '珍藏',   // 托盘里已解锁隐藏章的那一类（9-01：隐藏章解锁后可继续盖）
   glyphBox: '数字和字母',
   glyphSub: '数字、字母、星期、标点——这些是工具，不算收集',
   undo: '撤销',

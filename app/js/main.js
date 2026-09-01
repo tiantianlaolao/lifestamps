@@ -274,7 +274,8 @@ function init() {
     // again = 又收到但没解开的（那个人的名额用过了，或者这枚本来就有）
     //         🔴 also 必须提示（用户 8-29 拍板）：不提示的话朋友送了却毫无反应 = 白送。
     //         话得跟第一次不一样，见 COPY.giftAgainSpark。
-    collectGifts().then(({ got, again }) => {
+    collectGifts().then(({ got, again, placed }) => {
+      if (placed) render();   // 封蜡已落到对应那天的纸上 —— 正开着那页的话得重画一次
       if (got.length) showGiftQueue(got);
       else if (again.length) showGiftQueue(again, true);
     }).catch(() => {});
@@ -377,6 +378,7 @@ function renderToday() {
   const isFuture = pageDk > todayDk;
   const pd = new Date(pageDk + 'T12:00:00');
   const recs = store.recordsOf(pageDk);
+  const ownN = recs.filter(r => stampById[r.stampId]?.kind !== 'seal').length;
   const secret = dailySecret();
 
   const chips = chipsHTML(recs);
@@ -404,7 +406,9 @@ function renderToday() {
           <span class="d">${pd.getMonth() + 1} · ${pd.getDate()}</span>
           <span class="w">${weekName(pd)}</span>
         </div>
-        ${recs.length ? `<div class="paper-count">${COPY.countOnPaper.replace('{w}', isToday ? COPY.todayWord : COPY.thatDayWord).replace('{n}', recs.length)}</div>` : ''}
+        ${/* 计数说的是"你这天留了几枚"——封蜡是别人送的不算进去，
+             不然会出现「这天 2 枚」配着判词「只留下一枚」的自相矛盾 */''}
+        ${ownN ? `<div class="paper-count">${COPY.countOnPaper.replace('{w}', isToday ? COPY.todayWord : COPY.thatDayWord).replace('{n}', ownN)}</div>` : ''}
         ${weatherHTML(pageDk, !isFuture)}
         ${riddleNoteHTML(isToday ? secret : null)}
         ${chips}
@@ -647,10 +651,13 @@ function chipsHTML(recs) {
   return recs.map(r => {
     const def = stampById[r.stampId]; if (!def) return '';
     const pos = posOf(r);
+    // 封蜡（别人送的）：ts 是编的（服务端没存真实时刻），所以不标时间；
+    // 便签颜色用封蜡自己的墨绿 —— 它的记录没有 ink 字段。
+    const isSeal = def.kind === 'seal';
     return `<div class="chip ${r.note ? 'has-note' : ''}" data-rid="${r.id}" style="left:${pos.x}%;top:${pos.y}%">
       ${stampSVG(def, { size: Math.round(CHIP * r.sc), ink: r.ink, rot: r.rot, opacity: r.op, mat: r.mat, seed: seedOf(r) })}
-      <span class="tm">${fmtTime(r.ts)}</span>
-      ${r.note ? `<span class="note" style="color:${darken(inkMainColor(r.ink), .25)}">${esc(r.note)}</span>` : ''}</div>`;
+      ${isSeal ? '' : `<span class="tm">${fmtTime(r.ts)}</span>`}
+      ${r.note ? `<span class="note" style="color:${darken(isSeal ? GIFT_WAX : inkMainColor(r.ink), .25)}">${esc(r.note)}</span>` : ''}</div>`;
   }).join('');
 }
 
@@ -658,13 +665,15 @@ function chipsHTML(recs) {
 function paperHTML(dk, extraCls = '') {
   const pd = new Date(dk + 'T12:00:00');
   const recs = store.recordsOf(dk);
+  // 同 renderToday：计数不含封蜡（那是别人送的，不是"你留了几枚"）
+  const ownN = recs.filter(r => stampById[r.stampId]?.kind !== 'seal').length;
   const note = store.dayNoteOf(dk);
   return `<div class="canvas bookpage ${extraCls}">
     <div class="datestamp" style="transform:rotate(${dateStampRot(dk)}deg);--ds-rot:${dateStampRot(dk)}deg">
       <span class="d">${pd.getMonth() + 1} · ${pd.getDate()}</span>
       <span class="w">${weekName(pd)}</span>
     </div>
-    ${recs.length ? `<div class="paper-count">${COPY.countOnPaper.replace('{w}', COPY.thatDayWord).replace('{n}', recs.length)}</div>` : ''}
+    ${ownN ? `<div class="paper-count">${COPY.countOnPaper.replace('{w}', COPY.thatDayWord).replace('{n}', ownN)}</div>` : ''}
     ${weatherHTML(dk, false)}
     ${chipsHTML(recs)}
     ${recs.length ? '' : `<div class="canvas-hint">${
@@ -805,8 +814,13 @@ function renderDeck() {
   // 分类
   // 字形章单独一类，不混进「全部」——49 枚字挤进生活章里会把它们淹掉。
   // ⚠️ 放在「全部」后面而不是队尾：分类行是横滚的，排最后要滑一下才看得见（实测被挤出屏幕）。
+  // 「珍藏」= 已解锁的隐藏章（9-01 用户拍板：隐藏章解锁后进托盘可以继续盖）。
+  // 一枚都没解锁时整个分类不出现 —— 空分类读起来像坏了，还剧透了"有这么一类"。
+  // ⚠️ 封蜡不进来：它只能被朋友送，自己能盖就不稀罕了（同日拍板）。
+  const secretGot = HIDDEN.filter(h => store.hidden[h.id]);
   const cats = `<button data-cat="all" class="${deckCat === 'all' ? 'sel' : ''}">${COPY.catAll}</button>`
     + `<button data-cat="glyph" class="glyph-chip ${deckCat === 'glyph' ? 'sel' : ''}">${COPY.catGlyph}</button>`
+    + (secretGot.length ? `<button data-cat="secret" class="${deckCat === 'secret' ? 'sel' : ''}">${COPY.catSecret}</button>` : '')
     + CATEGORIES.map(c => `<button data-cat="${c.id}" class="${deckCat === c.id ? 'sel' : ''}">${nameOf('cat', c.id, c.name)}</button>`).join('');
 
   // 印泥铁盒：盒里那坨墨的直径 = 这盒还剩多少（12px 空 → 26px 满），全 App 不写次数
@@ -828,7 +842,9 @@ function renderDeck() {
   // 章：立在托盘里（木柄 + 章面）
   // 🔴 只摆已解锁的：初始 12 枚 + 用出来的那些。没解锁的不在托盘里，
   //    这样「发现新章」才是真的奖励，抽屉里的「还没遇到」也才是真话。
+  // 隐藏章只在「珍藏」分类里、不混进「全部」——跟字形章不混的理由相同
   let list = deckCat === 'glyph' ? GLYPHS
+    : deckCat === 'secret' ? secretGot
     : STAMPS.filter(s => isUnlocked(s.id) && (deckCat === 'all' || s.cat === deckCat));
   if (!deckOpen) {
     // 收起态只摆得下几枚，就摆今天已经用过的——那多半也是接下来要用的
@@ -1267,7 +1283,9 @@ function placeStamp(clientX, clientY, cv) {
   };
 
   setTimeout(() => {                             // 触纸瞬间（约 300ms）
-    store.addRecord(rec, !isGlyph(sid));      // 字形章不算「发现」
+    // 字形章不算「发现」；隐藏章有自己的收集记录（store.hidden），
+    // 别挤进基础章的 discovered —— 会虚增「已发现」计数和 discovered 类隐藏章条件
+    store.addRecord(rec, !isGlyph(sid) && !hiddenById[sid]);
     haptic(); thump();
     const n = store.recordsOf(pageDk).filter(r => r.stampId === sid).length;
     toast(isBackfill ? COPY.backfilled : (n > 1 ? COPY.repeatStamp : COPY.firstStamp), 900);
@@ -1526,8 +1544,13 @@ function renderSupply() {
 function openActions(rid) {
   const rec = store.records.find(r => r.id === rid); if (!rec) return;
   const def = stampById[rec.stampId];
-  $('#act-title').textContent = `${dName(def)} · ${fmtTime(rec.ts)}`;
-  $('#act-list').innerHTML = `
+  // 封蜡是别人送的：「再盖一枚」= 自己能盖封蜡（把"只能被送"废了）；
+  // 时刻本来就是编的，也没得改 —— 只留删除（纸是你的，想拿掉可以）。
+  const isSeal = def?.kind === 'seal';
+  $('#act-title').textContent = isSeal ? dName(def) : `${dName(def)} · ${fmtTime(rec.ts)}`;
+  $('#act-list').innerHTML = isSeal ? `
+    <button data-a="del" class="danger">${COPY.actDelete}</button>
+    <button data-a="close" class="plain">${COPY.actCancel}</button>` : `
     <button data-a="again">${COPY.actAgain}</button>
     <button data-a="time">${COPY.actTime}</button>
     <button data-a="del" class="danger">${COPY.actDelete}</button>
@@ -2255,7 +2278,9 @@ function renderMe() {
     <div class="me-stat">
       <div class="st"><span class="v">${store.records.length}</span><span class="k">${COPY.statMarks}</span></div>
       <div class="st"><span class="v">${store.daysWithRecords()}</span><span class="k">${COPY.statDays}</span></div>
-      <div class="st"><span class="v">${Object.keys(store.hidden).length}<i>/${HIDDEN.length}</i></span>
+      ${/* store.hidden 里装两类（隐藏章 + 封蜡），分母也得是两类之和 ——
+           原来只除 HIDDEN.length，收到封蜡后会出现 8/5 这种鬼数字 */''}
+      <div class="st"><span class="v">${Object.keys(store.hidden).length}<i>/${HIDDEN.length + GIFTS.length}</i></span>
         <span class="k">${COPY.statHidden}</span></div>
     </div>
 

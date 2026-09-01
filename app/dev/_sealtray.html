@@ -1,0 +1,183 @@
+<!doctype html><meta charset="utf-8"><title>封蜡上纸 + 隐藏章进托盘</title>
+<!-- 9-01 两项拍板的回归：
+     ① 封蜡留在纸上：收到即在"送到的那一天"落一条记录（含没解锁的），
+        位置/角度/序号确定性（giftPos），不标时间，不进判词/解锁判据，长按只留删除。
+     ② 隐藏章解锁后进托盘「珍藏」分类，可以继续盖；封蜡不进托盘。
+     判据都要能区分（对照组必须红/绿相反），别只验"不该有的没有"。
+
+     用法：cd app && python -m http.server 8773
+           开 http://127.0.0.1:8773/dev/_sealtray.html -->
+<style>html,body{margin:0;background:#2a2724;color:#eee;font:12.5px/1.8 ui-monospace}
+ .w{padding:10px 16px}.f{color:#ff7a6b;font-weight:700}.p{color:#7fd97f}
+ h3{color:#9cf;font-size:13px;margin:12px 0 4px} iframe{border:1px solid #555;margin:8px 16px}</style>
+<div class="w" id="o"></div><iframe id="f" width="390" height="700"></iframe>
+<script type="module">
+// 🔴 断言条目必须是 <div class="p">PASS… / <div class="f">FAIL… ——
+//    check_regress.py 只认这个（opencheck 当年用别的类名，跑成了 PASS=0 的死闸门）
+const o=document.getElementById('o'),f=document.getElementById('f');
+let P=0,F=0;
+const ok=(c,m)=>{c?P++:F++;o.insertAdjacentHTML('beforeend',
+  `<div class="${c?'p':'f'}">${c?'PASS':'FAIL'}　${m}</div>`)};
+const h3=t=>o.insertAdjacentHTML('beforeend',`<h3>${t}</h3>`);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+(async()=>{
+  // ---- 纯函数层：giftPos 播种 ----
+  h3('giftPos：确定性 + 落点范围');
+  const { giftPos, HIDDEN, GIFTS, stampById } = await import('../js/data.js');
+  const a=giftPos('abc123','g_candy',1), b=giftPos('abc123','g_candy',1), c=giftPos('abc123','g_candy',2);
+  ok(a.x===b.x && a.y===b.y && a.rot===b.rot, '同参数两次调用逐字段相同（跨端一致的前提）');
+  ok(a.x!==c.x || a.y!==c.y, '换个序号落点变了（不然多枚会叠死在一处）');
+  let inb=true;
+  for(const gid of GIFTS.map(g=>g.id)) for(let k=1;k<=3;k++){
+    const p=giftPos('zzz999',gid,k);
+    if(p.x<26||p.x>74.1||p.y<58||p.y>84.1||p.rot<-6||p.rot>6.1) inb=false;
+  }
+  ok(inb, '18 个采样全部落在 26~74 / 58~84 / ±6°（纸的下半区，压不到日期章）');
+  ok(stampById.h_meal && stampById.g_candy, 'stampById 现在查得到隐藏章和封蜡（纸面渲染的前提）');
+
+  // ---- 判词口径：封蜡不算你的行为 ----
+  h3('verdictOf：封蜡记录不进判词');
+  const { verdictOf } = await import('../js/verdict.js');
+  const seal = {stampId:'g_candy'};
+  ok(verdictOf([seal])===null, '只有一枚封蜡的一天 = 没有判词（不然会说「今天只盖了一枚」）');
+  const one = {stampId:'milktea'};
+  const vPure=verdictOf([one]), vMixed=verdictOf([one,seal,seal]);
+  ok(vPure!==null && vMixed===vPure, `掺了两枚封蜡判词不变（${vMixed}），「只有一枚」没被挤掉`);
+
+  // ---- placeSealRecord：落记录本体 ----
+  h3('placeSealRecord：落在那一天、可去重、不进解锁判据');
+  localStorage.clear();
+  const { store, dateKey } = await import('../js/store.js');
+  const { placeSealRecord } = await import('../js/net.js');
+  const share={code:'abc123', day:'2026-08-15', expires:Date.now()+864e5, seen:{}};
+  ok(placeSealRecord(share,'g_candy',1)===true, '第一次落成功');
+  ok(placeSealRecord(share,'g_candy',1)===false, '同一枚再落被去重挡住（同步/重试不会翻倍）');
+  const rec=store.records.find(r=>r.id==='g:abc123:g_candy:1');
+  ok(!!rec, '记录 id 是确定性的 g:码:章:序号');
+  ok(rec && dateKey(rec.ts)==='2026-08-15', `dateKey 落在送到的那一天（${rec&&dateKey(rec.ts)}）`);
+  ok(rec && rec.px===a.x && rec.py===a.y, '记录里的位置 = giftPos 的位置（B 那边看到的同一处）');
+  ok(!store.discovered.g_candy, '没进 discovered（封蜡不算「发现」）');
+  const { checkUnlocks, checkHidden } = await import('../js/hidden.js');
+  // 对照组：60 枚封蜡记录若被算进 total 判据，rainbowsky(n=60) 会解锁
+  for(let k=2;k<=60;k++) placeSealRecord(share,'g_candy',k);
+  ok(store.records.length>=60, `已铺 ${store.records.length} 条封蜡记录（对照组前提）`);
+  const un=checkUnlocks();
+  ok(un.length===0 && !store.unlocked.rainbowsky, '60 枚封蜡没凑出 rainbowsky（total 判据滤掉了封蜡）');
+  ok(checkHidden().length===0, '封蜡也没误触发隐藏章');
+
+  // ---- 应用层：纸面 + 托盘 ----
+  h3('摆状态：昨天一枚封蜡 + 一枚奶茶；解开 h_meal 干饭魂');
+  localStorage.clear();
+  const y=new Date(Date.now()-864e5), pad=n=>String(n).padStart(2,'0');
+  const ydk=`${y.getFullYear()}-${pad(y.getMonth()+1)}-${pad(y.getDate())}`;
+  const p1=giftPos('code01','g_candy',1);
+  localStorage.setItem('lifestamps_records', JSON.stringify([
+    {id:'g:code01:g_candy:1', stampId:'g_candy', ts:new Date(ydk+'T12:00:00').getTime()+60000,
+     px:p1.x, py:p1.y, rot:p1.rot, sc:1, op:1},
+    {id:'r_milk', stampId:'milktea', ink:'zhu', ts:new Date(ydk+'T10:05:00').getTime(),
+     rot:-2, sc:1, op:.9, px:40, py:30},
+  ]));
+  localStorage.setItem('lifestamps_hidden', JSON.stringify({h_meal: Date.now()-864e5}));
+  localStorage.setItem('lifestamps_settings', JSON.stringify(
+    {sound:false,haptic:false,onboarded:true,cover:'rose',font:'hand',desk:'floral',paper:'dot'}));
+
+  f.src=`/index.html?skipob=1&noopen=1&page=${ydk}`;
+  await new Promise(r=>{f.onload=r}); await sleep(2500);
+  let w=f.contentWindow, d=f.contentDocument;
+  const errs=[];
+  w.addEventListener('error', e=>errs.push(String(e.message||e)));
+
+  h3('封蜡画在那天的纸上，且不标时间');
+  const sealChip=d.querySelector('.chip[data-rid^="g:"]');
+  const milkChip=d.querySelector('.chip[data-rid="r_milk"]');
+  ok(!!sealChip, '封蜡印记在纸上');
+  ok(sealChip && !sealChip.querySelector('.tm'), '封蜡不带时间标签');
+  ok(milkChip && !!milkChip.querySelector('.tm'), '普通章带时间标签（判据能区分，不是全都没有）');
+  if(sealChip){
+    const st=sealChip.style;
+    ok(parseFloat(st.left)===p1.x && parseFloat(st.top)===p1.y, `落点 = giftPos（${st.left},${st.top}）`);
+  }
+
+  h3('托盘「珍藏」分类：有干饭魂、没有封蜡');
+  f.src='/index.html?skipob=1&noopen=1&deck=open';
+  await new Promise(r=>{f.onload=r}); await sleep(2200);
+  w=f.contentWindow; d=f.contentDocument;
+  const secretBtn=d.querySelector('#deck-cats [data-cat="secret"]');
+  ok(!!secretBtn, '托盘分类行里有「珍藏」');
+  if(secretBtn){ secretBtn.click(); await sleep(600); }
+  d=f.contentDocument;
+  const cells=[...d.querySelectorAll('#deck-strip .dk-stamp')].map(e=>e.dataset.sid);
+  ok(cells.includes('h_meal'), `珍藏分类里摆着 h_meal（实际：${cells.join(',')||'空'}）`);
+  ok(!cells.some(id=>id.startsWith('g_')&&stampById[id]?.kind==='seal'), '封蜡不在托盘里（只能被朋友送）');
+
+  h3('拿干饭魂真盖一枚（pointer 点选 + click 盖）');
+  const cell=d.querySelector('#deck-strip .dk-stamp[data-sid="h_meal"]');
+  if(cell){
+    const cr=cell.getBoundingClientRect();
+    const pe=(t,el,x,y)=>el.dispatchEvent(new w.PointerEvent(t,{bubbles:true,clientX:x,clientY:y,pointerId:1,isPrimary:true}));
+    pe('pointerdown',cell,cr.x+8,cr.y+8); await sleep(80); pe('pointerup',cell,cr.x+8,cr.y+8);
+    await sleep(500);
+    // ⚠️ 选章会整页重建 —— 画布必须选完再抓，抓早了是游离节点，事件白发；
+    //    盖章挂的是 click（不是 pointerup），合成也发 click
+    d=f.contentDocument;
+    const cv=d.querySelector('#today-canvas');
+    const vr=cv.getBoundingClientRect();
+    cv.dispatchEvent(new w.MouseEvent('click',
+      {bubbles:true,clientX:vr.x+vr.width/2,clientY:vr.y+vr.height/2}));
+    await sleep(1600);   // 落章 300ms + 整页同步 760ms
+  }
+  const st2=JSON.parse(localStorage.getItem('lifestamps_records')||'[]');
+  const mealRec=st2.find(r=>r.stampId==='h_meal');
+  ok(!!mealRec, '记录里有一枚 h_meal（隐藏章真的能盖）');
+  const disc=JSON.parse(localStorage.getItem('lifestamps_discovered')||'{}');
+  ok(!disc.h_meal, '盖了隐藏章但没进 discovered（不挤基础章的计数）');
+  ok(errs.length===0, errs.length? `🔴 iframe 抛异常：${errs.join(' / ')}` : '全程一次异常都没有');
+
+  h3('当月只有无分类记录（隐藏章/封蜡）时，我的页/月历不许白屏');
+  // 🔴 personaKey 的回归：total>0 但 catCnt 为空（隐藏章和封蜡都没有 cat），
+  //    没有空表护栏时 sorted[0] 解构直接抛，我的页和月历整页 length=0。
+  localStorage.clear();
+  localStorage.setItem('lifestamps_records', JSON.stringify([
+    {id:'r_meal', stampId:'h_meal', ink:'zhu', ts:Date.now()-3600e3, rot:1, sc:1, op:.9, px:55, py:45},
+  ]));
+  localStorage.setItem('lifestamps_hidden', JSON.stringify({h_meal:Date.now()-864e5}));
+  localStorage.setItem('lifestamps_settings', JSON.stringify(
+    {sound:false,haptic:false,onboarded:true,cover:'rose',font:'hand',desk:'floral',paper:'dot'}));
+  f.src='/index.html?skipob=1&noopen=1';
+  await new Promise(r=>{f.onload=r}); await sleep(2200);
+  w=f.contentWindow; d=f.contentDocument;
+  const errs3=[];
+  w.addEventListener('error',e=>errs3.push(String(e.message||e).slice(0,200)));
+  for(const tab of ['me','memories']){
+    d.querySelector(`#tabbar button[data-tab="${tab}"]`)?.click();
+    await sleep(1000);
+    const pg=d.querySelector('#page-'+tab);
+    ok(pg&&pg.innerHTML.length>200&&!errs3.length,
+       `${tab} 页正常渲染（长度=${pg?pg.innerHTML.length:-1}；异常=${errs3.join(' / ')||'无'}）`);
+  }
+
+  h3('「我的」页统计：分母 = 隐藏章 + 封蜡两类之和');
+  localStorage.clear();
+  localStorage.setItem('lifestamps_hidden', JSON.stringify(
+    {h_meal:Date.now(), g_candy:Date.now(), g_lamp:Date.now()}));
+  localStorage.setItem('lifestamps_settings', JSON.stringify(
+    {sound:false,haptic:false,onboarded:true,cover:'rose',font:'hand',desk:'floral',paper:'dot'}));
+  f.src='/index.html?skipob=1&noopen=1&tab=me';
+  const errs2=[];
+  f.addEventListener('load', ()=>{ try{
+    f.contentWindow.addEventListener('error', e=>errs2.push(String(e.message||e)));
+  }catch(_){} }, {once:true});
+  await new Promise(r=>{f.onload=r}); await sleep(3000);
+  d=f.contentDocument;
+  const stat=[...d.querySelectorAll('#page-me .me-stat .st .v')].map(e=>e.textContent.trim());
+  ok(stat.some(t=>t.replace(/\s/g,'')===`3/${HIDDEN.length+GIFTS.length}`),
+     `收 1 隐藏 + 2 封蜡显示 3/${HIDDEN.length+GIFTS.length}（实际：${stat.join(' | ')||'空'}；`
+     +`page-me长度=${(d.querySelector('#page-me')||{innerHTML:''}).innerHTML.length}；`
+     +`异常=${errs2.join(' / ')||'无'}）`);
+
+  h3(`合计　通过 ${P}　失败 ${F}`);
+  document.title=F?`FAIL ${F}`:`PASS ${P}`;
+  localStorage.clear();
+})();
+</script>

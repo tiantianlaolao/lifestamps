@@ -66,6 +66,7 @@ export const EN = {
   notePlaceholder: 'a line…',
   noteHint: 'add a line',
   catGlyph: 'Letters',
+  catSecret: 'Rare',
   glyphBox: 'Numbers & letters',
   glyphSub: 'Digits, letters, weekdays, punctuation — tools, not collectibles',
   undo: 'Undo',

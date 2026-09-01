@@ -1,0 +1,25 @@
+<!doctype html><meta charset="utf-8"><title>shot</title>
+<!-- 截图用：左=昨天的纸（封蜡+奶茶），右=托盘展开停在「珍藏」分类 -->
+<style>body{margin:0;background:#333;display:flex;gap:8px;padding:8px}
+iframe{border:1px solid #666;background:#fff}</style>
+<script>
+  localStorage.clear();
+  const y=new Date(Date.now()-864e5), pad=n=>String(n).padStart(2,'0');
+  const ydk=`${y.getFullYear()}-${pad(y.getMonth()+1)}-${pad(y.getDate())}`;
+  // giftPos('code01','g_candy',1) 的值不好在非 module 里取，直接写一组下半区坐标
+  localStorage.setItem('lifestamps_records', JSON.stringify([
+    {id:'g:code01:g_candy:1', stampId:'g_candy', ts:new Date(ydk+'T12:00:00').getTime()+60000,
+     px:52, py:70, rot:3, sc:1, op:1},
+    {id:'r_milk', stampId:'milktea', ink:'zhu', ts:new Date(ydk+'T10:05:00').getTime(),
+     rot:-2, sc:1, op:.9, px:38, py:32},
+  ]));
+  localStorage.setItem('lifestamps_hidden', JSON.stringify({h_meal:Date.now()-864e5}));
+  localStorage.setItem('lifestamps_settings', JSON.stringify(
+    {sound:false,haptic:false,onboarded:true,cover:'rose',font:'hand',desk:'floral',paper:'dot'}));
+  localStorage.setItem('lifestamps_bookClosed', 'false');   // 摊开着，别出封面挡截图
+  document.addEventListener('DOMContentLoaded',()=>{
+    document.body.insertAdjacentHTML('beforeend',
+      `<iframe width="390" height="720" src="/index.html?skipob=1&noopen=1&page=${ydk}"></iframe>
+       <iframe width="390" height="720" src="/index.html?skipob=1&noopen=1&deck=open&cat=secret"></iframe>`);
+  });
+</script>

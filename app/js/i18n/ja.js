@@ -66,6 +66,7 @@ export const JA = {
   notePlaceholder: 'ひとこと…',
   noteHint: 'ひとこと',
   catGlyph: 'もじ',
+  catSecret: 'シークレット',
   glyphBox: '数字とアルファベット',
   glyphSub: '数字・文字・曜日・記号 —— 道具なので、コレクションには数えません',
   undo: 'もどす',

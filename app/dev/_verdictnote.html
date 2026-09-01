@@ -16,7 +16,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 (async () => {
  try {
-  const dk = '2026-08-20', base = new Date(dk + 'T10:00:00').getTime();
+  // ⚠️ 日子必须动态取"今天"：本子月历默认打开**当前月**，写死某个月（原来是 2026-08-20）
+  //    一跨月格子就不在屏上，整页从 9-01 起全红 —— 跟被测代码无关，是测试自己烂了。
+  //    用今天而不是"本月 1 号"是因为判词对今天要 ≥3 枚才出（这里种了 4 枚，够）。
+  const _n = new Date(), _p = n => String(n).padStart(2, '0');
+  const dk = `${_n.getFullYear()}-${_p(_n.getMonth() + 1)}-${_p(_n.getDate())}`;
+  const base = new Date(dk + 'T10:00:00').getTime();
   const recs = ['milktea', 'lie', 'takeout', 'happy'].map((sid, i) =>
     ({ id: 'vn' + i, stampId: sid, ink: 'zhu', ts: base + i * 3600e3 }));
 

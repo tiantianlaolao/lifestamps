@@ -9,7 +9,7 @@
 //    更不能因为网不通就让今日页出不来。
 // ============================================================
 import { store, posOf } from './store.js';
-import { GIFTS } from './data.js';
+import { GIFTS, giftPos } from './data.js';
 import { seedOf } from './stamp.js';
 
 // 🔴 原生壳（Capacitor）里 location.href 是 capacitor://localhost/index.html 或
@@ -115,12 +115,34 @@ export function shareURL(code) {
 //    ⚠️ again 必须也提示（用户 8-29 拍板）：不提示的话，朋友送了却毫无反应，那朋友是白送的。
 //
 // ⚠️ 过期的短码直接从本地清掉：服务端那边也真的删了，留着只会每次白请求一遍。
+//
+// 9-01 起（用户拍板：封蜡要留在纸上）：每收到一枚，就在「送到的那一天」的纸上
+// 落一条记录 —— 包括没解锁的那些（上纸 = 事件本身，解锁 = 进抽屉，两回事）。
+//   · id 是确定性的（g:短码:章:第几枚）：两台设备各自回收同一批赠礼时生成同一个 id，
+//     记录级 LWW 同步自然合并，不会一台一枚变两枚。
+//   · 位置/角度走 giftPos（同一套播种）：B 在分享页看到它落哪儿，A 纸上就是哪儿。
+//   · ts = 那天中午 + 第几枚分钟：dateKey 一定落在 day 上；真实时刻服务端没存，
+//     编一个是假话 —— 所以 chipsHTML 对封蜡也不标时间。
+//   · addRecord 第二参 false：封蜡不算「发现」，永远不进 discovered。
+export function placeSealRecord(share, sealId, seq) {   // export 只为 dev/_sealtray 测试接缝
+  const id = `g:${share.code}:${sealId}:${seq}`;
+  if (store.records.some(r => r.id === id)) return false;   // 同步/上一轮可能已经带来了
+  const p = giftPos(share.code, sealId, seq);
+  store.addRecord({
+    id, stampId: sealId,
+    ts: new Date(share.day + 'T12:00:00').getTime() + seq * 60000,
+    px: p.x, py: p.y, rot: p.rot, sc: 1, op: 1,
+  }, false);
+  return true;
+}
+
 export async function collectGifts() {
   const list = store.shares || [];
-  if (!list.length) return { got: [], again: [] };
+  if (!list.length) return { got: [], again: [], placed: 0 };
   const now = Date.now();
   const fresh = [];
   const arrived = [];                                     // 这一轮新到的（不管解不解锁）
+  let placed = 0;                                         // 这一轮落到纸上的枚数
 
   for (const s of list) {
     if (s.expires <= now) continue;                       // 过期的丢掉
@@ -130,7 +152,11 @@ export async function collectGifts() {
     const seen = s.seen || {};
     for (const g of GIFTS) {
       const n = data.gifts[g.id] || 0;
-      if (n > (seen[g.id] || 0)) { seen[g.id] = n; arrived.push(g.id); }
+      const prev = seen[g.id] || 0;
+      if (n > prev) {
+        for (let k = prev + 1; k <= n; k++) { if (placeSealRecord(s, g.id, k)) placed++; }
+        seen[g.id] = n; arrived.push(g.id);
+      }
     }
     fresh.push({ ...s, seen });
   }
@@ -140,8 +166,10 @@ export async function collectGifts() {
   //    当成没解锁又会漏掉提示。宁可这一轮不报，下次开 App 再说。
   const unlocked = await fetchUnlocked();
   if (!unlocked) {
+    // ⚠️ 纸上的记录（placed）已经落了且不回滚 —— placeSealRecord 按 id 去重，
+    //    这一轮 seen 没持久化的话，下次同一批会再"到达"一遍，但一条重复记录都不会多。
     if (fresh.length !== list.length) { store.shares = fresh; store.persist(); }
-    return { got: [], again: [] };
+    return { got: [], again: [], placed };
   }
 
   const got = [];
@@ -153,7 +181,7 @@ export async function collectGifts() {
 
   store.shares = fresh;
   store.persist();
-  return { got, again };
+  return { got, again, placed };
 }
 
 // B 在 App 里用 6 位兑换码领他给自己挑的那一枚。

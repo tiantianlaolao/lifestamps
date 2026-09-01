@@ -132,7 +132,7 @@
 </div>
 
 <script type="module">
-import { stampById, GIFTS, INKS } from '../js/data.js';
+import { stampById, GIFTS, INKS, giftPos } from '../js/data.js';
 import { defsMarkup, stampSVG } from '../js/stamp.js';
 import { setLang, detectLang, t, monthDay, weekName, nameOf, getLang, timeShort } from '../js/i18n.js';
 
@@ -191,10 +191,24 @@ function render() {
   const chips = data.stamps.map(s => {
     const def = stampById[s.id];
     if (!def) return '';
+    // 快照里也可能有封蜡（A 收到后重新分享这一天）：ts 是编的，不标时间
     return `<div class="f-chip" style="left:${s.x}%;top:${s.y}%">
       ${stampSVG(def, { size: Math.round(50 * (s.sc || 1)), ink: s.ink, rot: s.rot,
                         opacity: s.op, mat: s.mat, seed: s.seed })}
-      ${s.ts ? `<span class="f-tm">${fmtTime(s.ts)}</span>` : ''}</div>`;
+      ${s.ts && def.kind !== 'seal' ? `<span class="f-tm">${fmtTime(s.ts)}</span>` : ''}</div>`;
+  }).join('');
+
+  // 已收到的封蜡也画回纸上（9-01：封蜡要留在纸上，刷新后不再消失）。
+  // 位置 = giftPos(码, 章, 第几枚)：跟 A 的 App 里同一套播种，两边看到的是同一张纸。
+  const waxes = GIFTS.map(g => {
+    let out = '';
+    const n = (data.gifts && data.gifts[g.id]) || 0;
+    for (let k = 1; k <= n; k++) {
+      const p = giftPos(code, g.id, k);
+      out += `<div class="f-chip f-wax" style="left:${p.x}%;top:${p.y}%">
+        ${stampSVG({ ...g, kind: 'seal' }, { size: 56, rot: p.rot })}</div>`;
+    }
+    return out;
   }).join('');
 
   const verdict = data.verdict ? t(data.verdict) : '';
@@ -204,7 +218,7 @@ function render() {
       <div class="f-who">${esc(t('frTitle'))}</div>
       <div class="f-dt">${esc(monthDay(d))} · ${esc(weekName(d))} · ${esc(t('frStampsN', { n: data.stamps.length }))}</div>
     </div>
-    <div class="f-paper" id="paper">${chips}</div>
+    <div class="f-paper" id="paper">${chips}${waxes}</div>
     ${verdict ? `<div class="f-verdict">${esc(verdict)}</div>` : ''}
     ${data.note ? `<div class="f-verdict" style="opacity:.75;font-size:13.5px">${t('frQuote').replace('{t}', esc(data.note))}</div>` : ''}
 
@@ -338,15 +352,18 @@ function waitScrollSettled(el, cap = 700) {
   });
 }
 
-// 把送出的那枚封蜡贴到纸上 —— "送到了"这件事得看得见，光弹个提示太轻了
+// 把送出的那枚封蜡贴到纸上 —— "送到了"这件事得看得见，光弹个提示太轻了。
+// 9-01 起落点不再随机：用 giftPos 播种（此时 data.gifts 已是送完后的最新计数），
+// 动画落下的位置 = 刷新后画回来的位置 = A 纸上的位置，三处一致。
 function dropWax(id) {
   const g = GIFTS.find(x => x.id === id);
   if (!g) return;
+  const p = giftPos(code, id, (data.gifts && data.gifts[id]) || 1);
   const el = document.createElement('div');
   el.className = 'f-chip f-wax';
-  el.style.left = (26 + Math.random() * 48) + '%';
-  el.style.top = (58 + Math.random() * 26) + '%';
-  el.innerHTML = stampSVG({ ...g, kind: 'seal' }, { size: 56, rot: -6 + Math.random() * 12 });
+  el.style.left = p.x + '%';
+  el.style.top = p.y + '%';
+  el.innerHTML = stampSVG({ ...g, kind: 'seal' }, { size: 56, rot: p.rot });
   $('#paper').appendChild(el);
 }
 

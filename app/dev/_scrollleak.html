@@ -1,0 +1,94 @@
+<!doctype html><meta charset="utf-8"><title>拎章中途被重渲染：滚动拦截不许漏在 document 上</title>
+<!-- 9-01 用户报：今日页选章后偶尔整页滚不动，只有杀 App/刷新能救（难复现，多人遇到）。
+     病根：lift() 往 document 挂 passive:false 的 touchmove 拦截，摘除只在格子自己的
+     pointerup 上；拎着章的瞬间发生整页重渲染（10 秒撤销定时器是最常见的一发）→
+     格子连监听一起被拆 → 拦截永远留在 document 上。
+     这页把"难复现"变成确定性序列：长按拎起 → 不松手 → 强制整页重渲染 → 探针问
+     "现在 touchmove 还被 preventDefault 吗"。
+     🔴 判据双向：拎起期间必须是"被拦的"（探针有效性自证），重渲染后必须是"放开的"。 -->
+<style>html,body{margin:0;background:#2a2724;color:#eee;font:12.5px/1.8 ui-monospace}
+ .w{padding:10px 16px}.f{color:#ff7a6b;font-weight:700}.p{color:#7fd97f}
+ h3{color:#9cf;font-size:13px;margin:12px 0 4px} iframe{border:1px solid #555;margin:8px 16px}</style>
+<div class="w" id="o"></div><iframe id="f" width="390" height="720"></iframe>
+<script type="module">
+const o=document.getElementById('o'),f=document.getElementById('f');
+let P=0,F=0;
+const ok=(c,m)=>{c?P++:F++;o.insertAdjacentHTML('beforeend',
+  `<div class="${c?'p':'f'}">${c?'PASS':'FAIL'}　${m}</div>`)};
+const h3=t=>o.insertAdjacentHTML('beforeend',`<h3>${t}</h3>`);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+// 探针：现在这一页的 touchmove 会不会被 preventDefault（= 原生滚动被压住）
+const blocked=(w,d)=>{
+  const ev=new w.Event('touchmove',{cancelable:true,bubbles:true});
+  d.body.dispatchEvent(ev);
+  return ev.defaultPrevented;
+};
+
+(async()=>{
+  localStorage.clear();
+  localStorage.setItem('lifestamps_settings', JSON.stringify(
+    {sound:false,haptic:false,onboarded:true,cover:'rose',font:'hand',desk:'floral',paper:'dot'}));
+  localStorage.setItem('lifestamps_bookClosed','false');
+
+  f.src='/index.html?skipob=1&noopen=1&deck=open';
+  await new Promise(r=>{f.onload=r}); await sleep(2200);
+  let w=f.contentWindow, d=f.contentDocument;
+  const errs=[];
+  w.addEventListener('error',e=>errs.push(String(e.message||e).slice(0,200)));
+
+  h3('第一轮：拎起 → 不松手 → 整页重渲染（撤销定时器那类）');
+  ok(!blocked(w,d), '起始态：页面能滚（touchmove 没被拦）');
+  let cell=d.querySelector('#deck-strip .dk-stamp');
+  ok(!!cell, '托盘里有格子可拎');
+  const pd=(el,x,y)=>el.dispatchEvent(new w.PointerEvent('pointerdown',
+    {bubbles:true,clientX:x,clientY:y,pointerId:7,isPrimary:true}));
+  let cr=cell.getBoundingClientRect();
+  pd(cell,cr.x+8,cr.y+8);
+  await sleep(600);                                   // 过 450ms 长按阈值 → lift
+  ok(blocked(w,d), '拎起期间：touchmove 被拦（🔴 反向自证——这条不绿说明探针是聋的）');
+  ok(d.getElementById('drag-ghost').style.display==='block', '拖拽幽灵在手上');
+  // 不发 pointerup，直接强制整页重渲染 —— 复现"拎着章的瞬间撤销定时器到期"。
+  // 合成 click 不带 pointer 事件，正好模拟"手指还按着、重渲染却来了"。
+  d.querySelector('#tabbar button[data-tab="collection"]').click(); await sleep(500);
+  d.querySelector('#tabbar button[data-tab="today"]').click(); await sleep(700);
+  d=f.contentDocument;
+  ok(!blocked(w,d), '⭐ 重渲染后：拦截被摘掉，页面能滚（修复前这条永远红，直到刷新）');
+  ok(d.getElementById('drag-ghost').style.display!=='block', '幽灵也收走了');
+
+  h3('第二轮：格子被直接拆掉（不经 renderToday）→ 手指抬起时 document 兜底摘除');
+  cell=d.querySelector('#deck-strip .dk-stamp');
+  cr=cell.getBoundingClientRect();
+  pd(cell,cr.x+8,cr.y+8);
+  await sleep(600);
+  ok(blocked(w,d), '拎起期间：touchmove 被拦（反向自证）');
+  cell.remove();                                       // 最恶劣情形：节点没了、谁也不重渲染
+  d.body.dispatchEvent(new w.PointerEvent('pointerup',
+    {bubbles:true,clientX:cr.x+8,clientY:cr.y+8,pointerId:7,isPrimary:true}));
+  await sleep(200);
+  ok(!blocked(w,d), '⭐ 手指一抬，document 兜底把拦截摘掉');
+
+  h3('第三轮：正常拖拽落章不受影响');
+  d.querySelector('#tabbar button[data-tab="today"]').click(); await sleep(600);
+  d=f.contentDocument;
+  cell=d.querySelector('#deck-strip .dk-stamp');
+  const sid=cell.dataset.sid;
+  cr=cell.getBoundingClientRect();
+  const cv=d.querySelector('#today-canvas'), vr=cv.getBoundingClientRect();
+  pd(cell,cr.x+8,cr.y+8);
+  await sleep(600);                                   // 拎起
+  cell.dispatchEvent(new w.PointerEvent('pointermove',
+    {bubbles:true,clientX:vr.x+vr.width/2,clientY:vr.y+vr.height/2,pointerId:7,isPrimary:true}));
+  cell.dispatchEvent(new w.PointerEvent('pointerup',
+    {bubbles:true,clientX:vr.x+vr.width/2,clientY:vr.y+vr.height/2,pointerId:7,isPrimary:true}));
+  await sleep(1600);                                  // 落章 300ms + 整页同步 760ms
+  const recs=JSON.parse(localStorage.getItem('lifestamps_records')||'[]');
+  ok(recs.some(r=>r.stampId===sid), `拖拽落章还好使（盖出了 ${sid}）`);
+  ok(!blocked(w,d.body?d:f.contentDocument), '落完章页面能滚');
+  ok(errs.length===0, errs.length? `🔴 iframe 抛异常：${errs.join(' / ')}` : '全程一次异常都没有');
+
+  h3(`合计　通过 ${P}　失败 ${F}`);
+  document.title=F?`FAIL ${F}`:`PASS ${P}`;
+  localStorage.clear();
+})();
+</script>

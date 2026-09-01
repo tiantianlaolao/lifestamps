@@ -361,6 +361,8 @@ function flushNoteEditors() {
 
 function renderToday() {
   flushNoteEditors();
+  // 拎着章时被整页重建打断：先把 document 上的滚动拦截摘干净（详见 releaseDeckDrag 注释）
+  releaseDeckDrag();
   // ⚠️ renderToday 是整页 innerHTML 重建，托盘里的滚动位置会全丢。
   //    选完章、蘸完墨都会走这里——不存的话：展开态选第四排的章，选完就弹回顶部；
   //    点印泥排最后一个，点完就滑回最左（8-26 用户实测撞到）。
@@ -1139,6 +1141,22 @@ function setDeckOpen(open) {
   if (more) more.textContent = open ? COPY.deckLess : COPY.deckMore;   // 不重渲染，文字得手动换
 }
 
+// 正在"拎着章"的那个手势的善后钩子（全 App 同时最多一个在拎）。
+// 🔴 病根（9-01 用户报：选章时偶尔整页滚不动，只有杀 App/刷新能救，难复现）：
+//    lift() 往 document 挂了 passive:false 的 touchmove 拦截（压住原生滚动），
+//    而摘除只挂在格子自己的 pointerup/pointercancel 上 —— 拎着章的瞬间恰好发生
+//    整页重渲染（最常见的一发：盖完章 10 秒的撤销定时器到期无条件 renderToday；
+//    还有基础章解锁的 760ms 重渲染、启动时收封蜡的重画），格子连同监听一起被拆，
+//    document 上的拦截永远留下：整页 touchmove 全被 preventDefault、滚不动，
+//    且它是匿名闭包，之后怎么重渲染都摘不掉，只有重载能清。
+//    所以善后必须是模块级单例：renderToday 重建前强制调、document 兜底监听也调，
+//    每一条退出路径都通到同一个钩子，幂等，谁先到都行。
+let deckDragRelease = null;
+function releaseDeckDrag() {
+  if (!deckDragRelease) return;
+  const r = deckDragRelease; deckDragRelease = null; r();
+}
+
 function bindStampCell(el) {
   let sx = 0, sy = 0, t0 = 0, mode = null, pid = null, panL = 0;
   let lpTimer = null, lx = 0, ly = 0;
@@ -1154,10 +1172,25 @@ function bindStampCell(el) {
   const LP_MS = 450, LP_SLOP = 8;
   const blockScroll = ev => ev.preventDefault();
 
+  const bail = () => releaseDeckDrag();
   const lift = (x, y) => {
+    releaseDeckDrag();   // 多指同时拎第二枚：先把上一个手势善后掉，别漏它的拦截在 document 上
     mode = 'drag'; eraser = false;
     try { el.setPointerCapture(pid); } catch {}
     document.addEventListener('touchmove', blockScroll, { passive: false });
+    // 🔴 兜底：格子若在手势中途被整页重渲染拆掉，它身上的 pointerup 永远不会响 ——
+    //    document 上这两个监听保证"手指抬起来那一下"无论如何都把拦截摘掉。
+    //    正常路径里元素上的 finish 先跑（冒泡链上游）并把钩子置空，这两个就是空转。
+    document.addEventListener('pointerup', bail);
+    document.addEventListener('pointercancel', bail);
+    deckDragRelease = () => {
+      unblock();
+      document.removeEventListener('pointerup', bail);
+      document.removeEventListener('pointercancel', bail);
+      ghost.style.display = 'none';
+      if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+      mode = null; pid = null;
+    };
     const def = stampById[sid];
     ghost.innerHTML = stampBodySVG(def, {
       size: 66,
@@ -1204,8 +1237,10 @@ function bindStampCell(el) {
   });
   const finish = e => {
     if (pid === null) return;
-    dropLongPress(); unblock();
+    // ⚠️ releaseDeckDrag 会清 mode/pid，所以 wasDrag/wasPan 必须先取
     const wasDrag = mode === 'drag', wasPan = mode === 'pan';
+    releaseDeckDrag();
+    dropLongPress(); unblock();
     mode = null; pid = null;
     ghost.style.display = 'none';
     if (wasDrag) {
@@ -1232,6 +1267,7 @@ function bindStampCell(el) {
   };
   el.addEventListener('pointerup', finish);
   el.addEventListener('pointercancel', () => {
+    releaseDeckDrag();
     dropLongPress(); unblock();
     mode = null; pid = null; ghost.style.display = 'none';
   });

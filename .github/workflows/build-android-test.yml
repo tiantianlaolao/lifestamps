@@ -62,11 +62,12 @@ jobs:
         run: |
           cp -R android-assets/res/. android/app/src/main/res/
           test -f android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png
-          # 图标下的名字：全球统一 Stampday（跟 iOS CFBundleDisplayName 一致）
+          # 图标下的名字：安卓只做中国版（9-02 用户拍板），显示名「戳了么」——
+          # 就是 capacitor.config.json 的 appName，cap add 已经写进 strings.xml，这里只验证没跑偏。
+          # （iOS 海外版的 Stampday 是另一条线的事，别照搬到这儿。）
           S=android/app/src/main/res/values/strings.xml
-          sed -i 's#<string name="app_name">.*</string>#<string name="app_name">Stampday</string>#' $S
-          sed -i 's#<string name="title_activity_main">.*</string>#<string name="title_activity_main">Stampday</string>#' $S
-          grep -q '<string name="app_name">Stampday</string>' $S
+          grep -q '<string name="app_name">戳了么</string>' $S
+          grep -q '<string name="title_activity_main">戳了么</string>' $S
           # 版本：versionName 取 package.json，versionCode 取提交数（跟 iOS build number 同源）
           VERSION=$(node -p "require('./package.json').version")
           BUILD_NUM=$(git rev-list --count HEAD)

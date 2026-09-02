@@ -2258,13 +2258,13 @@ function accountHTML() {
         ${phoneRowsHTML()}
         <div class="acc-msg" id="acc-msg"></div>`;
     }
-    // 安卓壳（9-02 用户拍板）：国内=只有手机号，海外=只有 Google 邮箱。没有 Apple 键。
-    //   "国内还是海外"不看构建参数，看所连服务端支不支持短信（phoneCapable 能力探测）：
-    //   连国内 1.13 → 手机号；连美服 stampday → Google。零分叉，跟 iOS 那条探测同一根。
+    // 安卓壳（9-02 用户两轮拍板）：**只做国内版，登录只有手机号**——没有 Apple 键，也没有 Google 键。
+    //   手机号那两行仍按能力探测露头（连的服务端支持短信才亮，跟 iOS 同一根）；
+    //   探测没回来或连的是不支持短信的服务端，就只剩一句提示，不给任何别的登录方式。
+    //   海外安卓版缓行；将来要做时另起包名和构建线，那时再在这儿按构建参数分。
     if (isAndroid()) {
       return `<div class="acc-hint">${COPY.accHint}</div>
-        ${phoneLoginOK() ? phoneRowsHTML()
-          : `<button class="acc-btn" id="acc-google">${COPY.accLoginGoogle}</button>`}
+        ${phoneLoginOK() ? phoneRowsHTML() : ''}
         <div class="acc-msg" id="acc-msg"></div>`;
     }
     return `<div class="acc-hint">${COPY.accHint}</div>

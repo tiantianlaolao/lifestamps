@@ -175,3 +175,23 @@ export function initAndroidShell(onBack) {
     p.SystemBars.setStyle({ style: 'LIGHT' }).catch(() => {});
   }
 }
+
+/** 当前包的构建号（安卓 = versionCode；iOS = CFBundleVersion）。拿不到返回 0（网页 / 没装 App 插件的老包） */
+export async function appBuild() {
+  const p = P();
+  if (!p || !p.App || !p.App.getInfo) return 0;
+  try { const i = await p.App.getInfo(); return +i.build || 0; } catch (_) { return 0; }
+}
+
+/**
+ * 用系统浏览器打开一个地址（安卓 = Chrome Custom Tab）。
+ * 🔴 下载 APK 必须走这条：壳内 WebView 点 .apk 链接是没反应的（Capacitor 不接管下载）。
+ * 没有 Browser 桥就退回 window.open —— 网页版本来就该这样。
+ */
+export async function openExternal(url) {
+  const p = P();
+  if (p && p.Browser && p.Browser.open) {
+    try { await p.Browser.open({ url }); return; } catch (_) { /* 落到下面 */ }
+  }
+  window.open(url, '_blank', 'noopener');
+}

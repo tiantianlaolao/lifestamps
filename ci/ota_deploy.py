@@ -11,7 +11,9 @@ PORT = int(os.environ.get("OTA_SSH_PORT", "22"))
 USER = os.environ["OTA_SSH_USER"]
 PWD  = os.environ["OTA_SSH_PASSWORD"]
 
-LIVE  = "/var/www/lifestamps/_t"
+# 落点：默认 _t/（测试包）；安卓正式线传 OTA_LIVE_DIR=/var/www/lifestamps/dl（9-02）。
+# ⚠️ 两个目录网页部署脚本都 --exclude 了，别再加第三个不排除的目录。
+LIVE  = os.environ.get("OTA_LIVE_DIR", "/var/www/lifestamps/_t")
 STAGE = "/tmp/lifestamps_ota"          # 🔴 用 /tmp 不用 ~：sudo bash -c 里的 ~ 会变成 root 的家目录
 FILES = sys.argv[1:]
 if not FILES:

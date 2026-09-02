@@ -60,6 +60,8 @@ export const JA = {
   proPending: 'ひらいています…',
   proFailed: 'うまくいきませんでした。お金は引かれていません。また試せます。',
   proAndroidSoon: 'Android版の購入はただいま準備中です。いまはそのままお使いください。',
+  updRow: '新しいバージョン {v} があります',
+  updGet: 'ダウンロード',
   baseInkDesc: 'つけ直し不要、減りません',
   drawerSegStamps: '押したはんこ',
   drawerSegInks: 'インク台',

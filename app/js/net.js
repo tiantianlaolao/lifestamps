@@ -29,6 +29,25 @@ const API = new URL('api/', BASE).href;
 
 const TIMEOUT = 8000;
 
+// 安卓官网直装的更新描述（9-02）：build-android.yml 每次正式发布写一份 dl/android.json
+//   { versionCode, versionName, url, size, sha256, date }。
+// 失败/没有一律 null（跟本文件其它函数同一条规矩：网不通不能影响任何页面）。
+export async function androidUpdateInfo() {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), TIMEOUT);
+  try {
+    const r = await fetch(new URL('dl/android.json', BASE).href + '?t=' + Date.now(),
+      { signal: ctl.signal, cache: 'no-store' });
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    return j && j.versionCode && j.url ? j : null;
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function call(path, opts) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TIMEOUT);

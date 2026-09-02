@@ -5,8 +5,8 @@ import { STAMPS, GLYPHS, isGlyph, HIDDEN, GIFTS, GIFT_WAX, CATEGORIES, INKS, COP
 import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint, inkMainColor, inkCSS, darken, seedOf, weatherSVG } from './stamp.js';
 import { store, dateKey, fmtTime, posOf } from './store.js';
 import { sync } from './sync.js';
-import { iapPrice, iapBuy, iapRestore, isAndroid, initAndroidShell } from './native.js';
-import { collectGifts, claimTicket, authSmsSend, smsSupported } from './net.js';
+import { iapPrice, iapBuy, iapRestore, isAndroid, initAndroidShell, appBuild, openExternal } from './native.js';
+import { collectGifts, claimTicket, authSmsSend, smsSupported, androidUpdateInfo } from './net.js';
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked } from './hidden.js';
 import { verdictOf } from './verdict.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
@@ -251,6 +251,7 @@ function init() {
   renderTabLabels();
   initDiag();               // 真机诊断面板：「我的」页版本号连点 5 下
   initAndroidShell(handleBack);   // 安卓壳：返回键 + 状态栏图标色（iOS/网页里是空操作）
+  checkAndroidUpdate();           // 安卓官网直装：有没有新版本（不 await，网不通不挡首屏）
   freezeViewport();         // 纸的高度预算：量一次冻住（必须在第一次 render 之前）
   window.addEventListener('resize', freezeViewport);
   applyLook();
@@ -331,6 +332,32 @@ function handleBack() {
   if (curTab === 'today' && deckOpen) { setDeckOpen(false); return true; }
   if (curTab !== 'today') { switchTab('today'); return true; }
   return false;
+}
+
+// ---- 安卓官网直装的更新检查（9-02）----
+// 没有商店替我们推更新，不查的话用户永远停在第一版。规矩：
+//   · 只在安卓壳里查；每 6 小时最多查一次；结果落 localStorage（裸键，不进 store = 不同步，设备日常态）
+//   · 查到更新：开机 toast 一句 + 「我的」页多一行「有新版本 · 去下载」，点了用系统浏览器开 APK 地址
+//   · 装完新版再开：存着的那份 versionCode 不再大于当前，自动清掉
+// 🔴 别自动下载、别弹窗强更：这是本子不是工具，打扰一次就够了。
+const UPD_K = 'lifestamps_updInfo';
+let updInfo = null;
+async function checkAndroidUpdate() {
+  if (!isAndroid()) return;
+  const cur = await appBuild();
+  if (!cur) return;                                          // 老包没 App 桥 / 拿不到构建号：不查
+  try { updInfo = JSON.parse(localStorage.getItem(UPD_K) || 'null'); } catch (_) { updInfo = null; }
+  if (updInfo && !(+updInfo.versionCode > cur)) { updInfo = null; localStorage.removeItem(UPD_K); }
+  const last = +(localStorage.getItem(UPD_K + 'At') || 0);
+  if (Date.now() - last < 6 * 3600e3) return;
+  const info = await androidUpdateInfo();
+  localStorage.setItem(UPD_K + 'At', String(Date.now()));
+  if (!info || !(+info.versionCode > cur)) return;
+  const fresh = !updInfo || updInfo.versionCode !== info.versionCode;
+  updInfo = info;
+  localStorage.setItem(UPD_K, JSON.stringify(info));
+  if (fresh) toast(COPY.updRow.replace('{v}', 'V' + (info.versionName || '')), 2600);
+  if (curTab === 'me') renderMe();
 }
 
 // 把所有已经过完的月份的称号定格下来（跨月第一次打开时自动补，历史数据也一并补上）
@@ -2430,7 +2457,10 @@ function renderMe() {
         <label class="switch"><input type="checkbox" id="sw-haptic" ${store.settings.haptic ? 'checked' : ''}><i></i></label></div>
       <div class="me-item"><span class="k">${COPY.setWipe}</span><button id="btn-wipe" class="danger">${COPY.wipeBtn}</button></div>
     </div>
+    ${updInfo ? `<div class="me-item"><span class="k">${COPY.updRow.replace('{v}', 'V' + esc(updInfo.versionName || ''))}</span>
+      <button class="pk dark" id="btn-upd">${COPY.updGet}</button></div>` : ''}
     <div class="me-foot">${COPY.appName} · V1.18</div>`;
+  $('#btn-upd')?.addEventListener('click', () => openExternal(updInfo.url));
 
   // ⚠️ 一律限定在本页里选，别用全文档选择器——那是上面那个 bug 的另一半原因
   document.querySelectorAll('#page-me [data-font]').forEach(b2 =>

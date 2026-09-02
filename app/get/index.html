@@ -66,9 +66,11 @@ h1{font-family:"LXGW WenKai",serif;font-size:34px;letter-spacing:.14em;font-weig
   // ==== 上架之后只改这一块 ====
   // 把 ready 改成 true，并填上真实地址；已经发出去的分享卡全部自动生效。
   var STORE = {
-    ready: false,
+    ready: false,                  // iOS 上架后改 true 并填 ios
     ios: '',                       // 例：https://apps.apple.com/cn/app/id6805745519
-    android: '',                   // 例：https://www.tybbtech.com/lifestamps/app-release.apk
+    // 安卓中国版 = 官网直装（9-02）：固定地址，正式线每次发布覆盖；
+    // 有没有发过不靠这里的开关，靠下面探测 dl/android.json（没发过就 404 → 按钮不出现）。
+    android: '../dl/chuoleme.apk',
   };
   var WEB = '../';                 // 网页版：上架前所有平台都先来这儿
 
@@ -125,27 +127,32 @@ h1{font-family:"LXGW WenKai",serif;font-size:34px;letter-spacing:.14em;font-weig
   var sub = document.getElementById('sub');
   sub.textContent = T('sub');
 
-  if (STORE.ready) {
-    if (isIOS && STORE.ios) { cta.href = STORE.ios; cta.textContent = T('toStore'); note.textContent = ''; }
-    else if (isAndroid && STORE.android) { cta.href = STORE.android; cta.textContent = T('toApk'); note.textContent = ''; }
-    else { cta.href = WEB; cta.textContent = T('openWeb'); note.textContent = T('betterApp'); }
-  } else {
-    // ⚠️ 还没上架就别写「下载 App」——那是文案说了代码没做的事。
-    cta.href = WEB;
-    cta.textContent = T('tryWeb');
-    note.textContent = T('noteSoon');
-  }
-
-  if (!isMobile) {
-    note.textContent = T('betterPhone');
-  }
-
-  // 微信内打不开应用商店，只能引导去浏览器。
-  // ⚠️ 上架前按钮指的是网页版，微信里点得开，所以这层只在**真要跳商店**时才亮。
-  if (isWx && STORE.ready && (isIOS || isAndroid)) {
+  function decide(androidReady) {
+    var iosReady = STORE.ready && !!STORE.ios;
+    var toStore = false;
+    if (isIOS && iosReady) { cta.href = STORE.ios; cta.textContent = T('toStore'); note.textContent = ''; toStore = true; }
+    else if (isAndroid && androidReady) { cta.href = STORE.android; cta.textContent = T('toApk'); note.textContent = ''; toStore = true; }
+    else if (iosReady || androidReady) { cta.href = WEB; cta.textContent = T('openWeb'); note.textContent = T('betterApp'); }
+    else {
+      // ⚠️ 还没上架就别写「下载 App」——那是文案说了代码没做的事。
+      cta.href = WEB; cta.textContent = T('tryWeb'); note.textContent = T('noteSoon');
+    }
+    if (!isMobile) note.textContent = T('betterPhone');
+    // 微信内打不开应用商店也下不了安装包，只能引导去浏览器。
+    // ⚠️ 指网页版时微信里点得开，所以这层只在**真要跳商店/下载**时才亮。
     var wx = document.getElementById('wx');
-    wx.style.display = 'block';
-    wx.addEventListener('click', function () { wx.style.display = 'none'; });
+    if (isWx && toStore) {
+      wx.style.display = 'block';
+      wx.addEventListener('click', function () { wx.style.display = 'none'; });
+    }
+  }
+  decide(false);
+  // 安卓正式包发过没有：探一下 dl/android.json（正式线每次发布都写）。没发过 404 → 保持网页版按钮。
+  if (isAndroid && window.fetch) {
+    fetch('../dl/android.json?t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { if (j && j.versionCode) decide(true); })
+      .catch(function () {});
   }
 })();
 </script>

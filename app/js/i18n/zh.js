@@ -66,6 +66,8 @@ export const ZH = {
   proPending: '正在打开…',
   proFailed: '没能完成，钱不会被扣。可以再试一次。',
   proAndroidSoon: '安卓版的购买入口还在准备，先随便用。',
+  updRow: '有新版本 {v}',
+  updGet: '去下载',
   baseInkDesc: '不用蘸，也不消耗',
   drawerSegStamps: '我盖过的',
   drawerSegInks: '印泥盒',

@@ -60,6 +60,8 @@ export const EN = {
   proPending: 'Unlocking…',
   proFailed: 'Didn’t go through — you won’t be charged. Try again anytime.',
   proAndroidSoon: 'Purchases on Android are still being set up. Enjoy it for now.',
+  updRow: 'New version {v} is out',
+  updGet: 'Download',
   baseInkDesc: 'no dipping, never runs out',
   drawerSegStamps: 'My stamps',
   drawerSegInks: 'Ink pads',

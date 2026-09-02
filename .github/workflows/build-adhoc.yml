@@ -258,7 +258,8 @@ jobs:
           <p>测试包 v${VERSION} (build ${BUILD_NUM})</p>
           <p><a class="install" href="itms-services://?action=download-manifest&amp;url=${BASE}/manifest.plist">安装</a></p>
           <div class="n">用 iPhone 的 Safari 打开这一页才能装<br>
-          只能装进已注册的设备<br>装完若提示「未受信任」：设置 → 通用 → VPN 与设备管理 → 信任</div>
+          只能装进已注册的设备<br>装完若提示「未受信任」：设置 → 通用 → VPN 与设备管理 → 信任<br>
+          安卓请开 <a href="android.html">android.html</a></div>
           HTML
           ls -l $RUNNER_TEMP/export
 

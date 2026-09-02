@@ -59,6 +59,7 @@ export const JA = {
   proThanks: 'ひらきました。きょうは何色で残しますか？',
   proPending: 'ひらいています…',
   proFailed: 'うまくいきませんでした。お金は引かれていません。また試せます。',
+  proAndroidSoon: 'Android版の購入はただいま準備中です。いまはそのままお使いください。',
   baseInkDesc: 'つけ直し不要、減りません',
   drawerSegStamps: '押したはんこ',
   drawerSegInks: 'インク台',

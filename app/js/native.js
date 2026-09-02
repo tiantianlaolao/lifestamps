@@ -144,3 +144,34 @@ export async function nativeLogin(provider) {
     return null;                                   // 用户点了取消也走这儿，安静收场
   }
 }
+
+// ---- 安卓壳（9-02）------------------------------------------------------------
+/** 现在是不是安卓壳（网页版 / iOS 壳恒为 false） */
+export const isAndroid = () => !!(window.Capacitor && window.Capacitor.getPlatform
+  && window.Capacitor.getPlatform() === 'android');
+
+/**
+ * 安卓壳启动时接两样：
+ * ① 系统返回键。🔴 挂了 backButton 监听后 Capacitor 就不再替我们处理返回，
+ *    「什么都没得关时退出 App」也得自己调 exitApp —— 不挂的话默认行为是直接退出，
+ *    弹层开着按一下返回整个 App 就没了（这是安卓壳最先被用户撞到的问题）。
+ *    关什么、按什么顺序关由 main.js 的 onBack 决定，这里只管接线；onBack 返回 true = 已消化。
+ * ② 状态栏图标颜色。Capacitor 8 起安卓强制边到边，状态栏背景归网页画（--safe-area-inset-top），
+ *    这里只把图标定成深色（纸是浅色）。SystemBars 是 core 自带插件，老包没有就跳过。
+ * iOS 壳里这个函数什么都不做（iOS 没有返回键，状态栏走 Info.plist）。
+ */
+export function initAndroidShell(onBack) {
+  if (!isAndroid()) return;
+  const p = P();
+  if (p && p.App && p.App.addListener) {
+    p.App.addListener('backButton', () => {
+      let handled = false;
+      try { handled = !!onBack(); } catch (_) { handled = false; }
+      if (!handled) p.App.exitApp();
+    });
+  }
+  if (p && p.SystemBars && p.SystemBars.setStyle) {
+    // LIGHT = 浅色背景配深色图标（枚举名说的是背景不是图标，别记反）
+    p.SystemBars.setStyle({ style: 'LIGHT' }).catch(() => {});
+  }
+}

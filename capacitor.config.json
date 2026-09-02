@@ -6,6 +6,10 @@
     "contentInset": "never",
     "backgroundColor": "#EAE5DA"
   },
+  "android": {
+    "backgroundColor": "#EAE5DA",
+    "minWebViewVersion": 92
+  },
   "server": {
     "androidScheme": "https"
   }

@@ -27,6 +27,7 @@ package-lock.json
 
 # 图标是要进仓的（上面 *.png 一刀切会把它也挡掉）
 !ios-assets/**/*.png
+!android-assets/**/*.png
 
 # 🔴 内部规划文档不进仓（2026-08-28 已从全历史抹掉后加的这条）：
 #    里面有定价/内购档位/未上线功能清单，仓库要临时公开跑 CI，这些不能跟着出去。
@@ -40,3 +41,6 @@ package-lock.json
 # 运行时产生的库：分享内容 + 匿名赠礼，不进仓
 server/data/
 __pycache__/
+
+# 安卓签名 keystore + 口令卡（9-02）：绝不进仓，备份在 D:\ios密钥备份\lifestamps-android\
+_android_signing/

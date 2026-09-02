@@ -5,7 +5,7 @@ import { STAMPS, GLYPHS, isGlyph, HIDDEN, GIFTS, GIFT_WAX, CATEGORIES, INKS, COP
 import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint, inkMainColor, inkCSS, darken, seedOf, weatherSVG } from './stamp.js';
 import { store, dateKey, fmtTime, posOf } from './store.js';
 import { sync } from './sync.js';
-import { iapPrice, iapBuy, iapRestore } from './native.js';
+import { iapPrice, iapBuy, iapRestore, isAndroid, initAndroidShell } from './native.js';
 import { collectGifts, claimTicket, authSmsSend, smsSupported } from './net.js';
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked } from './hidden.js';
 import { verdictOf } from './verdict.js';
@@ -250,6 +250,7 @@ function init() {
 
   renderTabLabels();
   initDiag();               // 真机诊断面板：「我的」页版本号连点 5 下
+  initAndroidShell(handleBack);   // 安卓壳：返回键 + 状态栏图标色（iOS/网页里是空操作）
   freezeViewport();         // 纸的高度预算：量一次冻住（必须在第一次 render 之前）
   window.addEventListener('resize', freezeViewport);
   applyLook();
@@ -315,6 +316,21 @@ function freezeViewport() {
   if (typing && vpH) return;
   vpH = innerHeight;
   document.documentElement.style.setProperty('--vh-fixed', vpH + 'px');
+}
+
+// ---- 安卓返回键（9-02）：从"最上面那层"往下关，一次只关一层；没得关了才退出 ----
+// 顺序 = 屏幕上视觉最靠前的先关：弹层/抽屉 → 本子里摊开的某天 → 展开的托盘 → 别的 tab 回今日 → 退出。
+// 🔴 引导页期间返回键不作数（引导只能走完或跳过，半途关掉会留下"未引导"状态，下次又来一遍）。
+// 🔴 封面态（#opening 在场）按返回 = 退出：本子合着就是"什么都没开"。
+// 返回 true = 消化掉了；false = 交回给壳去 exitApp。
+function handleBack() {
+  if ($('#ov-onboard.show')) return true;
+  if (document.querySelector('.sheet.show, .overlay.show')) { closeSheets(); return true; }
+  if ($('#opening')) return false;
+  if (bookMode) { bookMode = false; switchTab('memories'); return true; }
+  if (curTab === 'today' && deckOpen) { setDeckOpen(false); return true; }
+  if (curTab !== 'today') { switchTab('today'); return true; }
+  return false;
 }
 
 // 把所有已经过完的月份的称号定格下来（跨月第一次打开时自动补，历史数据也一并补上）
@@ -1515,6 +1531,9 @@ async function startPurchase() {
     toast(COPY.proThanks, 1800); haptic();
     return true;
   }
+  // 安卓壳（9-02）：官网直装的包没有 Play Billing，购买走网页支付——支付路线用户说往后放，
+  // 这里先只给一句话，别让 iapBuy 去撞一个不存在的桥然后报"没能完成"。
+  if (isAndroid()) { toast(COPY.proAndroidSoon, 2200); return false; }
   const r = await iapBuy();
   if (r === 'ok') {
     store.setPro(true);                          // setPro 里带同步埋点，另一台设备也会亮
@@ -2237,6 +2256,15 @@ function accountHTML() {
       if (!phoneLoginOK()) return `<div class="acc-hint">${COPY.accWebOnly}</div>`;
       return `<div class="acc-hint">${COPY.accHint}</div>
         ${phoneRowsHTML()}
+        <div class="acc-msg" id="acc-msg"></div>`;
+    }
+    // 安卓壳（9-02 用户拍板）：国内=只有手机号，海外=只有 Google 邮箱。没有 Apple 键。
+    //   "国内还是海外"不看构建参数，看所连服务端支不支持短信（phoneCapable 能力探测）：
+    //   连国内 1.13 → 手机号；连美服 stampday → Google。零分叉，跟 iOS 那条探测同一根。
+    if (isAndroid()) {
+      return `<div class="acc-hint">${COPY.accHint}</div>
+        ${phoneLoginOK() ? phoneRowsHTML()
+          : `<button class="acc-btn" id="acc-google">${COPY.accLoginGoogle}</button>`}
         <div class="acc-msg" id="acc-msg"></div>`;
     }
     return `<div class="acc-hint">${COPY.accHint}</div>

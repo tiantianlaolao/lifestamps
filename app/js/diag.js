@@ -13,7 +13,8 @@ function num(el) {                    // 元素能不能滚 + 滚多少
 function safeArea() {
   const p = document.createElement('div');
   p.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;'
-    + 'padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)';
+    + 'padding-top:var(--safe-area-inset-top, env(safe-area-inset-top));'
+    + 'padding-bottom:var(--safe-area-inset-bottom, env(safe-area-inset-bottom))';   // 安卓壳由 SystemBars 注入 var，iOS 走 env
   document.body.appendChild(p);
   const cs = getComputedStyle(p);
   const v = `${cs.paddingTop} / ${cs.paddingBottom}`;

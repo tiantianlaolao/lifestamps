@@ -1,0 +1,165 @@
+name: Build Android Test APK & Deploy OTA（测试包，官网直装）
+
+# 手动触发，或者打 android-test-vX.Y.Z 的 tag。
+# 跟 build-adhoc.yml（iOS 测试线）同一套思路：仓里没有 android/，每次 `npx cap add android` 现生成；
+# 图标/启动图从 android-assets/ 注入；出包后签名、传到 /var/www/lifestamps/_t/ 由手机浏览器直接下载安装。
+# 🔴 签名：Capacitor 生成的 build.gradle 没有 release signingConfig，而且不能手改（下次生成就冲掉）——
+#    所以这里出**未签名**包，再用 build-tools 的 zipalign + apksigner 签。keystore 从 secret 解出来，
+#    本地原件在 D:\ios密钥备份\lifestamps-android\（丢了已装用户无法原地升级）。
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'android-test-v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 完整历史：versionCode = git rev-list --count HEAD，浅克隆会永远是 1
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Capacitor 8：AGP 8.13 + Gradle 8.14，JDK 17 起可用，这里用 21
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # ⚠️ 用 npm install 不是 npm ci：本仓刻意不提交 package-lock.json
+      - name: Install Capacitor
+        run: npm install
+
+      # 🔴 服务器归属：测试线不注入，走默认 = 国内 www/1.13（能测手机号登录=中国区版预览）。
+      #    海外正式线以后另开 workflow，把 WEB_BASE 换成 stampday（照 build-ios.yml 那步）。
+      - name: Assert app points at China server (test lane)
+        run: |
+          grep -q "^const WEB_BASE = 'https://www.tybbtech.com/lifestamps/';" app/js/net.js
+          echo "测试线 WEB_BASE = 国内 www（默认值，未注入）"
+
+      - name: Generate Android project
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      # 🔴 dev/ 是校验探针页，能改 localStorage，不能随包出去
+      - name: Strip dev harnesses from the bundle
+        run: |
+          rm -rf android/app/src/main/assets/public/dev
+          test ! -d android/app/src/main/assets/public/dev
+          echo "bundle 内容："; ls android/app/src/main/assets/public
+
+      - name: Inject icons, splash, display name, version, orientation
+        run: |
+          cp -R android-assets/res/. android/app/src/main/res/
+          test -f android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png
+          # 图标下的名字：全球统一 Stampday（跟 iOS CFBundleDisplayName 一致）
+          S=android/app/src/main/res/values/strings.xml
+          sed -i 's#<string name="app_name">.*</string>#<string name="app_name">Stampday</string>#' $S
+          sed -i 's#<string name="title_activity_main">.*</string>#<string name="title_activity_main">Stampday</string>#' $S
+          grep -q '<string name="app_name">Stampday</string>' $S
+          # 版本：versionName 取 package.json，versionCode 取提交数（跟 iOS build number 同源）
+          VERSION=$(node -p "require('./package.json').version")
+          BUILD_NUM=$(git rev-list --count HEAD)
+          G=android/app/build.gradle
+          sed -i "s/versionCode 1$/versionCode $BUILD_NUM/" $G
+          sed -i "s/versionName \"1.0\"/versionName \"$VERSION\"/" $G
+          grep -q "versionCode $BUILD_NUM" $G
+          grep -q "versionName \"$VERSION\"" $G
+          echo "版本 $VERSION / versionCode $BUILD_NUM"
+          # 竖屏锁定：这个 App 没有横屏版式
+          M=android/app/src/main/AndroidManifest.xml
+          sed -i 's#android:name=".MainActivity"#android:name=".MainActivity"\n            android:screenOrientation="portrait"#' $M
+          grep -q 'android:screenOrientation="portrait"' $M
+
+      - name: Build unsigned release APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+          ls -l app/build/outputs/apk/release/
+
+      - name: Sign APK (zipalign + apksigner)
+        env:
+          KS_B64: ${{ secrets.LS_ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.LS_ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.LS_ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.LS_ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ]; then
+            echo "::error::LS_ANDROID_KEYSTORE_BASE64 没配（仓 Settings → Secrets → Actions，四个都要）"; exit 1
+          fi
+          BT=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)
+          echo "build-tools: $BT"
+          echo -n "$KS_B64" | base64 -d > $RUNNER_TEMP/release.jks
+          UNSIGNED=android/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -f "$UNSIGNED"
+          "$BT/zipalign" -p -f 4 "$UNSIGNED" $RUNNER_TEMP/aligned.apk
+          "$BT/apksigner" sign --ks $RUNNER_TEMP/release.jks --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:KS_PASS --key-pass env:KEY_PASS \
+            --out $RUNNER_TEMP/Stampday.apk $RUNNER_TEMP/aligned.apk
+          "$BT/apksigner" verify --print-certs $RUNNER_TEMP/Stampday.apk
+          rm -f $RUNNER_TEMP/release.jks
+          ls -l $RUNNER_TEMP/Stampday.apk
+
+      # ---- OTA：安卓装机页放在 iOS 那页旁边（同一目录 _t/，网页部署脚本已 --exclude '_t/'）----
+      - name: Generate android.html
+        run: |
+          BASE=https://www.tybbtech.com/lifestamps/_t
+          VERSION=$(node -p "require('./package.json').version")
+          BUILD_NUM=$(git rev-list --count HEAD)
+          SIZE=$(( $(stat -c %s $RUNNER_TEMP/Stampday.apk) / 1048576 ))
+          cat > $RUNNER_TEMP/android.html <<HTML
+          <!doctype html><meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>戳了么 · 安卓测试包</title>
+          <style>body{font:16px/1.8 system-ui,-apple-system;margin:0;padding:56px 24px;
+          background:#EAE5DA;color:#252421;text-align:center}
+          h1{font-size:22px;margin:0 0 6px}p{color:#8C8880;font-size:14px;margin:4px 0}
+          a.install{display:inline-block;margin-top:28px;padding:14px 34px;background:#C94B3C;
+          color:#fff;text-decoration:none;border-radius:10px;font-size:17px}
+          .n{margin-top:34px;font-size:12px;color:#A79E92;line-height:1.9}</style>
+          <h1>戳了么</h1>
+          <p>安卓测试包 v${VERSION} (build ${BUILD_NUM}) · 约 ${SIZE} MB</p>
+          <p><a class="install" href="${BASE}/Stampday.apk">下载安装</a></p>
+          <div class="n">用手机浏览器打开这一页下载，下载完点开安装<br>
+          首次会提示「允许安装未知来源应用」，允许即可<br>
+          已装过的直接覆盖安装，记录不丢<br>
+          iPhone 请回 <a href="install.html">install.html</a></div>
+          HTML
+          ls -l $RUNNER_TEMP/android.html
+
+      - name: Deploy OTA
+        env:
+          OTA_SSH_HOST: ${{ secrets.OTA_SSH_HOST }}
+          OTA_SSH_PORT: ${{ secrets.OTA_SSH_PORT }}
+          OTA_SSH_USER: ${{ secrets.OTA_SSH_USER }}
+          OTA_SSH_PASSWORD: ${{ secrets.OTA_SSH_PASSWORD }}
+        run: |
+          # ubuntu runner 的系统 Python 同样受 PEP 668 保护，走 venv
+          python3 -m venv $RUNNER_TEMP/venv
+          $RUNNER_TEMP/venv/bin/python -m pip install --quiet paramiko
+          $RUNNER_TEMP/venv/bin/python ci/ota_deploy.py \
+            $RUNNER_TEMP/Stampday.apk \
+            $RUNNER_TEMP/android.html
+
+      - name: Print install URL
+        run: |
+          echo '::notice title=安卓安装地址::手机浏览器打开 https://www.tybbtech.com/lifestamps/_t/android.html'
+
+      - name: Keep the APK as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stampday-test-apk
+          path: ${{ runner.temp }}/Stampday.apk
+          retention-days: 7
+          if-no-files-found: error

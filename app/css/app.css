@@ -83,7 +83,7 @@ body{
 #app{
   position:relative; max-width:430px; height:100dvh; margin:0 auto;
   background-color:var(--paper); display:flex; flex-direction:column; overflow:hidden;
-  padding-top:env(safe-area-inset-top);
+  padding-top:var(--safe-area-inset-top, env(safe-area-inset-top));
 }
 /* 碎花只铺在本子/抽屉/我的三页——今日页按规格 §7.1a 是「一张木桌」，桌面归木纹，
    两种桌面不能同时铺（8-26 用户拍板：冲突以规格为准，碎花做取舍）。 */
@@ -111,7 +111,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 /* ---------- 标签栏 ---------- */
 #tabbar{
   display:flex; border-top:1px solid var(--line); background:var(--paper);
-  padding-bottom:env(safe-area-inset-bottom); z-index:20; position:relative;
+  padding-bottom:var(--safe-area-inset-bottom, env(safe-area-inset-bottom)); z-index:20; position:relative;
 }
 #tabbar button{
   flex:1; padding:9px 0 7px; background:none; border:none; color:var(--sub);
@@ -191,7 +191,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   background:var(--paper); border-radius:10px 10px 0 0; border-top:1px solid var(--line);
   transform:translateY(105%); transition:transform .26s cubic-bezier(.3,1,.4,1);
   max-height:76%; display:flex; flex-direction:column;
-  padding-bottom:env(safe-area-inset-bottom);
+  padding-bottom:var(--safe-area-inset-bottom, env(safe-area-inset-bottom));
 }
 .sheet.show{transform:translateY(0)}
 .sheet-grab{width:34px; height:4px; background:var(--line); border-radius:2px; margin:9px auto 2px}

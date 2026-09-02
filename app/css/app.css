@@ -1775,13 +1775,14 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
    🔴 8-31 用户指出 web 宽窗口纸底怼死托盘：手机上纸被「宽度」先卡住、
    托盘 margin-top:auto 贴底自然有空隙；宽窗口纸被「高度」顶满预算，预算里
    没留一像素间距就贴死。margin-bottom 在手机上被 auto margin 吸收=零变化。 */
+/* 🔴 9-02 预算改读 --vh-fixed（main.js freezeViewport 启动量一次 innerHeight 写进来）：
+   安卓老内核弹键盘会把布局视口压掉键盘那截，直接读 100vh/100dvh 纸会缩到几十像素。
+   第一行 100vh 是无 JS 的回落；⛔ 别再加 @supports(100dvh) 覆盖——它会把冻结值盖掉。 */
 #page-today .book{
   width:100%; align-self:center;
   margin-bottom:14px;
   max-width:calc((100vh - 348px) * 0.769);
-}
-@supports (height:100dvh){
-  #page-today .book{max-width:calc((100dvh - 348px) * 0.769)}
+  max-width:calc((var(--vh-fixed, 100vh) - 348px) * 0.769);
 }
 
 /* 展开态右上角那句「按住一枚章能拎起来」（8-27 新手势的可发现性）

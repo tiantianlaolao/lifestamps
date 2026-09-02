@@ -27,6 +27,8 @@ function refresh() {
   live.textContent = [
     `原生壳      ${window.Capacitor ? (window.Capacitor.getPlatform?.() || 'yes') : '否（浏览器）'}`,
     `窗口高      innerHeight ${innerHeight} / visualViewport ${Math.round(visualViewport?.height || 0)}`,
+    // 9-02 纸预算冻结值：弹键盘时 innerHeight 掉了而这个没掉 = 冻结起作用；两个一起掉 = 没起作用
+    `纸预算冻结  --vh-fixed ${getComputedStyle(de).getPropertyValue('--vh-fixed').trim() || '（未设）'}`,
     `安全区      上 ${safeArea()} 下`,
     `<html> 滚   ${num(de)}`,
     `<body> 滚   ${num(document.body)}`,

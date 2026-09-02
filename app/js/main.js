@@ -250,6 +250,8 @@ function init() {
 
   renderTabLabels();
   initDiag();               // 真机诊断面板：「我的」页版本号连点 5 下
+  freezeViewport();         // 纸的高度预算：量一次冻住（必须在第一次 render 之前）
+  window.addEventListener('resize', freezeViewport);
   applyLook();
   applyBand(false);
   document.addEventListener('visibilitychange', () => {
@@ -294,6 +296,25 @@ function init() {
     d.textContent = `PROBE iw=${innerWidth} app=${r.x},${r.width}`;
     document.body.appendChild(d);
   }
+}
+
+// ---- 纸的高度预算：量一次冻住，别跟着键盘走（9-02）----
+// 🔴 起因：安卓老内核（Chrome 108 以前的系统 WebView、多数国产浏览器）弹键盘会把**整个布局视口**
+//    压掉键盘那一截，vh / dvh 跟着缩，纸按 (100vh − 348px) × 0.769 算出来只剩几十像素
+//    （用户实测「今日页输入文字后纸特别小」）。新内核只缩视觉视口、vh 不动，本来没事。
+// 做法：启动量一次 innerHeight 写进 --vh-fixed，app.css 里纸的预算改读它（无 JS 回落 100vh）。
+//    之后的 resize：页面里有输入框正聚焦 → 当它是键盘，不认；没在打字 → 照常重量
+//    （桌面浏览器改窗口、横竖屏切换都走这条）。键盘收起时若输入框已失焦会重量回原高，
+//    若还聚焦着就保持冻结值 —— 两种结果都是原高，殊途同归。
+// ⚠️ 只冻纸的预算，不冻 #app：老内核键盘弹起时整体布局仍会缩，纸保持原大小，
+//    超出的那截由 main 临时滚动，键盘收起自动复原。别去冻 #app，那会把输入框顶到屏幕外。
+let vpH = 0;
+function freezeViewport() {
+  const el = document.activeElement;
+  const typing = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+  if (typing && vpH) return;
+  vpH = innerHeight;
+  document.documentElement.style.setProperty('--vh-fixed', vpH + 'px');
 }
 
 // 把所有已经过完的月份的称号定格下来（跨月第一次打开时自动补，历史数据也一并补上）
@@ -2475,10 +2496,21 @@ function showOnboard(step) {
   ov.classList.add('show');
   $('#ob-next').onclick = () => {
     if (step < 2) showOnboard(step + 1);
-    else { ov.classList.remove('show'); store.settings.onboarded = true; store.persist(); }
+    else finishOnboard(ov);
   };
   const skip = $('#ob-skip');
-  if (skip) skip.onclick = () => { ov.classList.remove('show'); store.settings.onboarded = true; store.persist(); };
+  if (skip) skip.onclick = () => finishOnboard(ov);
+}
+// 引导走完（完成 / 跳过同一条路）。
+// 🔴 9-02 用户拍板：新装打开先看到的必须是封面，之后合不合上随你、下次按上次状态走。
+//    原来这里只关弹层不摆封面：首屏渲染时 playOpening 因「未引导」直接返回，纸就露着；
+//    引导一关人看到的是摊开的纸，等下一次不相干的重渲染（选章/盖章/切页）封面才突然盖上来
+//    ——iOS 删除重装实测就是「先进盖章页、再退回封面」。所以引导一结束立刻摆封面，
+//    playOpening 内部照旧只认 store.bookClosed（新装默认合着），老用户不走引导零变化。
+function finishOnboard(ov) {
+  ov.classList.remove('show');
+  store.settings.onboarded = true; store.persist();
+  playOpening();
 }
 
 // ============================================================

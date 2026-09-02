@@ -1,0 +1,80 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>纸预算冻结探针</title>
+<!-- 9-02：守「今日页输入文字后纸变得特别小」的修复（main.js freezeViewport + app.css --vh-fixed）。
+     病灶=安卓老内核弹键盘会压缩整个布局视口，纸按 100vh 算就跟着缩。
+     这里用 iframe 改高来模拟布局视口被键盘压掉 260px：
+       ① 有输入框聚焦时缩 → 纸宽必须不变（就是要防的现象）
+       ② 反向自证：iframe 里 innerHeight 确实缩了（证明探针活着，不是没生效才"没变"）
+       ③ 没在打字时缩 → 纸要跟着缩（桌面改窗口那条路不能被顺手冻死）
+     ⚠️ 老代码跑这一页 ① 必红（8-31 之前的 dvh 写法在 iframe 里同样跟着缩，本机复现过）。 -->
+<style>body{margin:0;font:13px/1.8 monospace;padding:10px}iframe{border:1px solid #999;display:block;margin-bottom:8px}
+.p{color:#2a7}.f{color:#c33}</style>
+<div id="out">跑着…</div>
+<script>
+localStorage.setItem('lifestamps_bookClosed', 'false');   // 要纸不要封面
+const W = 390, H = 780, KB = 260;
+const out = document.getElementById('out');
+let pass = 0, fail = 0;
+function ok(cond, msg) {
+  const d = document.createElement('div');
+  d.className = cond ? 'p' : 'f';
+  d.textContent = (cond ? 'PASS ' : 'FAIL ') + msg;
+  out.appendChild(d);
+  cond ? pass++ : fail++;
+}
+const wait = ms => new Promise(r => setTimeout(r, ms));
+(async () => {
+  const f = document.createElement('iframe');
+  f.width = W; f.height = H;
+  f.src = '../index.html?skipob=1&demo=1';
+  document.body.appendChild(f);
+  await new Promise(r => { f.onload = () => setTimeout(r, 1400); });
+  const doc = f.contentDocument, win = f.contentWindow;
+  const bookW = () => doc.querySelector('#page-today .book').getBoundingClientRect().width;
+  const vhVar = () => win.getComputedStyle(doc.documentElement).getPropertyValue('--vh-fixed').trim();
+
+  // 🔴 别用固定 sleep 等 resize：无头浏览器的帧不按点来，resize 事件跟着帧走，
+  //    300ms 有时等不到（本机实测两次两种红法）。改成数 resize 事件：改高 → 等到事件真派发了再断言。
+  //    main.js 的监听在启动时就挂上了，这里的监听后挂 → 同一事件里它先跑，断言时冻结值已经更新过。
+  let rs = 0;
+  win.addEventListener('resize', () => { rs++; });
+  async function resizeTo(h) {
+    const n = rs; f.height = h;
+    const t0 = Date.now();
+    while (rs === n && Date.now() - t0 < 4000) await wait(30);
+    if (rs === n) ok(false, `resize 事件 4s 没来（量具问题，不是被测代码）h=${h}`);
+    await wait(30);
+  }
+
+  const w0 = bookW();
+  ok(vhVar() === H + 'px', `启动冻结 --vh-fixed=${vhVar()}（应为 ${H}px）`);
+  ok(w0 > 100, `纸初始宽 ${w0.toFixed(1)}px`);
+
+  // ① 打字中，布局视口被键盘压掉 260px
+  const inp = doc.createElement('input');
+  doc.body.appendChild(inp); inp.focus();
+  ok(doc.activeElement === inp, '输入框已聚焦（模拟正在写字）');
+  await resizeTo(H - KB);
+  ok(win.innerHeight === H - KB, `反向自证：iframe 里 innerHeight 确实缩到 ${win.innerHeight}`);
+  ok(Math.abs(bookW() - w0) < 1, `① 键盘弹起时纸宽不变 ${bookW().toFixed(1)} vs ${w0.toFixed(1)}`);
+  ok(vhVar() === H + 'px', `① --vh-fixed 仍是 ${vhVar()}`);
+
+  // 键盘收起但输入框还聚焦着（安卓返回键收键盘就是这样）
+  await resizeTo(H);
+  ok(Math.abs(bookW() - w0) < 1, `键盘收起（仍聚焦）纸宽仍是原值 ${bookW().toFixed(1)}`);
+
+  // ③ 没在打字：视口缩 260 纸要跟着缩（桌面改窗口）
+  inp.blur(); inp.remove();
+  await resizeTo(H - KB);
+  const w1 = bookW();
+  ok(w1 < w0 - 50, `③ 没在打字时视口缩 260 纸跟着缩 ${w1.toFixed(1)} < ${w0.toFixed(1)}`);
+  ok(vhVar() === (H - KB) + 'px', `③ --vh-fixed 重量为 ${vhVar()}`);
+  await resizeTo(H);
+  ok(Math.abs(bookW() - w0) < 1, `恢复后纸回原值 ${bookW().toFixed(1)}（innerHeight ${win.innerHeight} / --vh-fixed ${vhVar()} / active ${doc.activeElement && doc.activeElement.tagName}）`);
+
+  const d = document.createElement('div');
+  d.textContent = `—— 通过 ${pass} / 失败 ${fail}`;
+  out.appendChild(d);
+})();
+</script>

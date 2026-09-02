@@ -1,0 +1,70 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>新装引导→封面 探针</title>
+<!-- 9-02 用户拍板：新装打开先看到的必须是封面；之后合不合上随你，下次按上次状态走。
+     病灶=引导结束只关弹层不摆封面，封面要等下一次不相干的重渲染才盖上来（iOS 重装实测「先进盖章页再退回封面」）。
+     三条路：① 引导「完成」→ 封面立刻在场  ② 引导「跳过」→ 同样  ③ 老用户上次没合上 → 没封面（状态照旧）。
+     ⚠️ iframe 跟这页同源共用 localStorage，跑之前清掉 lifestamps_ 前缀模拟新装。 -->
+<style>body{margin:0;font:13px/1.8 monospace;padding:10px}iframe{border:1px solid #999;display:block;margin-bottom:8px}
+.p{color:#2a7}.f{color:#c33}</style>
+<div id="out">跑着…</div>
+<script>
+const out = document.getElementById('out');
+let pass = 0, fail = 0;
+function ok(cond, msg) {
+  const d = document.createElement('div');
+  d.className = cond ? 'p' : 'f';
+  d.textContent = (cond ? 'PASS ' : 'FAIL ') + msg;
+  out.appendChild(d);
+  cond ? pass++ : fail++;
+}
+const wait = ms => new Promise(r => setTimeout(r, ms));
+function fresh() {
+  Object.keys(localStorage).filter(k => k.startsWith('lifestamps_')).forEach(k => localStorage.removeItem(k));
+}
+async function open(src) {
+  const f = document.createElement('iframe');
+  f.width = 390; f.height = 780; f.src = src;
+  document.body.appendChild(f);
+  await new Promise(r => { f.onload = () => setTimeout(r, 1400); });
+  return f;
+}
+(async () => {
+  // ① 新装 → 引导三步「完成」→ 封面
+  fresh();
+  let f = await open('../index.html');
+  let doc = f.contentDocument;
+  ok(doc.querySelector('#ov-onboard.show'), '① 新装先出引导');
+  ok(!doc.querySelector('#opening'), '① 引导期间没有封面层（既定：引导自己占屏）');
+  for (let i = 0; i < 3; i++) { doc.querySelector('#ob-next').click(); await wait(120); }
+  ok(!doc.querySelector('#ov-onboard.show'), '① 三步走完引导关了');
+  ok(doc.querySelector('#opening'), '① 引导一结束封面立刻在场（不等下一次重渲染）');
+  ok(doc.querySelector('#page-today').classList.contains('op-wait'), '① 今日页处于等翻开态');
+  ok(localStorage.getItem('lifestamps_bookClosed') !== 'false', '① 本子仍是合着（翻开是人的动作）');
+  // 翻开 → 纸；再开一次（不合上）→ 直接是纸
+  doc.querySelector('#opening')?.click(); await wait(1400);   // ?. ：老代码这儿没封面层，别让探针自己崩掉
+  ok(!doc.querySelector('#opening'), '① 碰一下封面翻开了');
+  ok(localStorage.getItem('lifestamps_bookClosed') === 'false', '① 翻开后记为「没合上」');
+  f.remove();
+
+  // ③ 老用户上次没合上 → 再开直接是纸
+  f = await open('../index.html');
+  doc = f.contentDocument;
+  ok(!doc.querySelector('#ov-onboard.show'), '③ 老用户不再出引导');
+  ok(!doc.querySelector('#opening'), '③ 上次没合上 → 直接是纸');
+  f.remove();
+
+  // ② 新装 → 第一步就「跳过」→ 封面
+  fresh();
+  f = await open('../index.html');
+  doc = f.contentDocument;
+  doc.querySelector('#ob-skip').click(); await wait(120);
+  ok(!doc.querySelector('#ov-onboard.show'), '② 跳过后引导关了');
+  ok(doc.querySelector('#opening'), '② 跳过也立刻是封面');
+  f.remove();
+
+  const d = document.createElement('div');
+  d.textContent = `—— 通过 ${pass} / 失败 ${fail}`;
+  out.appendChild(d);
+})();
+</script>

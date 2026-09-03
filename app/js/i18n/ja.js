@@ -315,6 +315,9 @@ export const JA = {
   accSyncedAt: '最終同期 {t}',
   accSyncNow: '今すぐ同期',
   accLogout: 'ログアウト',
+  accDelete: 'アカウントを削除',
+  accDeleteConfirm: 'もう一度押すとアカウントと同期データを削除します',
+  accDeleted: 'アカウントを削除しました。この端末の記録はそのまま残ります。',
   accBusy: '同期しています…',
   // 電話番号ログイン（中国版ウェブのみ表示；www の言語切替のために訳を置いておく）
   accPhonePh: '電話番号',

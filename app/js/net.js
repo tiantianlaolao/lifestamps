@@ -22,6 +22,10 @@ import { seedOf } from './stamp.js';
 //    把下面这一行整体替换成 https://stampday.tybbtech.com/lifestamps/（美服独立实例，
 //    两个用户池互不相通）。⛔ 别在别处再写第二份生产域名。
 const WEB_BASE = 'https://www.tybbtech.com/lifestamps/';
+// 这个包是不是海外构建（9-03）。由上面那一行推出来，不另设开关：CI 把 WEB_BASE 换成
+// stampday 的那一刻，安卓壳里"登录用 Google 还是手机号 / 购买走 Play 还是提示 / 查不查
+// 官网更新"全部跟着切。⛔ 别在别处再判一次域名，都从这里取。
+export const IS_OVERSEAS = WEB_BASE.startsWith('https://stampday.');
 const BASE = window.Capacitor
   ? WEB_BASE
   : new URL('.', location.href.replace(/\/[^/]*$/, '/')).href;
@@ -235,6 +239,13 @@ export async function authLogin(provider, idToken, install) {
 
 export function authLogout(token) {
   return call('auth/logout', { method: 'POST', headers: { authorization: 'Bearer ' + token } });
+}
+
+// 删除账号（9-03）。返回 HTTP 状态：200 删了；401 会话已失效（服务端那边本来就没这个人了，
+// 调用方也当"删成了"）；0 网不通——这一种必须告诉用户，别装作删了。
+export async function authDeleteAccount(token) {
+  const { status } = await call('auth/delete', { method: 'POST', headers: { authorization: 'Bearer ' + token } });
+  return status;
 }
 
 // ---- 手机号登录（中国线专用；美服没配短信=501，入口在 main.js 里按站点隐藏）----

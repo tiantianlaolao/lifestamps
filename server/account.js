@@ -128,6 +128,13 @@ function mount({ db, send, readBody }) {
     touchSession: db.prepare('UPDATE sessions SET seen = ? WHERE token = ?'),
     dropSession: db.prepare('DELETE FROM sessions WHERE token = ?'),
     sweepSessions: db.prepare('DELETE FROM sessions WHERE seen < ?'),
+    // 删除账号（9-03，Google Play / App Store 都要求"能建账号就必须能在 App 里删"）：
+    // 账号半边四张表按 uid 清干净。匿名半边（shares/gifts/unlocks…）不碰——
+    // 那边本来就没有身份，installs 解绑后老分享回到"匿名安装号"状态，跟从没登录过一样。
+    dropUserSessions: db.prepare('DELETE FROM sessions WHERE uid = ?'),
+    dropUserInstalls: db.prepare('DELETE FROM installs WHERE uid = ?'),
+    dropUserItems: db.prepare('DELETE FROM sync_items WHERE uid = ?'),
+    dropUser: db.prepare('DELETE FROM users WHERE uid = ?'),
     putInstall: db.prepare(
       'INSERT INTO installs (install, uid, created) VALUES (?, ?, ?)'
       + ' ON CONFLICT(install) DO UPDATE SET uid = excluded.uid'),
@@ -335,6 +342,24 @@ function mount({ db, send, readBody }) {
     if (m === 'POST' && pathname === '/api/auth/logout') {
       const s = sessionOf(req);
       if (s) q.dropSession.run(s.token);
+      send(res, 200, { ok: true });
+      return true;
+    }
+    // 删除账号：会话有效才能删（Bearer 就是身份证明，不再要密码/验证码——
+    // 这个账号本来就没有密码）。删完 200；会话已失效回 401，客户端把 401 也当"已经没了"。
+    // 🔴 四张表一个事务：删了 users 没删 sync_items = 数据孤儿，且同一 Apple 号再登录
+    //    会生成新 uid，老数据永远找不回也删不掉。
+    if (m === 'POST' && pathname === '/api/auth/delete') {
+      const s = sessionOf(req);
+      if (!s) { send(res, 401, { error: 'auth' }); return true; }
+      db.exec('BEGIN');
+      try {
+        q.dropUserItems.run(s.uid);
+        q.dropUserInstalls.run(s.uid);
+        q.dropUserSessions.run(s.uid);
+        q.dropUser.run(s.uid);
+        db.exec('COMMIT');
+      } catch (e) { db.exec('ROLLBACK'); throw e; }
       send(res, 200, { ok: true });
       return true;
     }

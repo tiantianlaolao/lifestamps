@@ -6,7 +6,7 @@ import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint
 import { store, dateKey, fmtTime, posOf } from './store.js';
 import { sync } from './sync.js';
 import { iapPrice, iapBuy, iapRestore, isAndroid, initAndroidShell, appBuild, openExternal } from './native.js';
-import { collectGifts, claimTicket, authSmsSend, smsSupported, androidUpdateInfo } from './net.js';
+import { collectGifts, claimTicket, authSmsSend, smsSupported, androidUpdateInfo, IS_OVERSEAS } from './net.js';
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked } from './hidden.js';
 import { verdictOf } from './verdict.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
@@ -343,7 +343,9 @@ function handleBack() {
 const UPD_K = 'lifestamps_updInfo';
 let updInfo = null;
 async function checkAndroidUpdate() {
-  if (!isAndroid()) return;
+  // 海外安卓走 Google Play，更新由商店推；这里查的是国内官网的 android.json，
+  // 在 Play 包里查到的会是另一个包名的版本号 = 假提醒，所以整个不查。
+  if (!isAndroid() || IS_OVERSEAS) return;
   const cur = await appBuild();
   if (!cur) return;                                          // 老包没 App 桥 / 拿不到构建号：不查
   try { updInfo = JSON.parse(localStorage.getItem(UPD_K) || 'null'); } catch (_) { updInfo = null; }
@@ -1558,9 +1560,11 @@ async function startPurchase() {
     toast(COPY.proThanks, 1800); haptic();
     return true;
   }
-  // 安卓壳（9-02）：官网直装的包没有 Play Billing，购买走网页支付——支付路线用户说往后放，
-  // 这里先只给一句话，别让 iapBuy 去撞一个不存在的桥然后报"没能完成"。
-  if (isAndroid()) { toast(COPY.proAndroidSoon, 2200); return false; }
+  // 安卓分两条（9-03 拍板"对齐 iOS"）：
+  //   · 海外 Play 包：native-purchases 在安卓就是 Play Billing，商品 id 同一串，走下面同一条路；
+  //   · 国内官网直装包：没有 Play，购买走网页支付——支付路线用户说往后放，
+  //     先只给一句话，别让 iapBuy 去撞一个不存在的桥然后报"没能完成"。
+  if (isAndroid() && !IS_OVERSEAS) { toast(COPY.proAndroidSoon, 2200); return false; }
   const r = await iapBuy();
   if (r === 'ok') {
     store.setPro(true);                          // setPro 里带同步埋点，另一台设备也会亮
@@ -2285,13 +2289,15 @@ function accountHTML() {
         ${phoneRowsHTML()}
         <div class="acc-msg" id="acc-msg"></div>`;
     }
-    // 安卓壳（9-02 用户两轮拍板）：**只做国内版，登录只有手机号**——没有 Apple 键，也没有 Google 键。
-    //   手机号那两行仍按能力探测露头（连的服务端支持短信才亮，跟 iOS 同一根）；
-    //   探测没回来或连的是不支持短信的服务端，就只剩一句提示，不给任何别的登录方式。
-    //   海外安卓版缓行；将来要做时另起包名和构建线，那时再在这儿按构建参数分。
+    // 安卓壳按构建参数分两条（9-02 / 9-03 用户拍板）：
+    //   · 海外 Play 包（IS_OVERSEAS）：只有 Google 键。没有 Apple（安卓没有）、没有手机号（美服不配短信）。
+    //   · 国内官网直装包：**登录只有手机号**——没有 Apple 键，也没有 Google 键（国内无 GMS，
+    //     显示出来就是个死键）。手机号那两行仍按能力探测露头（连的服务端支持短信才亮，跟 iOS 同一根）；
+    //     探测没回来就只剩一句提示，不给任何别的登录方式。
     if (isAndroid()) {
       return `<div class="acc-hint">${COPY.accHint}</div>
-        ${phoneLoginOK() ? phoneRowsHTML() : ''}
+        ${IS_OVERSEAS ? `<button class="acc-btn" id="acc-google">${COPY.accLoginGoogle}</button>` : ''}
+        ${!IS_OVERSEAS && phoneLoginOK() ? phoneRowsHTML() : ''}
         <div class="acc-msg" id="acc-msg"></div>`;
     }
     return `<div class="acc-hint">${COPY.accHint}</div>
@@ -2309,6 +2315,7 @@ function accountHTML() {
     <div class="acc-row"><span class="v">${COPY.accSyncedAt.replace('{t}', t)}</span>
       <button class="pk" id="acc-sync">${COPY.accSyncNow}</button></div>
     <button class="acc-btn" id="acc-logout">${COPY.accLogout}</button>
+    <button class="acc-btn quiet" id="acc-delete">${COPY.accDelete}</button>
     <div class="acc-msg" id="acc-msg"></div>`;
 }
 
@@ -2366,6 +2373,18 @@ function bindAccount() {
     }
   });
   $('#acc-logout')?.addEventListener('click', async () => { await sync.logout(); renderMe(); });
+  // 删除账号（9-03，App Store / Google Play 都要求能在 App 里删）：两下确认，跟删章/清空同一个手势。
+  // 删的是账号 + 云上同步数据；本机的本子留着（想清记录有「清空所有记录」，两件事分开）。
+  $('#acc-delete')?.addEventListener('click', async e => {
+    const b = e.target;
+    if (!b.dataset.arm) { b.dataset.arm = '1'; b.textContent = COPY.accDeleteConfirm; return; }
+    b.disabled = true;
+    if (msg()) msg().textContent = COPY.accBusy;
+    const r = await sync.deleteAccount();
+    if (r.ok) { toast(COPY.accDeleted, 2600); renderMe(); return; }
+    b.disabled = false; delete b.dataset.arm; b.textContent = COPY.accDelete;
+    if (msg()) msg().textContent = r.error === 'net' ? COPY.claimNet : COPY.accFailed;
+  });
   $('#acc-sync')?.addEventListener('click', async () => {
     if (msg()) msg().textContent = COPY.accBusy;
     await sync.flush();

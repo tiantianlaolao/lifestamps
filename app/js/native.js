@@ -80,6 +80,8 @@ export async function saveToAlbum(dataUrl) {
 // （store.pro 的跨设备同步只是便利标记，真授权凭据永远是 App Store 的购买记录）。
 // 🔴 Product ID 要跟 App Store Connect 里建的商品一字不差 —— 对不上时
 //    getProducts 拿到空、purchase 直接抛，界面只会看到「没能完成」。
+// 🔴 安卓海外包（9-03）：同一个插件在安卓底下就是 Google Play Billing，**Play Console 里的
+//    内购商品 ID 也要建成同这一串**（Play 的商品 id 按应用隔离，跟包名无关，可以照抄）。
 export const IAP_PRODUCT_ID = 'com.tybbtech.lifestamps.premiuminks';
 
 /** 商品的本地化价格（"¥6.00"/"$0.99" 带货币符）。拿不到返回 null，界面用词典兜底价。 */

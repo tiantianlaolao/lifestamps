@@ -22,7 +22,7 @@
 // 队列与游标都按 uid 存：换号登录不会拿着别人的游标乱拉。
 // ============================================================
 import { store } from './store.js';
-import { authLogin, authLoginPhone, authLogout, syncPush } from './net.js';
+import { authLogin, authLoginPhone, authLogout, authDeleteAccount, syncPush } from './net.js';
 import { nativeLogin } from './native.js';
 
 // 传输层收在一个可替换的对象里：dev/_synccheck.html 换成假服务端来测引擎本身
@@ -30,7 +30,7 @@ import { nativeLogin } from './native.js';
 // 🔴 net.js 加了新函数，引擎要用的话**必须同时加进这份清单** ——
 //    漏了的话报错是 "net.xxx is not a function"，而且只有真点按钮才炸
 //    （8-31 手机号登录上线当天就这么炸的，断言页测的是假 net 抓不到）。
-const net = { authLogin, authLoginPhone, authLogout, syncPush, nativeLogin };
+const net = { authLogin, authLoginPhone, authLogout, authDeleteAccount, syncPush, nativeLogin };
 
 const K = 'lifestamps_sync_';
 function load(k, d) { try { const v = JSON.parse(localStorage.getItem(K + k)); return v ?? d; } catch { return d; } }
@@ -124,6 +124,24 @@ export const sync = {
     this.queue = {};
     this.persist();
     if (t) net.authLogout(t);                            // 失败也无所谓，会话 400 天自己烂掉
+  },
+
+  /**
+   * 删除账号（9-03，商店合规）。服务端把账号和云上的同步数据一起删；**本机的本子不动**——
+   * 删的是"账号"不是"记录"，想清记录有「清空所有记录」。
+   * 🔴 跟 logout 不同：这个必须等服务端回话。网不通就报 net 让用户再试，
+   *    不能像登出那样先把本地清了——那样用户以为删了，服务器上其实还在。
+   */
+  async deleteAccount() {
+    const t = this.account && this.account.token;
+    if (!t) return { ok: true };
+    const status = await net.authDeleteAccount(t);
+    if (status === 0) return { error: 'net' };
+    if (status !== 200 && status !== 401) return { error: 'fail' };
+    this.account = null;
+    this.queue = {};
+    this.persist();
+    return { ok: true };
   },
 
   // 把 store 里所有**参与同步**的数据整体入队（只在登录那一刻用）

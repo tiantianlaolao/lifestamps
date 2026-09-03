@@ -1977,6 +1977,9 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   font-family:inherit; font-size:14.5px; color:var(--ink); cursor:pointer;
   -webkit-tap-highlight-color:transparent}
 .acc-btn.dark{background:#252421; color:#F7F3EB; border-color:#252421}
+/* 删除账号：放在退出登录下面，故意做轻（无边框、小字、灰），两下确认后才真删 */
+.acc-btn.quiet{border-color:transparent; background:transparent; color:var(--sub); font-size:13px; padding:8px}
+.acc-btn.quiet[data-arm]{color:var(--accent)}
 .acc-row{display:flex; justify-content:space-between; align-items:center;
   font-size:13.5px; padding:3px 0; gap:8px}
 .acc-row .v{color:var(--sub); font-size:12px}

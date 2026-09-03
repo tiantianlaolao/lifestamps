@@ -497,6 +497,29 @@ function client() {
   const afterOut = await ja('GET', '/api/auth/me', null, L2.body.token);
   ok(afterOut.status === 401, '登出后旧会话作废');
 
+  console.log('\n== 账号：删除账号（9-03，商店合规：能建账号就必须能在 App 里删）==');
+  const del0 = await ja('POST', '/api/auth/delete');
+  ok(del0.status === 401, '不带会话删不了：' + del0.status);
+  const uidDel = L1.body.uid;
+  const beforeRows = Number(srv.db.prepare('SELECT COUNT(*) AS c FROM sync_items WHERE uid = ?').get(uidDel).c);
+  ok(beforeRows > 0, '删之前这个账号云上有数据（' + beforeRows + ' 行），删的才不是空账号');
+  const del1 = await ja('POST', '/api/auth/delete', null, L1.body.token);
+  ok(del1.status === 200 && del1.body && del1.body.ok, '带会话删除成功：' + del1.status);
+  const meGone = await ja('GET', '/api/auth/me', null, L1.body.token);
+  ok(meGone.status === 401, '删完旧会话立刻作废');
+  ok(!srv.db.prepare('SELECT 1 FROM users WHERE uid = ?').get(uidDel), 'users 里没这个人了');
+  ok(Number(srv.db.prepare('SELECT COUNT(*) AS c FROM sync_items WHERE uid = ?').get(uidDel).c) === 0,
+    '同步数据全部删除（不留孤儿）');
+  ok(Number(srv.db.prepare('SELECT COUNT(*) AS c FROM sessions WHERE uid = ?').get(uidDel).c) === 0,
+    '所有设备的会话都删了（不止这一台）');
+  ok(!srv.db.prepare('SELECT 1 FROM installs WHERE uid = ?').get(uidDel), '安装号解绑（老分享回到匿名状态）');
+  const del2 = await ja('POST', '/api/auth/delete', null, L1.body.token);
+  ok(del2.status === 401, '再删一次 = 401（幂等，客户端把 401 也当"已经没了"）');
+  const L4 = await ja('POST', '/api/auth/login', { provider: 'apple', token: appleToken(), install: 'test-install-0001' });
+  ok(L4.status === 200 && L4.body.uid !== uidDel, '同一个 Apple 号再登录 = 全新账号、新 uid（老数据不复活）');
+  const p4 = await ja('POST', '/api/sync', { cursor: 0, changes: [] }, L4.body.token);
+  ok(p4.status === 200 && p4.body.changes.length === 0, '新账号云上是空的');
+
   console.log('\n== 匿名（这条挂了就等于口径变了）==');
   // 直接问正在跑的那个库 —— 零依赖之后没有第二个 sqlite 客户端可开了
   const cols = [

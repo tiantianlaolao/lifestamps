@@ -315,6 +315,9 @@ export const EN = {
   accSyncedAt: 'Last synced {t}',
   accSyncNow: 'Sync now',
   accLogout: 'Sign out',
+  accDelete: 'Delete account',
+  accDeleteConfirm: 'Tap again to delete your account and synced data',
+  accDeleted: 'Account deleted. Your journal stays on this device.',
   accBusy: 'Syncing…',
   // Phone sign-in (China web only; hidden elsewhere, translated for the www language switcher)
   accPhonePh: 'Phone number',

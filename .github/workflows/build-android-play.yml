@@ -72,10 +72,15 @@ jobs:
         run: |
           npx cap add android
           npx cap sync android
-          grep -q "applicationId \"$PLAY_PACKAGE\"" android/app/build.gradle
-          grep -q "namespace \"$PLAY_PACKAGE\"" android/app/build.gradle
-          test -f android/app/src/main/java/com/tybbtech/stampday/MainActivity.java
-          echo "applicationId / namespace / Java 包目录 都是 $PLAY_PACKAGE"
+          # 先把实际生成的行打出来再断言（首跑就栽在这：namespace 的写法是 `namespace = "…"` 带等号）
+          grep -nE "namespace|applicationId" android/app/build.gradle
+          grep -qE "applicationId *=? *\"$PLAY_PACKAGE\"" android/app/build.gradle
+          grep -qE "namespace *=? *\"$PLAY_PACKAGE\"" android/app/build.gradle
+          MA=$(find android/app/src/main/java -name MainActivity.java | head -1)
+          echo "MainActivity: $MA"
+          test -n "$MA"
+          grep -q "^package $PLAY_PACKAGE;" "$MA"
+          echo "applicationId / namespace / Java 包 都是 $PLAY_PACKAGE"
 
       - name: Strip dev harnesses from the bundle
         run: |

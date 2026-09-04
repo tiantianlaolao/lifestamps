@@ -6,7 +6,10 @@
 <title>Stampday · Privacy Policy</title>
 <!-- App Store listing 用的隐私政策页（8-30）。
      🔴 这页的每一句都必须与代码事实一致（文案不能说代码没做的事，反向同样成立）：
-     本地优先 / 匿名分享 7 天删 / 可选账号同步 / 服务器在中国 / nginx 有访问日志 / 无广告无追踪。
+     本地优先 / 匿名分享 7 天删 / 可选账号同步 / 国际版服务器在美国·中国版在中国（8-31 拆美服后改的）/
+     nginx 有访问日志且 14 天轮转（两台都是 logrotate daily+rotate 14，改保留期要回来改这页）/ 无广告无追踪。
+     🔴 9-04 补：删号后仍留 shares（7 天自动删）和 unlocks（挂匿名安装号不挂账号），这两条已写进页面，
+        server.js 的 sweep 逻辑变了要回来对齐。
      改任何数据行为前，回来把这页对齐。 -->
 <style>
   body{margin:0;background:#F6F2EA;color:#252421;
@@ -31,7 +34,7 @@
 
 <section class="lang" id="en">
 <h1>Stampday — Privacy Policy</h1>
-<div class="date">Effective: August 30, 2026</div>
+<div class="date">Effective: September 4, 2026</div>
 
 <p>Stampday (戳了么) is a life-stamping journal. It is built local-first: your stamps, notes and
 settings live on your device. This policy explains the few cases where data leaves it.</p>
@@ -60,14 +63,20 @@ account identifier and used only to send a verification code — never for marke
 <li>When you sign in we store: your provider (Apple/Google/phone), the stable user identifier the provider
 gives us, and — if provided — your email address (shown only to you, so you can see which account
 you are signed into).</li>
-<li>With sync on, your journal data (stamps, day notes, settings) is stored on our servers so your
-other devices can retrieve it.</li>
+<li>With sync on, your journal data (stamps, day notes, settings, and whether you have unlocked the
+Premium Ink Set) is stored on our servers so your other devices can retrieve it.</li>
 <li>“Erase all records” inside the app deletes your synced journal data from our servers as well.</li>
 <li id="delete-account"><b>Deleting your account:</b> in the app, open <b>Me → Account &amp; Sync</b> and tap
 <b>Delete account</b> (tap twice to confirm). This immediately and permanently deletes your account and all
 journal data synced to our servers. The journal stored on your device is not touched — erase it separately if
 you wish. If you can no longer open the app, email <b>service@tybbtech.com</b> from the address you signed in
-with and we will delete the account within 7 days.</li>
+with and we will delete the account within 7 days.
+<br><b>What is deleted, and what remains:</b> deleting your account removes your account record, your
+sign-in sessions and every piece of journal data you have synced — none of it is archived or held for a
+grace period. Two things are not attached to your account and therefore stay: a day you shared as a link,
+which is deleted automatically 7 days after you shared it, and the anonymous wax-seal records, which are
+keyed to a random install identifier rather than to your account. Standard server access logs (see
+section 6) are deleted after 14 days.</li>
 </ul>
 
 <h2>4. Purchases</h2>
@@ -80,9 +89,12 @@ with and we will delete the account within 7 days.</li>
 </ul>
 
 <h2>6. Server location &amp; logs</h2>
-<p>Our servers are currently located in China. Like virtually all web servers, they keep standard
-access logs (which include IP addresses) for security and operations; these logs are separate from
-the share service’s data and are not used to identify users.</p>
+<p>Where your data is stored depends on the edition you use: the international edition of Stampday runs
+on servers located in the United States; the China edition runs on servers located in China. Like
+virtually all web servers, they keep standard access logs (which include IP addresses, and may include
+the anonymous identifiers described above when those appear in a request URL) for security and
+operations. These logs are rotated and deleted after 14 days, are separate from the share service’s
+data, and are not used to identify users.</p>
 
 <h2>7. Contact</h2>
 <p>Questions or deletion requests: <b>service@tybbtech.com</b></p>
@@ -91,7 +103,7 @@ the share service’s data and are not used to identify users.</p>
 
 <section class="lang" id="ja">
 <h1>スタンプデイ — プライバシーポリシー</h1>
-<div class="date">発効日：2026年8月30日</div>
+<div class="date">発効日：2026年9月4日</div>
 
 <p>スタンプデイ（Stampday）は、生活を「はんこ」で記録するアプリです。ローカルファースト設計で、
 記録・ひとこと・設定は端末の中にあります。データが端末の外に出るのは、以下の場合だけです。</p>
@@ -118,12 +130,17 @@ the share service’s data and are not used to identify users.</p>
 認証コードの送信のみに使用します。マーケティングには使いません。）</li>
 <li>保存するのは：プロバイダ種別、プロバイダが発行する安定した利用者ID、（提供された場合）メールアドレス
 （どのアカウントでログイン中かを本人に示す目的のみ）。</li>
-<li>同期を使うと、記録（はんこ・ひとこと・設定）が当社サーバーに保存され、他の端末から取得できます。</li>
+<li>同期を使うと、記録（はんこ・ひとこと・設定、およびプレミアム印泥セットを購入済みかどうか）が
+当社サーバーに保存され、他の端末から取得できます。</li>
 <li>アプリ内の「記録をぜんぶ消す」は、サーバー上の同期データも削除します。</li>
 <li id="delete-account-ja"><b>アカウントの削除：</b>アプリの <b>わたし → アカウントと同期</b> で
 <b>アカウントを削除</b>を押します（確認のため二度押し）。アカウントとサーバー上の同期データはその場で完全に削除されます。
 端末内の記録はそのまま残ります（消したい場合は別途「記録をぜんぶ消す」を）。アプリを開けない場合は、
-ログインに使ったメールアドレスから <b>service@tybbtech.com</b> へご連絡ください。7日以内に削除します。</li>
+ログインに使ったメールアドレスから <b>service@tybbtech.com</b> へご連絡ください。7日以内に削除します。
+<br><b>削除されるもの・残るもの：</b>アカウント削除により、アカウント情報・ログインセッション・同期済みの
+記録はすべて消えます（保管期間やアーカイブはありません）。アカウントに紐づかないため残るものが二つあります：
+リンクでシェアした一日（シェアから7日後に自動削除されます）と、匿名の封蝋の記録（アカウントではなく
+ランダムなインストール識別子に紐づいています）。標準的なアクセスログ（第6節）は14日後に削除されます。</li>
 </ul>
 
 <h2>4. 購入</h2>
@@ -136,9 +153,10 @@ the share service’s data and are not used to identify users.</p>
 </ul>
 
 <h2>6. サーバーの所在とログ</h2>
-<p>サーバーは現在中国にあります。一般的なウェブサーバーと同様、セキュリティと運用のための
-標準的なアクセスログ（IPアドレスを含む）が記録されます。これはシェア機能のデータとは別で、
-利用者の特定には使いません。</p>
+<p>データの保存場所はご利用の版によって異なります。国際版（Stampday）は米国のサーバー、
+中国版は中国のサーバーで運用しています。一般的なウェブサーバーと同様、セキュリティと運用のための
+標準的なアクセスログ（IPアドレスを含み、リクエストURLに現れる場合は上記の匿名識別子を含むことがあります）が
+記録されます。これらのログは14日後に削除され、シェア機能のデータとは別で、利用者の特定には使いません。</p>
 
 <h2>7. 連絡先</h2>
 <p>お問い合わせ・削除のご依頼：<b>service@tybbtech.com</b></p>
@@ -147,7 +165,7 @@ the share service’s data and are not used to identify users.</p>
 
 <section class="lang" id="zh">
 <h1>戳了么 — 隐私政策</h1>
-<div class="date">生效日期：2026 年 8 月 30 日</div>
+<div class="date">生效日期：2026 年 9 月 4 日</div>
 
 <p>戳了么（Stampday）是一款用「生活印章」记录每天小事的手账 App。它是本地优先的：
 你的记录、话语和设置都在你的设备上。数据只在以下几种情况离开设备。</p>
@@ -173,11 +191,15 @@ the share service’s data and are not used to identify users.</p>
 以及（如提供）你的邮箱地址（仅向你本人展示，用于识别登录的是哪个账号）。</li>
 <li>用手机号登录时，我们存储你的手机号（作为你的账号标识），并通过腾讯云短信向该号码发送
 验证码。验证码只保存加密摘要，不保存明文，验证后即作废。手机号不用于任何营销用途。</li>
-<li>开启同步后，你的记录（印章、每天的话、设置）会保存在我们的服务器上，供你的其他设备取回。</li>
+<li>开启同步后，你的记录（印章、每天的话、设置，以及是否已解锁高级印泥套装）会保存在我们的服务器上，
+供你的其他设备取回。</li>
 <li>App 内的「清空所有记录」会同时删除服务器上已同步的记录。</li>
 <li id="delete-account-zh"><b>删除账号：</b>在 App 里打开 <b>我的 → 账号与同步</b>，点 <b>删除账号</b>（连点两次确认）。
 账号和服务器上已同步的记录会立即、永久删除。这台设备上的本子不受影响（想清掉请另用「清空所有记录」）。
-如果 App 已经打不开，请用登录时的邮箱或手机号联系 <b>service@tybbtech.com</b>，我们会在 7 天内删除。</li>
+如果 App 已经打不开，请用登录时的邮箱或手机号联系 <b>service@tybbtech.com</b>，我们会在 7 天内删除。
+<br><b>删除什么、留下什么：</b>删除账号会清掉账号本身、登录会话，以及你同步上来的全部记录，没有归档、
+没有保留期。有两样东西不挂在账号上，因此会留着：你用链接分享出去的那一天（分享后 7 天自动删除），
+以及匿名的封蜡记录（它挂在一个随机的安装标识上，不是挂在账号上）。标准访问日志（见第 6 节）14 天后删除。</li>
 </ul>
 
 <h2>4. 购买</h2>
@@ -190,8 +212,10 @@ the share service’s data and are not used to identify users.</p>
 </ul>
 
 <h2>6. 服务器位置与日志</h2>
-<p>我们的服务器目前位于中国。与几乎所有网络服务器一样，服务器保留用于安全与运维的标准
-访问日志（含 IP 地址）；这些日志与分享服务的数据相互独立，不用于识别用户。</p>
+<p>数据存放在哪里取决于你用的是哪个版本：国际版（Stampday）运行在美国的服务器上，中国版运行在
+中国的服务器上。与几乎所有网络服务器一样，服务器保留用于安全与运维的标准访问日志（含 IP 地址；
+上面提到的匿名标识如果出现在请求地址里，也会一并记进日志）。这些日志 14 天后删除，与分享服务的
+数据相互独立，不用于识别用户。</p>
 
 <h2>7. 联系我们</h2>
 <p>咨询或删除请求：<b>service@tybbtech.com</b></p>

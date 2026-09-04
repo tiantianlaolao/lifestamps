@@ -111,6 +111,19 @@ jobs:
             sed -i 's#<application#<uses-permission android:name="com.android.vending.BILLING" />\n    <application#' $M
           fi
           grep -q 'com.android.vending.BILLING' $M
+          # 🔴 广告 ID（9-04）：Play 结算库会把 com.google.android.gms.permission.AD_ID
+          #    连同一串 ACCESS_ADSERVICES_* 一起合并进主 manifest（Billing 7 的隐私沙盒归因那套）。
+          #    我们**不用广告 ID**：无广告、无分析 SDK、无归因。留着它，Play Console 会拦住送审
+          #    要求声明"本应用使用广告 ID"——那跟隐私政策的 "No ads, no third-party analytics or
+          #    tracking SDKs" 和数据安全表（用途只勾了应用功能/账号管理）三处对不上。
+          #    → 显式 remove。摘掉对功能零影响（结算和登录都不需要广告 ID）。
+          #    ⚠️ 合并结果只有 aapt 看得见，所以下面出包那步有一条"成品里不许有 AD_ID"的断言。
+          grep -q 'xmlns:tools' $M || sed -i 's#<manifest #<manifest xmlns:tools="http://schemas.android.com/tools" #' $M
+          grep -q 'xmlns:tools' $M
+          if ! grep -q 'permission.AD_ID' $M; then
+            sed -i 's#<application#<uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />\n    <application#' $M
+          fi
+          grep -q 'tools:node="remove"' $M
           echo "versionCode=$BUILD_NUM versionName=$VERSION"
 
       - name: Build release bundle (AAB) + APK
@@ -155,6 +168,15 @@ jobs:
           "$AAPT" dump badging $RUNNER_TEMP/out/Stampday-play.apk | grep -q "versionCode='$BUILD_NUM'"
           "$AAPT" dump badging $RUNNER_TEMP/out/Stampday-play.apk | grep -q "application-label:'$PLAY_APP_NAME'"
           "$AAPT" dump badging $RUNNER_TEMP/out/Stampday-play.apk | grep -q "com.android.vending.BILLING"
+          # 🔴 反向断言：成品里**不许**有广告 ID 权限（见上面 manifest 那段）。
+          #    这条只能对成品做——tools:node="remove" 是不是真生效，源文件里看不出来。
+          "$AAPT" dump permissions $RUNNER_TEMP/out/Stampday-play.apk | grep -E "AD_ID|ADSERVICES" || true
+          if "$AAPT" dump permissions $RUNNER_TEMP/out/Stampday-play.apk \
+               | grep -q "com.google.android.gms.permission.AD_ID"; then
+            echo "::error title=AD_ID 没摘掉::成品仍含 com.google.android.gms.permission.AD_ID，tools:node=remove 未生效"
+            exit 1
+          fi
+          echo "AD_ID 权限已确认摘除"
           # 成品里的网页必须指美服（sed 静默失败的最后一道闸）
           unzip -p $RUNNER_TEMP/out/Stampday-play.apk assets/public/js/net.js | grep -q "^const WEB_BASE = 'https://stampday.tybbtech.com/lifestamps/';"
           echo "成品核对：包名/版本/显示名/BILLING/WEB_BASE 全对"

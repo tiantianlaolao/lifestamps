@@ -61,6 +61,10 @@ export async function shareText(text, title) {
 //    见 .github/workflows 里 Inject 那步 —— 改 client id 时那边要一起改。
 const GOOGLE_IOS_CLIENT_ID = '660308568715-esd7k861ujddrg74s694fed1rpabdlmu.apps.googleusercontent.com';
 const GOOGLE_WEB_CLIENT_ID = '660308568715-bnhbfhnm8s7h9r5o65fdoa1pfio4u33p.apps.googleusercontent.com';
+// Android 客户端（9-03 用户建）：660308568715-3i4f4qjds7c3drh280u7t136f5golg72（包名 com.tybbtech.stampday
+//   + 上传密钥 SHA-1）。⚠️ 它**不进代码也不进服务端白名单**：安卓走 Credential Manager 只传上面的
+//   webClientId，拿回的 idToken aud 也是 web 那串；Android 客户端的作用只是让 Google 核对"这个包
+//   是谁签的"。Play 重签的包还要再建一个（Play 签名密钥 SHA-1），同样不进代码。
 
 /**
  * 直接把 dataURL 图存进相册（8-30，@capacitor-community/media）。

@@ -1,0 +1,116 @@
+<!doctype html><meta charset="utf-8"><title>iOS 商店区域路由自测</title>
+<style>body{font:13px/1.7 monospace;background:#111;color:#ddd;padding:16px}
+.p{color:#7c6}.f{color:#f66;font-weight:700}</style>
+<div id="out">running…</div>
+<!-- 9-05 备案批次：net.js initRegion() 的断言页。
+     跑法：python check_regress.py _regioncheck（或直接开 http://127.0.0.1:8773/dev/_regioncheck.html）
+     为什么这么绕：WEB_BASE 是 CI 用 sed 换的 const，浏览器里改不了；所以这页把 net.js 源码
+     fetch 下来、照 CI 同一条 sed 把那一行换成美服、再当 blob 模块 import —— 每个场景一份
+     独立实例，window.Capacitor 按场景假装（getStorefront 回什么由场景定）。
+     🔴 这页只证明路由逻辑；真机上到底连了哪台，看诊断面板「服务端」那一行。 -->
+<script>localStorage.clear();</script>
+<script type="module">
+const out = document.getElementById('out'); out.textContent = '';
+let pass = 0, fail = 0;
+function ok(cond, msg) {
+  const d = document.createElement('div');
+  d.className = cond ? 'p' : 'f';
+  d.textContent = (cond ? 'PASS  ' : 'FAIL  ') + msg;
+  out.appendChild(d);
+  cond ? pass++ : fail++;
+}
+
+const CN = 'https://www.tybbtech.com/lifestamps/';
+const OS = 'https://stampday.tybbtech.com/lifestamps/';
+const K = 'lifestamps_region';
+
+const src0 = await (await fetch('../js/net.js', { cache: 'no-store' })).text();
+const LINE = "const WEB_BASE = 'https://www.tybbtech.com/lifestamps/';";
+ok(src0.includes(LINE), 'net.js 里有 CI 认的那一行 WEB_BASE（sed 注入点没被改坏）');
+
+function build(overseas) {
+  let s = src0;
+  if (overseas) s = s.replace(LINE, "const WEB_BASE = 'https://stampday.tybbtech.com/lifestamps/';");
+  s = s.replace(/from '\.\/([^']+)'/g, (_, f) => `from '${new URL('../js/' + f, location.href).href}'`);
+  return URL.createObjectURL(new Blob([s], { type: 'text/javascript' }));
+}
+
+async function run({ overseas, platform, storefront, cache, hang, noPlugin }) {
+  localStorage.removeItem(K);
+  if (cache) localStorage.setItem(K, cache);
+  if (platform) {
+    const plugins = noPlugin ? {} : { NativePurchases: {
+      getStorefront: () => hang ? new Promise(() => {}) : Promise.resolve({ countryCode: storefront }),
+    } };
+    window.Capacitor = { getPlatform: () => platform, isNativePlatform: () => true, Plugins: plugins };
+  } else {
+    delete window.Capacitor;
+  }
+  const m = await import(build(overseas));
+  const before = m.IS_OVERSEAS;
+  const t0 = performance.now();
+  const region = await m.initRegion();
+  return { before, after: m.IS_OVERSEAS, region, api: m.apiBase(), share: m.shareURL('abc123'),
+    ms: Math.round(performance.now() - t0), cached: localStorage.getItem(K) };
+}
+
+try {
+  // ① 海外构建 + iOS + 中国区账号 → 切回国内
+  let r = await run({ overseas: true, platform: 'ios', storefront: 'CHN' });
+  ok(r.before === true, '① 海外构建启动时 IS_OVERSEAS=true（sed 生效）');
+  ok(r.after === false && r.region === 'cn', '① CHN → IS_OVERSEAS 翻成 false，region=cn');
+  ok(r.api === CN + 'api/', '① CHN → API 指国内 1.13：' + r.api);
+  ok(r.share === CN + 's/?c=abc123', '① CHN → 分享链接也指国内：' + r.share);
+  ok(r.cached === 'cn', '① 结论记进本地兜底 = cn');
+
+  // ② 海外构建 + iOS + 美区
+  r = await run({ overseas: true, platform: 'ios', storefront: 'USA' });
+  ok(r.after === true && r.api === OS + 'api/', '② USA → 留在美服：' + r.api);
+  ok(r.cached === 'overseas', '② 结论记进本地兜底 = overseas');
+
+  // ③ 港澳台归海外（备案只管大陆）
+  for (const cc of ['HKG', 'MAC', 'TWN']) {
+    r = await run({ overseas: true, platform: 'ios', storefront: cc });
+    ok(r.after === true && r.api === OS + 'api/', `③ ${cc} → 海外`);
+  }
+
+  // ④ 商店回空 + 上次记的是 cn → 用兜底
+  r = await run({ overseas: true, platform: 'ios', storefront: '', cache: 'cn' });
+  ok(r.after === false && r.api === CN + 'api/', '④ 商店回空 + 兜底 cn → 国内');
+  ok(r.cached === 'cn', '④ 空结果不覆盖兜底');
+
+  // ⑤ 商店回空 + 没有兜底 → 构建默认（海外）
+  r = await run({ overseas: true, platform: 'ios', storefront: '' });
+  ok(r.after === true && r.api === OS + 'api/', '⑤ 商店回空 + 无兜底 → 海外');
+  ok(r.cached === null, '⑤ 空结果不写兜底');
+
+  // ⑥ 插件挂死 → 2.5s 兜底放行，不卡开机
+  r = await run({ overseas: true, platform: 'ios', hang: true, cache: 'cn' });
+  ok(r.ms >= 2300 && r.ms < 4000, `⑥ getStorefront 不回 → ${r.ms}ms 后放行（2.5s 兜底）`);
+  ok(r.after === false, '⑥ 挂死时用兜底 cn');
+
+  // ⑦ 没装 NativePurchases 桥 → 构建默认
+  r = await run({ overseas: true, platform: 'ios', noPlugin: true });
+  ok(r.after === true && r.ms < 200, '⑦ 没有内购桥 → 立刻按构建默认（海外）');
+
+  // ⑧ 安卓不走商店路由（国内/Play 是两个包名，构建时已定）
+  r = await run({ overseas: true, platform: 'android', storefront: 'CHN' });
+  ok(r.after === true && r.api === OS + 'api/' && r.cached === null, '⑧ 安卓海外包 + CHN → 不动，也不写兜底');
+
+  // ⑨ 国内构建（adhoc 测试线 / 默认值）不问商店
+  r = await run({ overseas: false, platform: 'ios', storefront: 'USA' });
+  ok(r.after === false && r.api === CN + 'api/' && r.cached === null, '⑨ 国内构建 + iOS 美区账号 → 仍连国内（测试线行为不变）');
+
+  // ⑩ 网页版：不问商店，API 走相对路径，分享链接兜底 www
+  r = await run({ overseas: false, platform: null });
+  // ⚠️ 网页版 API 根按页面所在目录推（生产是 /lifestamps/api/）；这页在 /dev/ 下所以推出 /dev/api/，
+  //    那是 net.js 一直以来的已知行为（验收页里的 API 根本来就是错的），这里只验"没被路由改动碰到"。
+  ok(r.region === 'cn' && r.api === new URL('api/', location.href).href, '⑩ 网页版 API 相对当前页目录：' + r.api);
+  ok(r.share === CN + 's/?c=abc123', '⑩ 网页版（http 本地）分享链接兜底 www');
+} catch (e) {
+  ok(false, 'CRASH: ' + (e && e.stack || e));
+}
+const d = document.createElement('div');
+d.textContent = `—— ${pass} pass / ${fail} fail ——`;
+out.appendChild(d);
+</script>

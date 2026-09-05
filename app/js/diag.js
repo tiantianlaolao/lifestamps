@@ -3,6 +3,8 @@
 // 与其再猜一轮，不如让用户操作一次、把事实读出来。
 // 打开方式：「我的」页最底下那行版本号，连点 5 下。
 // ============================================================
+import { apiBase } from './net.js';
+
 const C = { down: 0, move: 0, up: 0, cancel: 0, lastTA: '-', lastTarget: '-' };
 let panel = null, live = null;
 
@@ -27,6 +29,8 @@ function refresh() {
   const de = document.documentElement, main = document.querySelector('main');
   live.textContent = [
     `原生壳      ${window.Capacitor ? (window.Capacitor.getPlatform?.() || 'yes') : '否（浏览器）'}`,
+    // 9-05 中国区路由：商店版 iOS 在中国区账号下这里应是 www（1.13），其余是 stampday（美服）
+    `服务端      ${apiBase()}`,
     `窗口高      innerHeight ${innerHeight} / visualViewport ${Math.round(visualViewport?.height || 0)}`,
     // 9-02 纸预算冻结值：弹键盘时 innerHeight 掉了而这个没掉 = 冻结起作用；两个一起掉 = 没起作用
     `纸预算冻结  --vh-fixed ${getComputedStyle(de).getPropertyValue('--vh-fixed').trim() || '（未设）'}`,

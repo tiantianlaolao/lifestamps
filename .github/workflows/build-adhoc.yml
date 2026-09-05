@@ -97,6 +97,20 @@ jobs:
           # ③ 保存到相册（8-30 保存/分享拆两键）。只声明 Add 权限 → iOS 走 add-only 轻量授权
           /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryAddUsageDescription string Saves your stamp cards to your photo library." $PLIST 2>/dev/null || true
 
+      # 图标下的名字按系统语言本地化（9-05，备案批次）：中文系统显示「戳了么」，其余语言仍是
+      #   上面写死的 Stampday。走 zh-Hans.lproj/InfoPlist.strings，🔴 必须登记进 Xcode 工程的
+      #   Resources 才会进包（光放文件没用），登记脚本见 ci/ios_add_infoplist_strings.rb。
+      #   ⚠️ build-ios.yml 也有这一步，改要两边一起。
+      - name: Localize display name (zh-Hans = 戳了么)
+        run: |
+          mkdir -p ios/App/App/zh-Hans.lproj
+          printf 'CFBundleDisplayName = "戳了么";\nCFBundleName = "戳了么";\n' > ios/App/App/zh-Hans.lproj/InfoPlist.strings
+          plutil -lint ios/App/App/zh-Hans.lproj/InfoPlist.strings
+          ruby ci/ios_add_infoplist_strings.rb ios/App/App.xcodeproj zh-Hans
+          grep -q 'zh-Hans.lproj/InfoPlist.strings' ios/App/App.xcodeproj/project.pbxproj
+          grep -q 'zh-Hans' ios/App/App.xcodeproj/project.pbxproj
+          echo "zh-Hans InfoPlist.strings 已登记进工程"
+
       # 钥匙串必须先有：不管证书是"我们导进去"还是"Xcode 自己建"，都得有地方放。
       - name: Prepare keychain
         run: |
@@ -185,6 +199,17 @@ jobs:
             CODE_SIGN_ENTITLEMENTS=App/App.entitlements \
             TARGETED_DEVICE_FAMILY=1 \
             COMPILER_INDEX_STORE_ENABLE=NO
+
+      # 🔴 登记进工程 ≠ 进了包。在 archive 出来的 App.app 里真读一遍那份 strings（编译后是二进制 plist，
+      #    plutil -p 能读），读不到 戳了么 就让这次构建当场失败。
+      - name: Verify localized display name in bundle
+        run: |
+          APP=$(ls -d $RUNNER_TEMP/LifeStampsTest.xcarchive/Products/Applications/*.app | head -1)
+          F="$APP/zh-Hans.lproj/InfoPlist.strings"
+          test -f "$F"
+          plutil -p "$F"
+          plutil -p "$F" | grep -q '戳了么'
+          echo "包内 zh-Hans 显示名 = 戳了么 ✓"
 
       - name: Export IPA (ad-hoc)
         env:

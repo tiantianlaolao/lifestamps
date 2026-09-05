@@ -6,7 +6,7 @@ import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint
 import { store, dateKey, fmtTime, posOf } from './store.js';
 import { sync } from './sync.js';
 import { iapPrice, iapBuy, iapRestore, isAndroid, initAndroidShell, appBuild, openExternal } from './native.js';
-import { collectGifts, claimTicket, authSmsSend, smsSupported, androidUpdateInfo, IS_OVERSEAS } from './net.js';
+import { collectGifts, claimTicket, authSmsSend, smsSupported, androidUpdateInfo, IS_OVERSEAS, initRegion, ICP_APP_NO } from './net.js';
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked } from './hidden.js';
 import { verdictOf } from './verdict.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
@@ -2478,7 +2478,11 @@ function renderMe() {
     </div>
     ${updInfo ? `<div class="me-item"><span class="k">${COPY.updRow.replace('{v}', 'V' + esc(updInfo.versionName || ''))}</span>
       <button class="pk dark" id="btn-upd">${COPY.updGet}</button></div>` : ''}
-    <div class="me-foot">${COPY.appName} · V1.18</div>`;
+    <div class="me-foot">${COPY.appName} · V1.18</div>
+    ${/* 工信部 App 备案号（9-05）：只在国内线的壳里显示 —— iOS 中国区账号 / 安卓官网直装包 /
+         adhoc 测试包（连 www）。海外构建（美服）和网页版都不显示；是不是国内线由 net.js 一处判。
+         🔴 单独一行、不并进 .me-foot：那一行是诊断面板的连点热区，别把热区拉长。 */''}
+    ${window.Capacitor && !IS_OVERSEAS ? `<div class="me-icp">${ICP_APP_NO}</div>` : ''}`;
   $('#btn-upd')?.addEventListener('click', () => openExternal(updInfo.url));
 
   // ⚠️ 一律限定在本页里选，别用全文档选择器——那是上面那个 bug 的另一半原因
@@ -2618,4 +2622,8 @@ function seedDemo() {
   store.persist();
 }
 
-init();
+// 🔴 先定服务端再开机（9-05）：iOS 商店版一个二进制卖全球，中国区账号要落国内 1.13。
+//    initRegion 只在「海外构建 + iOS 壳」里真的去问 StoreKit（几十毫秒，2.5s 兜底），
+//    其它场合立刻返回。init 里的开机对账 / 能力探测 / 更新检查都得在它之后。
+//    失败也照常开机 —— 这个 App 离线要能用，路由定不下来就按构建默认走。
+initRegion().then(init, init);

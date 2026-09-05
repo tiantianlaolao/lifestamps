@@ -22,14 +22,76 @@ import { seedOf } from './stamp.js';
 //    把下面这一行整体替换成 https://stampday.tybbtech.com/lifestamps/（美服独立实例，
 //    两个用户池互不相通）。⛔ 别在别处再写第二份生产域名。
 const WEB_BASE = 'https://www.tybbtech.com/lifestamps/';
+// 国内实例（1.13）的固定地址（9-05，备案批次）。⚠️ 这**不是第二个注入点**：CI 只换上面那一行，
+//    这一行永远指国内 —— 它是「海外构建里的 iOS 壳按商店区域切回中国区」的落点（见 initRegion）。
+const CN_BASE = 'https://www.tybbtech.com/lifestamps/';
 // 这个包是不是海外构建（9-03）。由上面那一行推出来，不另设开关：CI 把 WEB_BASE 换成
 // stampday 的那一刻，安卓壳里"登录用 Google 还是手机号 / 购买走 Play 还是提示 / 查不查
 // 官网更新"全部跟着切。⛔ 别在别处再判一次域名，都从这里取。
-export const IS_OVERSEAS = WEB_BASE.startsWith('https://stampday.');
-const BASE = window.Capacitor
-  ? WEB_BASE
+// 9-05 起它是 let 不是 const：iOS 商店版一个二进制卖全球，中国区账号的用户在开机时
+//    （initRegion）会被切成 false —— 导入方拿到的是活绑定，只要别在模块顶层把它拷成常量就能跟上。
+export let IS_OVERSEAS = WEB_BASE.startsWith('https://stampday.');
+// 原生壳当前连的生产站（默认=构建注入的那台；中国区路由后=CN_BASE）。网页版用不上。
+let HOST_BASE = WEB_BASE;
+let BASE = window.Capacitor
+  ? HOST_BASE
   : new URL('.', location.href.replace(/\/[^/]*$/, '/')).href;
-const API = new URL('api/', BASE).href;
+let API = new URL('api/', BASE).href;
+
+/** 当前 API 根（诊断面板用，真机上一眼看出这台 App 连的是国内还是美服） */
+export const apiBase = () => API;
+
+// 工信部 App 备案号（9-04 下发，登记名「戳了么」，iOS + 安卓都登记在这一个号下）。
+// 只在国内线的壳里展示（「我的」页底部）：iOS 中国区 / 安卓官网直装包 / adhoc 测试包。
+// 🔴 备案绑的是 Bundle ID + 分发证书 SHA-1（iOS）/ 包名 + 签名 MD5（安卓），换证书要做备案变更。
+export const ICP_APP_NO = '京ICP备2022025009号-3A';
+
+// ---- iOS 商店版按商店区域路由（9-05，备案批次的前置）----------------------------
+// 为什么：App Store 上 com.tybbtech.lifestamps 只有一条记录、一个二进制，海外区和中国区
+//   是同一个包。海外构建把 WEB_BASE 注入成美服，但中国区账号的用户必须落国内 1.13
+//   （备案在那台、手机号登录在那台、两个用户池互不相通）。
+// 判据 = StoreKit 的商店区域（Storefront.current，@capgo/native-purchases 8.7 自带
+//   getStorefront，iOS 回 ISO alpha-3："CHN" 才算中国大陆；港澳台 HKG/MAC/TWN 归海外）。
+//   ⛔ 不用系统语言/地区判：海外华人手机设中文会被错路由到国内，中国人用英文系统会错到美服；
+//      商店区域跟 IAP 币种、跟备案的"在中国大陆分发"是同一件事，只有它是对的。
+// 范围：**只有「海外构建 + iOS 壳」才问商店**。adhoc 测试线（WEB_BASE=www）和安卓两条线
+//   （国内直装 / Play 是两个不同包名）都不走这里，行为逐字不变。
+// 时序：🔴 必须在任何网络请求之前定下来 —— main.js 入口 `initRegion().then(init)`，
+//   sync.init() 开机对账 / 能力探测 / 更新检查全在 init 里面。
+// 兜底：商店回空（拿不到）或超时 → 用上一次记住的结论，再没有就按构建默认（海外）。
+//   结论每次开机都重新问（插件文档要求别缓存：用户可以换商店区域），本地那份只当兜底。
+const REGION_K = 'lifestamps_region';
+function setHost(base) {
+  HOST_BASE = base;
+  if (window.Capacitor) { BASE = HOST_BASE; API = new URL('api/', BASE).href; }
+}
+export async function initRegion() {
+  const cap = window.Capacitor;
+  const onIOS = !!(cap && cap.getPlatform && cap.getPlatform() === 'ios');
+  if (!cap || !IS_OVERSEAS || !onIOS) return IS_OVERSEAS ? 'overseas' : 'cn';
+  const np = cap.Plugins && cap.Plugins.NativePurchases;
+  let cc = '';
+  if (np && np.getStorefront) {
+    try {
+      const r = await Promise.race([
+        np.getStorefront(),
+        new Promise(res => setTimeout(() => res(null), 2500)),   // StoreKit 本地读，正常几十毫秒
+      ]);
+      cc = (r && r.countryCode) || '';
+    } catch (_) { cc = ''; }
+  }
+  let cn;
+  if (cc) {
+    cn = cc === 'CHN';
+    try { localStorage.setItem(REGION_K, cn ? 'cn' : 'overseas'); } catch (_) { /* 存不下就算了 */ }
+  } else {
+    let last = null;
+    try { last = localStorage.getItem(REGION_K); } catch (_) { last = null; }
+    cn = last === 'cn';
+  }
+  if (cn) { IS_OVERSEAS = false; setHost(CN_BASE); }
+  return cn ? 'cn' : 'overseas';
+}
 
 const TIMEOUT = 8000;
 
@@ -115,11 +177,11 @@ export async function createShare(day, records, verdict, note) {
 //    两台生产（www=国内 1.13 / stampday=美服 43.173）用户池互不相通：
 //    stampday 网页上建的分享若拼成 www 链接，朋友打开查的是另一个库，必 410。
 //    所以正式 https 域上用当前站点（BASE，跟 API 同源）；
-//    原生壳（BASE 本来就=注入的 WEB_BASE）和本地验收（http/127.*，
-//    别发出去 127.0.0.1 的链接）用 WEB_BASE 兜底 —— 1.13 网页版行为逐字不变。
+//    原生壳（BASE 本来就=HOST_BASE：注入的 WEB_BASE，或中国区路由后的 CN_BASE）和本地验收
+//    （http/127.*，别发出去 127.0.0.1 的链接）用 HOST_BASE 兜底 —— 1.13 网页版行为逐字不变。
 export function shareURL(code) {
   const onProdWeb = !window.Capacitor && location.protocol === 'https:';
-  return (onProdWeb ? BASE : WEB_BASE) + 's/?c=' + code;
+  return (onProdWeb ? BASE : HOST_BASE) + 's/?c=' + code;
 }
 
 // A：回来看看收到了什么。

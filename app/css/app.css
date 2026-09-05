@@ -542,6 +542,8 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .switch input:checked + i{background:var(--accent)}
 .switch input:checked + i::after{left:21px}
 .me-foot{text-align:center; color:var(--faint); font-size:10.5px; letter-spacing:.24em; margin-top:30px}
+/* 工信部 App 备案号（9-05）：只在国内线的壳里出现，紧贴版本行下面；字距别学上面那行，编号要一眼能抄 */
+.me-icp{text-align:center; color:var(--faint); font-size:10px; letter-spacing:.04em; margin-top:6px}
 
 /* toast */
 #toast{

@@ -9,6 +9,10 @@
 //     内容包自己带版本号、拉取时 cache:no-store，不需要 ?v=。⛔ 别挪到根目录，会静默漏部署。）
 //   · nginx 对 /lifestamps/ 下所有文件发 Cache-Control: no-cache，改完文件、跑网页部署脚本，
 //     用户下次打开就拉到；服务端零改动、不建表。
+//   🔴 但 nginx 必须给这些静态文件回 Access-Control-Allow-Origin *（9-07 踩坑）：原生壳的 origin 是
+//     capacitor://localhost（iOS）/ https://localhost（安卓），拉 catalog.json 是跨域，没这个头浏览器把响应
+//     扔掉、fetch 抛 TypeError → 这里静默返回 null → App 永远停在包内那份。网页版同源所以看不出来。
+//     1.13 已加；换主机 / 美服部署时照 /capyroom/ 那块加同一行。dl/android.json 同一个坑。
 //   · 打包时 js/catalog.json 随 app/ 一起进壳（capacitor webDir=app），是首启没网时的兜底副本。
 //
 // 三级加载（顺序就是优先级，越靠后越新）：

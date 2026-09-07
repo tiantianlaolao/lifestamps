@@ -14,7 +14,11 @@ PWD  = os.environ["OTA_SSH_PASSWORD"]
 # 落点：默认 _t/（测试包）；安卓正式线传 OTA_LIVE_DIR=/var/www/lifestamps/dl（9-02）。
 # ⚠️ 两个目录网页部署脚本都 --exclude 了，别再加第三个不排除的目录。
 LIVE  = os.environ.get("OTA_LIVE_DIR", "/var/www/lifestamps/_t")
-STAGE = "/tmp/lifestamps_ota"          # 🔴 用 /tmp 不用 ~：sudo bash -c 里的 ~ 会变成 root 的家目录
+# 🔴 暂存目录必须每次唯一（9-07，照搬番茄钟 9-05 的修法）：iOS 测试线和安卓测试线同时出包，
+#    共用 /tmp/lifestamps_ota 时后进来的 rm -rf 把前一个正在传的目录删了 —— 两条线同时在 sftp.put 上
+#    报 ENOENT（9-07 首次并发触发当场撞上）。带 GITHUB_RUN_ID 后各用各的，本地手跑用 pid。
+#    用 /tmp 不用 ~：sudo bash -c 里的 ~ 会变成 root 的家目录
+STAGE = "/tmp/lifestamps_ota_" + os.environ.get("GITHUB_RUN_ID", str(os.getpid()))
 FILES = sys.argv[1:]
 if not FILES:
     sys.exit("没有要传的文件")
@@ -36,6 +40,7 @@ def run(ssh, cmd, sudo=False):
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 ssh.connect(HOST, PORT, USER, PWD, timeout=25)
+ssh.get_transport().set_keepalive(20)   # 传大包那几分钟控制连接是闲的，不发 keepalive 会被踢（番茄钟 9-05 Play 线 24MB 包实证）
 
 run(ssh, f"rm -rf {STAGE} && mkdir -p {STAGE}")
 sftp = ssh.open_sftp()

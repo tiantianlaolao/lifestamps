@@ -40,6 +40,8 @@ let API = new URL('api/', BASE).href;
 
 /** 当前 API 根（诊断面板用，真机上一眼看出这台 App 连的是国内还是美服） */
 export const apiBase = () => API;
+/** 当前站点根（9-07 内容包 catalog.json 从这里拉；跟 API 同一台，中国区路由后一起切） */
+export const webBase = () => BASE;
 
 // 工信部 App 备案号（9-04 下发，登记名「戳了么」，iOS + 安卓都登记在这一个号下）。
 // 只在国内线的壳里展示（「我的」页底部）：iOS 中国区 / 安卓官网直装包 / adhoc 测试包。

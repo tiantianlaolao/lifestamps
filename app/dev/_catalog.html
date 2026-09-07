@@ -1,0 +1,149 @@
+<!doctype html><meta charset="utf-8"><title>内容包（新章/新印泥不发版）自测</title>
+<style>body{font:13px/1.7 monospace;background:#111;color:#ddd;padding:16px}
+.p{color:#7c6}.f{color:#f66;font-weight:700}</style>
+<div id="out">running…</div>
+<!-- 9-07 内容包：js/catalog.js 的断言页。
+     跑法：python check_regress.py _catalog（或直接开 http://127.0.0.1:8773/dev/_catalog.html）
+     覆盖：合并（印泥/分类/章/隐藏章/名字）· 幂等 · 坏条目跳过不作废整包 · 版本门（只认更大的）·
+           缓存落盘 · 首启读包内副本 · 未知章 id 画占位不崩 · 覆盖已有条目 · 真实 js/catalog.json 可解析。
+     ⚠️ 这页 import 的是真模块（同一份 data.js 实例），断言的是"合并进去之后其它模块看不看得到"。 -->
+<script>localStorage.clear();</script>
+<script type="module">
+import { INKS, CATEGORIES, STAMPS, HIDDEN, UNLOCK, INIT_STAMPS, SERIES, stampById, hiddenById, seriesOf, seriesById, totalCollectible } from '../js/data.js';
+import { applyCatalog, fetchCatalog, bootCatalog, refreshCatalog, catalogInfo } from '../js/catalog.js';
+import { defsMarkup, stampSVG, inkCSS, inkMainColor } from '../js/stamp.js';
+import { setLang, nameOf } from '../js/i18n.js';
+import { isUnlocked } from '../js/hidden.js';
+
+const out = document.getElementById('out'); out.textContent = '';
+let pass = 0, fail = 0;
+function ok(cond, msg) {
+  const d = document.createElement('div');
+  d.className = cond ? 'p' : 'f';
+  d.textContent = (cond ? 'PASS  ' : 'FAIL  ') + msg;
+  out.appendChild(d);
+  cond ? pass++ : fail++;
+}
+const blob = obj => URL.createObjectURL(new Blob([typeof obj === 'string' ? obj : JSON.stringify(obj)], { type: 'application/json' }));
+const K = 'lifestamps_catalog';
+
+const PATH = '<path d="M20,50 Q50,20 80,50 Q50,80 20,50 Z" fill="none" stroke="CC" stroke-width="6"/>';
+const FIX = {
+  version: 2,
+  inks: {
+    moss:   { name: '苔绿', type: 'solid', color: '#6E8B5E', free: true },
+    aurora: { name: '极光', type: 'gradient', near: 'song', stops: [['0', '#5FA8A0'], ['1', '#8E7CC3']], x1: 0, y1: 0, x2: 100, y2: 100 },
+    plaid:  { name: '格子', type: 'pattern', bg: '#F3E9D2', c1: '#C94B3C', c2: '#668878' },
+  },
+  cats: [{ id: 'season', name: '时节' }],
+  stamps: [
+    { id: 'pumpkin', name: '南瓜', cat: 'season', ink: 'moss', d: PATH, unlock: { type: 'catTotal', cat: 'food', n: 2 } },
+    { id: 'lantern', name: '灯笼', cat: 'season', ink: 'aurora', d: PATH },
+  ],
+  hidden: [
+    { id: 'h_autumn', name: '秋日限定', ink: 'aurora', cond: { type: 'distinct', ids: ['pumpkin', 'lantern'] }, hint: '两样都遇到的话。', d: PATH },
+  ],
+  names: { en: { stamp: { pumpkin: 'Pumpkin', lantern: 'Lantern' }, ink: { moss: 'Moss', aurora: 'Aurora' }, cat: { season: 'Season' }, hidden: { h_autumn: 'Autumn Special' } },
+           ja: { stamp: { pumpkin: 'かぼちゃ' } } },
+};
+
+try {
+  // ---- 0. 基线（跟 data.js 当前数字对上；数字变了说明基线动了，不是这页坏了）----
+  const n0 = { inks: Object.keys(INKS).length, stamps: STAMPS.length, hidden: HIDDEN.length, cats: CATEGORIES.length, init: INIT_STAMPS.length };
+  ok(catalogInfo().version === 0 && catalogInfo().source === 'builtin', '0 开机无缓存：version 0 / builtin');
+  ok(n0.stamps === 42 && n0.hidden === 5 && n0.inks === 13, `0 内置基线 42 章 / 5 隐藏 / 13 印泥（实际 ${n0.stamps}/${n0.hidden}/${n0.inks}）`);
+
+  // ---- 1. 合并 ----
+  ok(applyCatalog(FIX, 'test') === true, '1 applyCatalog 返回 true');
+  ok(INKS.moss && INKS.moss.free === true && INKS.moss.near === 'zhu', '1 新印泥 solid：free 保留、near 缺省 zhu');
+  ok(INKS.aurora && INKS.aurora.type === 'gradient' && INKS.aurora.free === false && INKS.aurora.near === 'song', '1 新印泥 gradient：付费、near=song');
+  ok(INKS.plaid && INKS.plaid.type === 'pattern' && INKS.plaid.kind === 'dots', '1 新印泥 pattern：走现有 dots 画法');
+  ok(CATEGORIES.some(c => c.id === 'season'), '1 新分类进 CATEGORIES');
+  ok(STAMPS.length === n0.stamps + 2 && stampById.pumpkin && stampById.lantern, '1 两枚新章进 STAMPS + stampById');
+  ok(HIDDEN.length === n0.hidden + 1 && hiddenById.h_autumn && stampById.h_autumn, '1 新隐藏章进 HIDDEN + hiddenById + stampById');
+  ok(UNLOCK.pumpkin && UNLOCK.pumpkin.type === 'catTotal', '1 带 unlock 的章进 UNLOCK');
+  ok(!isUnlocked('pumpkin'), '1 带 unlock 的章一开始锁着（hidden.js 看得到）');
+  ok(INIT_STAMPS.includes('lantern') && isUnlocked('lantern'), '1 不带 unlock 的章 = 一开始就在托盘里');
+  ok(seriesOf('pumpkin') && seriesOf('pumpkin').id === 'basic' && seriesById.basic.stampIds.includes('lantern'), '1 新章归到基础章那一盒，seriesOf 索引已重建');
+  ok(seriesById.secret.stampIds.includes('h_autumn'), '1 新隐藏章归到隐藏章那一盒');
+  ok(totalCollectible() === n0.stamps + 2 + n0.hidden + 1, '1 totalCollectible() 跟着变');
+  ok(defsMarkup().includes('id="ls-ink-aurora"') && defsMarkup().includes('id="ls-ink-plaid"'), '1 defsMarkup 含新渐变 / 图案的 paint server');
+  ok(inkCSS('aurora').startsWith('linear-gradient') && inkMainColor('moss') === '#6E8B5E', '1 inkCSS / inkMainColor 认得新印泥');
+  const svg = stampSVG(stampById.pumpkin, { size: 40 });
+  ok(svg.includes('#6E8B5E') && !svg.includes('CC') && svg.includes('stroke-width="4.32"'), '1 新章渲染：印泥替换 CC、线宽吃 THIN 系数');
+  setLang('en');
+  ok(nameOf('stamp', 'pumpkin', '南瓜') === 'Pumpkin' && nameOf('ink', 'aurora', '极光') === 'Aurora'
+     && nameOf('cat', 'season', '时节') === 'Season' && nameOf('hidden', 'h_autumn', '秋日限定') === 'Autumn Special', '1 en 名字进字典');
+  setLang('ja');
+  ok(nameOf('stamp', 'pumpkin', '南瓜') === 'かぼちゃ' && nameOf('stamp', 'lantern', '灯笼') === '灯笼', '1 ja 有的用 ja、没有的回退中文原值');
+  setLang('zh');
+  ok(nameOf('stamp', 'pumpkin', '南瓜') === '南瓜', '1 zh 永远用数据层原值');
+  const info = catalogInfo();
+  ok(info.version === 2 && info.source === 'test' && info.counts.stamps === 2 && info.counts.hidden === 1 && info.counts.inks === 3 && info.warnings.length === 0,
+     `1 catalogInfo：v2 · test · 章 2 隐藏 1 印泥 3 · 0 警告（实际 ${JSON.stringify(info.counts)} / ${info.warnings.length}）`);
+
+  // ---- 2. 幂等 ----
+  applyCatalog(FIX, 'test');
+  ok(STAMPS.length === n0.stamps + 2 && HIDDEN.length === n0.hidden + 1 && CATEGORIES.filter(c => c.id === 'season').length === 1
+     && seriesById.basic.stampIds.filter(x => x === 'pumpkin').length === 1 && INIT_STAMPS.filter(x => x === 'lantern').length === 1,
+     '2 同一份应用两次：一条不多');
+
+  // ---- 3. 坏条目逐条跳过，整包照常 ----
+  const BAD = { version: 3,
+    inks: { bad1: { name: 'x', type: 'foil', color: '#000000' }, bad2: { name: 'x', type: 'solid', color: 'red' }, ok1: { name: '好的', type: 'solid', color: '#123456' } },
+    stamps: [
+      { id: 'nocat', name: 'x', cat: 'nope', ink: 'zhu', d: PATH },
+      { id: 'g0', name: 'x', cat: 'food', ink: 'zhu', d: PATH },            // 撞字形章
+      { id: 'g_candy', name: 'x', cat: 'food', ink: 'zhu', d: PATH },       // 撞封蜡
+      { id: 'h_fake', name: 'x', cat: 'food', ink: 'zhu', d: PATH },        // h_ 前缀
+      { id: 'badunlock', name: 'x', cat: 'food', ink: 'zhu', d: PATH, unlock: { type: 'never' } },
+      { id: 'Bad-Id', name: 'x', cat: 'food', ink: 'zhu', d: PATH },
+      { id: 'good', name: '好章', cat: 'food', ink: 'ok1', d: PATH },
+    ],
+    hidden: [
+      { id: 'nothidden', name: 'x', ink: 'zhu', cond: { type: 'late', hour: 23, n: 1 }, d: PATH },  // 没 h_
+      { id: 'h_badcond', name: 'x', ink: 'zhu', cond: { type: 'never' }, d: PATH },
+      { id: 'h_good', name: '好隐藏', ink: 'zhu', cond: { type: 'late', hour: 23, n: 1 }, d: PATH },
+    ],
+    cats: [{ id: 'nope' }],
+  };
+  const before = { s: STAMPS.length, h: HIDDEN.length, i: Object.keys(INKS).length };
+  ok(applyCatalog(BAD, 'test') === true, '3 有坏条目的包照样应用（不整包作废）');
+  ok(STAMPS.length === before.s + 1 && stampById.good && !stampById.nocat && !stampById.badunlock && !stampById.h_fake
+     && stampById.g0.kind === 'glyph' && stampById.g_candy.kind === 'seal', '3 只有合法的那枚章进来；字形章 / 封蜡没被覆盖');
+  ok(HIDDEN.length === before.h + 1 && hiddenById.h_good && !hiddenById.nothidden && !hiddenById.h_badcond, '3 只有合法的那枚隐藏章进来');
+  ok(Object.keys(INKS).length === before.i + 1 && INKS.ok1 && !INKS.bad1 && !INKS.bad2, '3 只有合法的那款印泥进来');
+  ok(!CATEGORIES.some(c => c.id === 'nope'), '3 缺 name 的分类不进');
+  ok(catalogInfo().warnings.length === 11, `3 跳过的 11 条都记在 warnings（实际 ${catalogInfo().warnings.length}：${catalogInfo().warnings.join(' | ')}）`);
+
+  // ---- 4. 覆盖已有条目（改名 / 改图 / 给旧章补条件）----
+  applyCatalog({ version: 4, stamps: [{ id: 'lantern', name: '红灯笼', cat: 'season', ink: 'moss', d: PATH, unlock: { type: 'total', n: 1 } }] }, 'test');
+  ok(STAMPS.length === before.s + 1 && stampById.lantern.name === '红灯笼' && stampById.lantern.ink === 'moss', '4 同 id 再来一次 = 原地覆盖，不重复');
+  ok(UNLOCK.lantern && !INIT_STAMPS.includes('lantern') && !isUnlocked('lantern'), '4 补上 unlock 后从"一开始就有"退出、改为要解锁');
+
+  // ---- 5. 版本门 ----
+  ok(await refreshCatalog(blob({ version: 3, stamps: [{ id: 'older', name: 'x', cat: 'food', ink: 'zhu', d: PATH }] })) === false && !stampById.older, '5 线上版本 ≤ 已应用的（4）不合并');
+  ok(await refreshCatalog(blob({ version: 5, stamps: [{ id: 'newer', name: '新', cat: 'food', ink: 'zhu', d: PATH }] })) === true && stampById.newer, '5 线上版本更大才合并，返回 true');
+  const cached = JSON.parse(localStorage.getItem(K));
+  ok(cached && cached.version === 5 && catalogInfo().source === 'live', '5 合并后落缓存，source=live');
+  ok(await refreshCatalog(blob('{not json')) === false, '5 坏 JSON → false 不抛');
+  ok(await refreshCatalog(blob({ nope: 1 })) === false, '5 没 version 的 → false');
+  ok(await refreshCatalog('../js/definitely_missing_' + Date.now() + '.json') === false, '5 404 → false');
+  ok(await bootCatalog(blob({ version: 9, stamps: [] })) === false && catalogInfo().version === 5, '5 已有内容时 bootCatalog 不读包内副本（首启专用）');
+
+  // ---- 6. 未知章 id 画占位不崩（另一台设备先用了新章）----
+  let crashed = false, ph = '';
+  try { ph = stampSVG(stampById.__nope__, { size: 30 }); } catch (_) { crashed = true; }
+  ok(!crashed && ph.includes('<svg') && ph.includes('stroke-dasharray'), '6 stampSVG(undefined) 画虚线占位');
+  ok(stampSVG({ id: 'weird' }, { size: 30 }).includes('stroke-dasharray'), '6 没有 d 的 def 也画占位');
+  ok(stampSVG(stampById.g_candy, { size: 30 }).includes('mask'), '6 封蜡照旧走 seal 分支（守卫没误伤）');
+
+  // ---- 7. 真实的 js/catalog.json 可解析、版本 ≥1 ----
+  const real = await fetchCatalog('../js/catalog.json');
+  ok(real && Number.isInteger(real.version) && real.version >= 1, `7 js/catalog.json 能拉到且合法（v${real && real.version}）`);
+  ok(real && ['inks', 'cats', 'stamps', 'hidden', 'names'].every(k => k in real), '7 五个段都在');
+} catch (e) {
+  ok(false, 'CRASH: ' + (e && e.stack || e));
+}
+const s = document.createElement('div'); s.textContent = `— ${pass} pass / ${fail} fail —`; out.appendChild(s);
+</script>

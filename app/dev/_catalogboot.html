@@ -1,0 +1,68 @@
+<!doctype html><meta charset="utf-8"><title>内容包 · 真 App 开机链路</title>
+<style>body{font:13px/1.7 monospace;background:#111;color:#ddd;padding:16px}
+.p{color:#7c6}.f{color:#f66;font-weight:700}iframe{width:390px;height:700px;border:1px solid #333;display:block;margin-top:12px}</style>
+<div id="out">running…</div>
+<!-- 9-07 内容包：_catalog.html 证明的是合并逻辑；这页证明**真 App 开机**吃得到——
+     先往 localStorage 种一份缓存（一款渐变印泥 + 一个新分类 + 一枚不用解锁的新章），
+     再把 index.html 装进 iframe（同源共享 localStorage），看托盘里有没有那枚章、defs 里有没有那款渐变、
+     首屏有没有炸（index.html 顶上那条红色错误横幅）。
+     跑法：python check_regress.py _catalogboot -->
+<script>
+localStorage.clear();
+const PATH = '<path d="M20,50 Q50,20 80,50 Q50,80 20,50 Z" fill="none" stroke="CC" stroke-width="6"/>';
+localStorage.setItem('lifestamps_catalog', JSON.stringify({
+  version: 2,
+  inks: { aurora: { name: '极光', type: 'gradient', near: 'song', stops: [['0', '#5FA8A0'], ['1', '#8E7CC3']] } },
+  cats: [{ id: 'season', name: '时节' }],
+  stamps: [{ id: 'lantern', name: '灯笼', cat: 'season', ink: 'aurora', d: PATH }],
+  hidden: [],
+  names: { en: { stamp: { lantern: 'Lantern' }, cat: { season: 'Season' } } },
+}));
+</script>
+<script type="module">
+const out = document.getElementById('out'); out.textContent = '';
+let pass = 0, fail = 0;
+function ok(cond, msg) {
+  const d = document.createElement('div');
+  d.className = cond ? 'p' : 'f';
+  d.textContent = (cond ? 'PASS  ' : 'FAIL  ') + msg;
+  out.appendChild(d);
+  cond ? pass++ : fail++;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+try {
+  const f = document.createElement('iframe');
+  f.src = '../index.html?skipob=1&book=open&deck=open&cat=season';
+  document.body.appendChild(f);
+  await new Promise(r => { f.onload = r; });
+  // 等模块图跑完 + refreshCatalog 那一拍（线上 js/catalog.json 是 v1 ≤ 缓存 v2，应当什么都不做）
+  let doc = f.contentDocument, tries = 0;
+  while (tries++ < 40 && !(doc.querySelector('#deck-strip') || doc.querySelector('.dk-stamp'))) { await sleep(250); doc = f.contentDocument; }
+
+  const banner = [...doc.body.children].find(el => (el.getAttribute('style') || '').includes('#C93B3B'));
+  ok(!banner, '首屏没有红色错误横幅' + (banner ? '：' + banner.textContent.slice(0, 200) : ''));
+  ok(!!doc.querySelector('#page-today'), '今日页在');
+  ok(!!doc.querySelector('.dk-stamp[data-sid="lantern"]'), '托盘「时节」分类里有缓存里那枚新章（不用解锁，开机就在）');
+  ok(!!doc.querySelector('#deck-cats [data-cat="season"]'), '分类行里有新分类');
+  ok(!!doc.querySelector('.dk-ink[data-ink="aurora"]'), '印泥盒里有新印泥');
+  const defs = doc.querySelector('#defs-holder');
+  ok(defs && defs.innerHTML.includes('id="ls-ink-aurora"'), 'defs 里有新渐变的 linearGradient（首屏就有，不是等线上拉完才有）');
+  ok(!(defs && defs.innerHTML.includes('id="ls-ink-aurora"') && defs.innerHTML.split('id="ls-ink-aurora"').length > 2), 'defs 里没重复注入');
+  // 缓存没被线上那份（v1）覆盖回去
+  const cached = JSON.parse(localStorage.getItem('lifestamps_catalog'));
+  ok(cached && cached.version === 2, '缓存仍是 v2（线上 v1 更旧，不回退）');
+  // 分享页也吃得到：同一份缓存，B 端看得见新章
+  const s = document.createElement('iframe');
+  s.src = '../s/?c=zzzzzz&debug=1';
+  document.body.appendChild(s);
+  await new Promise(r => { s.onload = r; });
+  await sleep(1500);
+  const sd = s.contentDocument;
+  const sdefs = sd.querySelector('#defs-holder');
+  ok(sdefs && sdefs.innerHTML.includes('id="ls-ink-aurora"'), '分享页 s/ 的 defs 也含新渐变（B 端认得 A 盖的新章）');
+} catch (e) {
+  ok(false, 'CRASH: ' + (e && e.stack || e));
+}
+const s2 = document.createElement('div'); s2.textContent = `— ${pass} pass / ${fail} fail —`; out.appendChild(s2);
+</script>

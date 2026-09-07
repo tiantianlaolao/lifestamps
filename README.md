@@ -9,7 +9,8 @@ app/                 # 应用本体（纯静态 Web，无构建步骤）
   index.html
   css/app.css
   js/
-    data.js          # 印章库(41基础+5隐藏)/印泥(12款)/分类/人格/文案
+    data.js          # 印章库(41基础+5隐藏)/印泥(13款)/分类/人格 —— 内置基线
+    catalog.js       # 内容包加载与合并（新章/新印泥不发版），数据在 js/catalog.json
     stamp.js         # 印章SVG工厂（歪线+吃墨滤镜、印泥paint）
     store.js         # localStorage 状态层
     hidden.js        # 隐藏章条件引擎 + 今日隐藏章
@@ -57,6 +58,52 @@ Capacitor 包壳：`app/` 即 webDir。打包后需替换的原生桥接点（�
 盖章(可重复+随机姿态) / 长按删除·编辑时间·再盖 / 自动时间 / 今日页(空状态+今日总结) /
 月回看+某日详情 / 章柜(已发现·未发现灰态) / 隐藏章×5(条件引擎)+今日隐藏章 /
 盖章动画+触感+可选音效 / 月度手账卡分享图(含本月人格印章) / 三屏引导 / 数据导出JSON
+
+## 上新章 / 新印泥（不发版，9-07 起）
+
+章和印泥是**内容**不是代码：新章 = 一段 SVG，新印泥 = 几行渲染参数。它们写在
+`app/js/catalog.json`（内容包），App 开机时合并进 `data.js` 的内置基线——**改文件、部署网页、用户下次打开就有**，
+iOS / Play / 官网直装三条线都不用重新出包、不过审。
+
+```
+改 app/js/catalog.json（version +1）→ 提交 git → python _deploy_lifestamps.py（国内）/ _deploy_lifestamps_us.py（美服）
+```
+
+加载顺序：本地缓存（首屏前）→ 包内自带副本（首次启动）→ 线上最新（后台，版本更大才合并）。
+真机看「我的」页版本号连点 5 下，诊断面板有一行「内容包 vN · cache/bundled/live」。
+校验规则、字段细节见 `app/js/catalog.js` 头注释；回归页 `app/dev/_catalog.html`。
+
+```jsonc
+{
+  "version": 2,                                   // 整数，每次上新 +1；客户端只认更大的
+  "inks": {                                       // 新印泥。type 只能是 solid / gradient / pattern（现有三种画法）
+    "moss":   { "name": "苔绿", "type": "solid", "color": "#6E8B5E", "free": true },
+    "aurora": { "name": "极光", "type": "gradient", "near": "song",  // near = 没买断时回落到哪款免费色
+                "stops": [["0", "#5FA8A0"], ["1", "#8E7CC3"]], "x1": 0, "y1": 0, "x2": 100, "y2": 100 },
+    "plaid":  { "name": "格子", "type": "pattern", "bg": "#F3E9D2", "c1": "#C94B3C", "c2": "#668878" }
+  },
+  "cats": [{ "id": "season", "name": "时节" }],   // 新分类（可选）
+  "stamps": [                                      // 新章。d = SVG 内容，viewBox 0 0 100 100，CC = 印泥占位
+    { "id": "pumpkin", "name": "南瓜", "cat": "season", "ink": "moss", "d": "<path … stroke=\"CC\"/>",
+      "unlock": { "type": "catTotal", "cat": "food", "n": 2 } },   // 有 unlock = 靠用解锁；没有 = 一开始就在托盘里
+    { "id": "lantern", "name": "灯笼", "cat": "season", "ink": "aurora", "d": "…" }
+  ],
+  "hidden": [                                      // 新隐藏章。id 必须 h_ 开头；cond.type 只能是现有五种
+    { "id": "h_autumn", "name": "秋日限定", "ink": "aurora", "hint": "两样都遇到的话。",
+      "cond": { "type": "distinct", "ids": ["pumpkin", "lantern"] }, "d": "…" }
+  ],
+  "names": { "en": { "stamp": { "pumpkin": "Pumpkin" }, "ink": { "moss": "Moss" }, "cat": { "season": "Season" }, "hidden": { "h_autumn": "Autumn Special" } },
+             "ja": { "stamp": { "pumpkin": "かぼちゃ" } } }   // zh 不用写（直接用 name）
+}
+```
+
+规矩：
+- **只追加、只覆盖，永不删除**——用户纸上盖过的章必须永远画得出来。要下架就别再往里加，已发出去的留着。
+- 同 id 再写一次 = 覆盖（改名 / 改图 / 给旧章补解锁条件都行）。
+- 坏一条跳一条（不会整包作废），跳过的条目在诊断面板「内容包」那行能看到第一条原因。
+- 🔴 **内容不审，代码才审**：要新的印泥类型（箔感 / 金属）、新的滤镜、新的解锁条件类型——那是代码，得发版。
+- 🔴 文件必须留在 `app/js/` 下：部署脚本是目录白名单制，放根目录会静默漏传。
+- 付费：新印泥 `free:false` 归现有「高级印泥盒」买断；单独定价的盒子（`productId`）还没做，以后再说。
 
 ## 商业化（已定，未实现）
 

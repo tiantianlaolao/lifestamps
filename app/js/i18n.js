@@ -74,6 +74,20 @@ export function nameOf(kind, id, fallback) {
   return (n && n[kind] && n[kind][id]) || fallback;
 }
 
+// 9-07 内容包：新章 / 新印泥的 en/ja 名字随 catalog.json 下发，开机合并进字典。
+//   names = { stamp:{id:'…'}, ink:{…}, hidden:{…}, hiddenHint:{…}, cat:{…} }，按 kind 逐 id 覆盖。
+//   zh 不需要（zh 直接用数据层原值，见 nameOf）；不认识的语言忽略。
+export function addNames(lg, names) {
+  const d = DICTS[lg];
+  if (!d || !names || typeof names !== 'object') return;
+  if (!d.names) d.names = {};
+  for (const [kind, map] of Object.entries(names)) {
+    if (!map || typeof map !== 'object') continue;
+    if (!d.names[kind]) d.names[kind] = {};
+    for (const [id, v] of Object.entries(map)) if (typeof v === 'string') d.names[kind][id] = v;
+  }
+}
+
 // ---- 日期 ----
 // 原来是 WEEK / WEEK_S 两个中文数组写死的，三语各写一套不现实，改用 Intl。
 export function weekName(d, short = false) {

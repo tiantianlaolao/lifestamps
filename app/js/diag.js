@@ -4,6 +4,7 @@
 // 打开方式：「我的」页最底下那行版本号，连点 5 下。
 // ============================================================
 import { apiBase } from './net.js';
+import { catalogInfo } from './catalog.js';
 
 const C = { down: 0, move: 0, up: 0, cancel: 0, lastTA: '-', lastTarget: '-' };
 let panel = null, live = null;
@@ -31,6 +32,10 @@ function refresh() {
     `原生壳      ${window.Capacitor ? (window.Capacitor.getPlatform?.() || 'yes') : '否（浏览器）'}`,
     // 9-05 中国区路由：商店版 iOS 在中国区账号下这里应是 www（1.13），其余是 stampday（美服）
     `服务端      ${apiBase()}`,
+    // 9-07 内容包：v0/builtin = 一份都没拉到（只有 data.js 内置的）；cache/bundled/live 见 catalog.js 三级加载
+    `内容包      v${catalogInfo().version} · ${catalogInfo().source} · 章+${catalogInfo().counts.stamps} 隐藏+${catalogInfo().counts.hidden} 印泥+${catalogInfo().counts.inks}`
+      + (catalogInfo().warnings.length ? `
+            ⚠ 跳过 ${catalogInfo().warnings.length} 条：${catalogInfo().warnings[0]}` : ''),
     `窗口高      innerHeight ${innerHeight} / visualViewport ${Math.round(visualViewport?.height || 0)}`,
     // 9-02 纸预算冻结值：弹键盘时 innerHeight 掉了而这个没掉 = 冻结起作用；两个一起掉 = 没起作用
     `纸预算冻结  --vh-fixed ${getComputedStyle(de).getPropertyValue('--vh-fixed').trim() || '（未设）'}`,

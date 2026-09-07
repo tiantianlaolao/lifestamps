@@ -144,8 +144,20 @@ function sealSVG(def, opts = {}) {
     + ` mask="url(#${mid})" opacity="${opts.opacity ?? 0.94}"/></g></svg>`;
 }
 
+// 9-07 内容包：记录里的章 id 在本机查不到时（另一台设备先用上了新章、这台还没拉到
+//   内容包；或内容包被人为撤下），画一个占位而不是在 def.d 上抛 —— 一枚认不出的章
+//   不能把整页纸带崩。拉到内容包后整页重画，它自然换回真章。
+function placeholderSVG(opts = {}) {
+  const size = opts.size ?? 48;
+  const rot = opts.rot ?? 0;
+  return `<svg class="${opts.cls || ''}" width="${size}" height="${size}" viewBox="0 0 100 100"`
+    + ` style="transform:rotate(${rot}deg)" aria-label="">`
+    + `<circle cx="50" cy="50" r="36" fill="none" stroke="#B9B2A4" stroke-width="3" stroke-dasharray="6 5" opacity=".7"/></svg>`;
+}
+
 export function stampSVG(def, opts = {}) {
-  if (def && def.kind === 'seal') return sealSVG(def, opts);
+  if (!def || (def.kind !== 'seal' && typeof def.d !== 'string')) return placeholderSVG(opts);
+  if (def.kind === 'seal') return sealSVG(def, opts);
   const size = opts.size ?? 48;
   const mat = opts.mat || 'r';
   const inkId = mat === 'p' ? 'zhu' : (opts.ink ?? def.ink);

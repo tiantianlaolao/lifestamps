@@ -6,7 +6,8 @@ import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint
 import { store, dateKey, fmtTime, posOf } from './store.js';
 import { sync } from './sync.js';
 import { iapPrice, iapBuy, iapRestore, isAndroid, initAndroidShell, appBuild, openExternal } from './native.js';
-import { collectGifts, claimTicket, authSmsSend, smsSupported, androidUpdateInfo, IS_OVERSEAS, initRegion, ICP_APP_NO } from './net.js';
+import { collectGifts, claimTicket, authSmsSend, smsSupported, androidUpdateInfo, IS_OVERSEAS, initRegion, ICP_APP_NO, webBase } from './net.js';
+import { bootCatalog, refreshCatalog } from './catalog.js';   // 内容包：import 即合并本地缓存（在首屏之前）
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked } from './hidden.js';
 import { verdictOf } from './verdict.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
@@ -247,6 +248,16 @@ function init() {
   // 拉到远端变更后整体重画一次 —— 增量修补哪张纸不值得，全量 render 本来就便宜。
   sync.onApplied = () => render();
   sync.init();
+
+  // 内容包（9-07）：后台拉线上最新，不 await、网不通不挡首屏。比已应用的版本新才合并；
+  // 合并后三件事缺一不可：重注入 defs（新渐变 / 图案印泥要 <linearGradient>/<pattern>）、
+  // 开机对账（新章的解锁条件可能早就满足了）、整页重画（另一台设备先用了新章时纸上的占位换回真章）。
+  refreshCatalog(new URL('js/catalog.json', webBase()).href).then(changed => {
+    if (!changed) return;
+    $('#defs-holder').innerHTML = defsMarkup();
+    checkUnlocks();
+    render();
+  });
 
   renderTabLabels();
   initDiag();               // 真机诊断面板：「我的」页版本号连点 5 下
@@ -2626,4 +2637,8 @@ function seedDemo() {
 //    initRegion 只在「海外构建 + iOS 壳」里真的去问 StoreKit（几十毫秒，2.5s 兜底），
 //    其它场合立刻返回。init 里的开机对账 / 能力探测 / 更新检查都得在它之后。
 //    失败也照常开机 —— 这个 App 离线要能用，路由定不下来就按构建默认走。
-initRegion().then(init, init);
+// 内容包（9-07）排在路由之后、init 之前：首次启动没缓存时先把包内自带的那份读进来
+//    （原生壳里是本地文件，瞬时；网页版没网就 1.5s 放弃按内置基线开机）。
+//    有缓存时 bootCatalog 立刻返回，不多花一毫秒。线上最新那份在 init 里后台拉。
+const bootCat = () => bootCatalog(new URL('js/catalog.json', location.href).href);
+initRegion().then(bootCat, bootCat).then(init, init);

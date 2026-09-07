@@ -135,13 +135,14 @@
 import { stampById, GIFTS, INKS, giftPos } from '../js/data.js';
 import { defsMarkup, stampSVG } from '../js/stamp.js';
 import { setLang, detectLang, t, monthDay, weekName, nameOf, getLang, timeShort } from '../js/i18n.js';
+import { refreshCatalog } from '../js/catalog.js';   // 内容包：A 盖的可能是新章，B 这边也要认得
 
 // B 是海外朋友时整页跟着系统语言走（8-30 三语化）。?lang= 供验收强制指定。
 setLang(new URLSearchParams(location.search).get('lang') || detectLang());
 document.title = t('appName');
 document.getElementById('state').textContent = t('frOpening');
 document.body.insertAdjacentHTML('afterbegin',
-  `<svg width="0" height="0" style="position:absolute" aria-hidden="true">${defsMarkup()}</svg>`);
+  `<svg width="0" height="0" style="position:absolute" aria-hidden="true" id="defs-holder">${defsMarkup()}</svg>`);
 
 const API = '../api';
 const code = (new URLSearchParams(location.search).get('c') || '').toLowerCase();
@@ -466,6 +467,10 @@ function showTicket(ticket, g) {
 (async () => {
   if (!/^[a-z2-9]{6}$/.test(code)) return dead(t('frBadLink'), t('frBadLinkSub'));
   try {
+    // 内容包先于分享数据：A 那天要是盖了新章，这一页得先认得它。失败/超时一律按已有的画（占位不崩）
+    if (await refreshCatalog(new URL('../js/catalog.json', location.href).href)) {
+      document.getElementById('defs-holder').innerHTML = defsMarkup();
+    }
     const r = await fetch(`${API}/share/${code}`);
     if (r.status === 410) return dead(t('frGone'), t('frGoneSub'));
     if (!r.ok) throw new Error(String(r.status));

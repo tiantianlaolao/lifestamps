@@ -1,6 +1,11 @@
 // ============================================================
 // 戳了么 · 数据层：印泥 / 分类 / 印章库 / 隐藏章 / 人格 / 文案
 // 印章绘制约定：viewBox 0 0 100 100，CC = 印泥 paint 占位符
+//
+// 🔴 9-07 起这份是**内置基线**，不是全集：新章 / 新印泥 / 新隐藏章走 app/catalog.json
+//    （见 js/catalog.js），开机时合并进这里的 INKS / STAMPS / HIDDEN / UNLOCK / SERIES，
+//    不发版就能上新。所以这些导出必须保持是**可原地追加**的数组 / 对象，
+//    ⛔ 别改成冻结的、别在别处拷一份快照（`const N = STAMPS.length` 这种写在模块顶层的就会过期）。
 // ============================================================
 import { COPY } from './i18n.js';   // monthPersona 的文案在字典里（zh.js personas）
 
@@ -572,7 +577,15 @@ export const SERIES = [
 
 export const seriesById = Object.fromEntries(SERIES.map(s => [s.id, s]));
 const _seriesOfStamp = {};
-for (const s of SERIES) for (const id of s.stampIds) _seriesOfStamp[id] = s.id;
+// 9-07 内容包：SERIES / stampIds 会在运行时被 catalog.js 追加，索引要能重建。
+//   ⚠️ 两张表都是**原地**更新（清空再填），不换对象 —— import 进来的绑定才跟得上。
+export function rebuildSeriesIndex() {
+  for (const k of Object.keys(seriesById)) delete seriesById[k];
+  for (const s of SERIES) seriesById[s.id] = s;
+  for (const k of Object.keys(_seriesOfStamp)) delete _seriesOfStamp[k];
+  for (const s of SERIES) for (const id of s.stampIds) _seriesOfStamp[id] = s.id;
+}
+rebuildSeriesIndex();
 
 export function seriesOf(stampId) { return seriesById[_seriesOfStamp[stampId]] || null; }
 // 这枚章的材质是否被它所属的系列锁死；null = 没锁，用户可选
@@ -614,7 +627,17 @@ export const GLYPHS = [
 // 记录里可能引用字形章，所以查表要把它们算上（但统计口径不算，见上面红字）
 // 赠礼章也进来 —— 记录里会引用它们的 id
 // 隐藏章也进来（9-01 拍板：解锁后进托盘可继续盖）—— 不在这张表里，纸面就画不出它的印记
-export const stampById = Object.fromEntries([...STAMPS, ...GLYPHS, ...HIDDEN, ...GIFTS.map(g => ({ ...g, kind: 'seal' }))].map(s => [s.id, s]));
+export const stampById = {};
+export const hiddenById = {};
+// 9-07 内容包：STAMPS / HIDDEN 会在运行时被 catalog.js 追加，查表要能重建。
+//   原地更新，理由同 rebuildSeriesIndex。GLYPHS / GIFTS 是代码里的固定资产，不从内容包来。
+export function rebuildStampIndex() {
+  for (const k of Object.keys(stampById)) delete stampById[k];
+  for (const s of [...STAMPS, ...GLYPHS, ...HIDDEN, ...GIFTS.map(g => ({ ...g, kind: 'seal' }))]) stampById[s.id] = s;
+  for (const k of Object.keys(hiddenById)) delete hiddenById[k];
+  for (const h of HIDDEN) hiddenById[h.id] = h;
+}
+rebuildStampIndex();
 export const isGlyph = id => stampById[id]?.kind === 'glyph';
-export const hiddenById = Object.fromEntries(HIDDEN.map(h => [h.id, h]));
-export const TOTAL_COLLECTIBLE = STAMPS.length + HIDDEN.length;
+// 可收集总数（基础章 + 隐藏章）。内容包追加后会变，所以是函数不是常量。
+export const totalCollectible = () => STAMPS.length + HIDDEN.length;

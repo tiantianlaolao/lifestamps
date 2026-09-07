@@ -379,7 +379,7 @@ function mount({ db, send, readBody }) {
     return null;
   }
 
-  return { route };
+  return { route, sessionOf };   // sessionOf 交出去：pay.js 也要按 Bearer 认人
 }
 
 module.exports = { mount, verifyIdToken };

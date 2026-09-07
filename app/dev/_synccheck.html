@@ -48,6 +48,9 @@ function mockServer() {
     },
     async authLogin() { return { token: 'TKN', uid: 'u1', provider: 'apple', email: 't@example.com' }; },
     authLogout() {},
+    // 权益（9-07）：登录后引擎会拉一次；m.owned 由断言摆布
+    owned: [],
+    async entitlements(token) { return token === 'TKN' ? { http: 200, products: m.owned } : { http: 401, products: [] }; },
     async nativeLogin() { return 'FAKE_ID_TOKEN'; },
   };
   return m;
@@ -134,6 +137,18 @@ function mockServer() {
   //    函数加进了 net.js 却没加进 sync.js 的接缝清单 —— 断言页注入的是假 net，永远抓不到。
   //    所以这里补两层：a) 接缝完整性 = 引擎源码里用到的每个 net.* 都真在接缝上；
   //    b) loginPhone 整条路走一遍。
+  // ⑫ 权益（9-07）：服务端 entitlements 说买过 → 登录后 pro 亮；没买过 → 不动
+  {
+    store.pro = false; store.persist();
+    mock.owned = ['premiuminks'];
+    const rr = await sync.login('apple');
+    await new Promise(r => setTimeout(r, 30));      // refreshEntitlements 是 fire-and-forget
+    ok(rr.ok && store.isPro(), '⭐ 登录后从服务端权益拉回 premiuminks → 印泥盒打开');
+    mock.owned = [];
+    const ps = await sync.refreshEntitlements();
+    ok(Array.isArray(ps) && !ps.length && store.isPro(), '权益清单空时不收回已开的（只往有利方向合）');
+  }
+
   const src = await (await fetch('../js/sync.js')).text();
   const used = [...new Set([...src.matchAll(/net\.(\w+)\(/g)].map(m => m[1]))];
   const missing = used.filter(n => typeof sync.net[n] !== 'function');

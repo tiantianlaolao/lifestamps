@@ -6,7 +6,7 @@ import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint
 import { store, dateKey, fmtTime, posOf } from './store.js';
 import { sync } from './sync.js';
 import { iapPrice, iapBuy, iapRestore, isAndroid, initAndroidShell, appBuild, openExternal } from './native.js';
-import { collectGifts, claimTicket, authSmsSend, smsSupported, androidUpdateInfo, IS_OVERSEAS, initRegion, ICP_APP_NO, webBase } from './net.js';
+import { collectGifts, claimTicket, authSmsSend, smsSupported, androidUpdateInfo, IS_OVERSEAS, initRegion, ICP_APP_NO, webBase, payCreate, payOrder } from './net.js';
 import { bootCatalog, refreshCatalog } from './catalog.js';   // 内容包：import 即合并本地缓存（在首屏之前）
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked } from './hidden.js';
 import { verdictOf } from './verdict.js';
@@ -204,6 +204,8 @@ function init() {
   //   ?pro=1 / ?pro=0   买断 / 没买断
   //   ?trial=N          把今天的试用额度改成还剩 N 次（?trial=0 看撞墙）
   if (params.get('pro')) { store.setPro(params.get('pro') === '1'); }
+  // dev：?payproduct=test001 让购买按钮买 ￥0.01 的测试商品（服务端要开 LS_PAY_TEST_PRODUCT=1），真钱验支付链路用
+  if (params.get('payproduct')) payProduct = params.get('payproduct');
   if (params.get('trial') !== null && params.get('trial') !== undefined) {
     const n = Math.max(0, Math.min(TRIAL_DIPS, +params.get('trial') || 0));
     store.trialDay = dateKey(Date.now());
@@ -272,7 +274,9 @@ function init() {
     const away = Date.now() - hiddenAt;
     applyBand(away < 5 * 60000);   // 离开不到 5 分钟才平滑过渡，久离回来直接就位
     if (away >= 30 * 60000) playOpening();   // 规格：离开 ≥30 分钟再回来，重播开场
+    checkPendingOrder();           // 从支付宝回来：挂着的单到账没（9-07）
   });
+  checkPendingOrder();             // 付完款被杀掉再开：同样查一次
 
   sealPastTitles();
   if (store.lastSeen && Date.now() - store.lastSeen > 3 * 864e5) toast(COPY.welcomeBack, 2200);
@@ -1556,6 +1560,7 @@ function proCardHTML() {
     <button class="cta pro-buy" data-pro="buy">${COPY.proBuy}</button>
     <div class="pro-row">
       <button class="pro-plain" data-pro="later">${COPY.proLater}</button>
+      ${pendingOrder() ? `<button class="pro-plain" data-pro="check">${COPY.payCheck}</button>` : ''}
       <button class="pro-plain" data-pro="restore">${COPY.proRestore}</button>
     </div>
   </div>`;
@@ -1565,17 +1570,79 @@ function proCardHTML() {
 //    跟 ui.js:haptic / share.js:保存图片 是同一类 TODO —— 打包前必须接上，
 //    没接之前打出来的包别给人用，用户会点了没反应。
 //    接的时候只改这个函数体，UI 一行都不用动。
+// 谁走支付宝（9-07，用户拍板：现在只卖 ￥8 高级印泥盒；必须登录；中国版 / 海外版分开；别碰 iOS）：
+//   · 安卓**国内**官网直装包：isAndroid() && !IS_OVERSEAS（Play 包 WEB_BASE 注入成 stampday → IS_OVERSEAS=true → 走 Play）
+//   · **国内**网页版：按主机名判（www.tybbtech.com / 本地开发 / 局域网联调），跟手机号登录入口同一张白名单。
+//     🔴 不能拿 IS_OVERSEAS 判网页版：美服网页部署不注入 WEB_BASE，stampday 上它恒为 false，
+//        按它判会把海外网页版也带进支付宝 → 美服服务端没配密钥 → 501。
+//   ⛔ iOS 永远不走这里（国内区 / 海外区都是 App Store 内购，initRegion 只切服务器不切支付）；
+//      海外网页版没有支付通道，照旧内测放行（9-01 拍板）。
+const CN_WEB_HOST = /^(www\.tybbtech\.com|localhost|127\.|192\.168\.|10\.)/;
+function alipayLane() {
+  if (window.Capacitor) return isAndroid() && !IS_OVERSEAS;
+  return CN_WEB_HOST.test(location.hostname);
+}
+
+// 挂着的订单：付款前记下订单号（裸键、不进 store、不同步 —— 它是这台设备这一次的事）
+const PAY_K = 'lifestamps_payOrder';
+let payProduct = 'premiuminks';                      // dev 参数 ?payproduct= 可换成 test001
+function pendingOrder() {
+  try { const p = JSON.parse(localStorage.getItem(PAY_K) || 'null'); return p && p.no ? p : null; } catch (_) { return null; }
+}
+
+// 支付宝 手机网站支付：
+//   建单要登录（权益记在账号上，换机才找得回）→ 服务端拼好签名 URL → 安卓外开系统浏览器 / 网页版本页跳转
+//   → 手机上自动拉起支付宝 → 付完回到 App → checkPendingOrder 轮询到账 → setPro。
+//   🔴 到账只认服务端（notify 验签 / 主动反查），支付宝跳回来那页只是给人看的，不参与判断。
+async function startAlipay() {
+  if (!sync.isLoggedIn()) { toast(COPY.payNeedLogin, 2600); switchTab('me'); return false; }
+  const r = await payCreate(sync.account.token, payProduct, 'alipay_wap');
+  if (!r || r.http !== 200 || !r.payUrl) {
+    toast(r && r.http === 501 ? COPY.proAndroidSoon : COPY.proFailed, 2200);
+    return false;
+  }
+  try { localStorage.setItem(PAY_K, JSON.stringify({ no: r.orderNo, at: Date.now() })); } catch (_) { /* 存不下就靠「我已付款」那颗按钮 */ }
+  toast(COPY.payOpened, 2200);
+  if (window.Capacitor) openExternal(r.payUrl);      // 安卓壳：系统浏览器 → 支付宝 App
+  else location.href = r.payUrl;                     // 网页版：本页去收银台，付完从 pay/ 回来
+  return false;                                      // 还没到账；到账是 checkPendingOrder 的事
+}
+
+// 回前台 / 开机 / 点「我已付款」时查挂着的单。到账 → 开印泥盒；关单或查无此单 → 清掉。
+// 最多试四次（0/1.5/3/5 秒）：支付宝 notify 通常付完一两秒就到，服务端查单时还会主动反查一次。
+let _checkingPay = false;
+async function checkPendingOrder() {
+  const p = pendingOrder();
+  if (!p || _checkingPay) return false;
+  if (Date.now() - (p.at || 0) > 2 * 3600e3) { localStorage.removeItem(PAY_K); return false; }   // 两小时没下文 = 放弃了
+  if (!sync.isLoggedIn()) return false;
+  _checkingPay = true;
+  try {
+    for (const wait of [0, 1500, 3000, 5000]) {
+      if (wait) await new Promise(r => setTimeout(r, wait));
+      const r = await payOrder(sync.account.token, p.no);
+      if (!r) return false;                                            // 网不通，下次再说
+      if (r.http === 404 || r.status === 'CLOSED') { localStorage.removeItem(PAY_K); return false; }
+      if (r.http === 200 && r.status === 'PAID') {
+        localStorage.removeItem(PAY_K);
+        if (!store.isPro()) store.setPro(true);                        // setPro 带同步埋点，另一台设备也会亮
+        toast(COPY.proThanks, 2200); haptic();
+        render();                                                      // 当前页整体重画（印泥盒 / 托盘跟着变）
+        return true;
+      }
+    }
+    return false;
+  } finally { _checkingPay = false; }
+}
+
 async function startPurchase() {
-  if (!window.Capacitor) {                       // 浏览器里没有内购，直接放行方便验收
+  if (alipayLane()) return startAlipay();
+  if (!window.Capacitor) {                       // 海外网页版：没有支付通道，内测放行照旧（9-01 拍板）
     store.setPro(true);
     toast(COPY.proThanks, 1800); haptic();
     return true;
   }
-  // 安卓分两条（9-03 拍板"对齐 iOS"）：
-  //   · 海外 Play 包：native-purchases 在安卓就是 Play Billing，商品 id 同一串，走下面同一条路；
-  //   · 国内官网直装包：没有 Play，购买走网页支付——支付路线用户说往后放，
-  //     先只给一句话，别让 iapBuy 去撞一个不存在的桥然后报"没能完成"。
-  if (isAndroid() && !IS_OVERSEAS) { toast(COPY.proAndroidSoon, 2200); return false; }
+  // 原生壳的另外三条：iOS 国内区 / iOS 海外区 / 安卓 Play——native-purchases 就是 StoreKit / Play Billing，商品 id 同一串
   const r = await iapBuy();
   if (r === 'ok') {
     store.setPro(true);                          // setPro 里带同步埋点，另一台设备也会亮
@@ -1588,7 +1655,15 @@ async function startPurchase() {
 }
 
 async function restorePurchase() {
-  if (!window.Capacitor) { store.setPro(true); toast(COPY.proRestored, 1800); return true; }
+  if (alipayLane()) {
+    // 国内：权益在服务端 entitlements 里，登录了就能拉回来（换机 / 重装靠这个）
+    if (!sync.isLoggedIn()) { toast(COPY.payNeedLogin, 2600); switchTab('me'); return false; }
+    const ps = await sync.refreshEntitlements();
+    if (ps && ps.includes('premiuminks')) { toast(COPY.proRestored, 1800); return true; }
+    toast(ps ? COPY.payNone : COPY.proFailed, 2200);
+    return false;
+  }
+  if (!window.Capacitor) { store.setPro(true); toast(COPY.proRestored, 1800); return true; }   // 海外网页版照旧
   const r = await iapRestore();
   if (r === 'ok') { store.setPro(true); toast(COPY.proRestored, 1800); return true; }
   toast(r === 'none' ? COPY.proNoneFound : COPY.proFailed, 2200);
@@ -1602,14 +1677,16 @@ function bindProCard(root, rerender) {
       if (a === 'later') { store.declinePro(); closeSheets(); return; }
       // 等 StoreKit 的这几百毫秒里连点会叠单，锁住
       b.disabled = true;
-      const ok = a === 'restore' ? await restorePurchase() : await startPurchase();
+      let ok;
+      if (a === 'check') { ok = await checkPendingOrder(); if (!ok) toast(COPY.payPending, 2200); }
+      else ok = a === 'restore' ? await restorePurchase() : await startPurchase();
       b.disabled = false;
       if (ok) { rerender(); renderToday(); }
     }));
   // 价格从 StoreKit 读真值（"¥6.00"/"$0.99" 按商店地区本地化）。
   // 拿不到（网页版 / 商品还没在 ASC 建 / 没网）就保持词典里的兜底价 —— 文案价随商店走，不再写死。
   const buy = root.querySelector('[data-pro="buy"]');
-  if (buy && window.Capacitor) {
+  if (buy && window.Capacitor && !alipayLane()) {      // 国内安卓没有商店，价钱就是词典里那句 ￥8
     iapPrice().then(ps => {
       if (ps && buy.isConnected) buy.textContent = COPY.proBuyN.replace('{price}', ps);
     });
@@ -2271,7 +2348,9 @@ function renderWeekView() {
 // 探测是异步的：结果回来且为真时补一次 renderMe（只有 App 壳里会发生这一下）。
 let phoneCapable = false;
 function phoneLoginOK() {
-  if (!window.Capacitor) return /^(www\.tybbtech\.com|localhost|127\.)/.test(location.hostname);
+  // 局域网 IP（192.168.* / 10.*）也放行：手机连本机起的服务做真机验收用（9-07 支付联调撞上），线上没有这种主机名。
+  // 跟 alipayLane 同一张白名单（CN_WEB_HOST）：能登录的国内网页版 = 能买的国内网页版
+  if (!window.Capacitor) return CN_WEB_HOST.test(location.hostname);
   return phoneCapable;
 }
 function probePhoneLogin() {

@@ -88,6 +88,13 @@ const account = require('./account.js').mount({
   send: (...a) => send(...a),
   readBody: (...a) => readBody(...a),
 });
+// 支付（9-07）：/api/pay/*、/api/entitlements。密钥没配时这些路由一律 501，其它接口不受影响。
+const pay = require('./pay.js').mount({
+  db,
+  send: (...a) => send(...a),
+  readBody: (...a) => readBody(...a),
+  sessionOf: account.sessionOf,
+});
 
 const q = {
   insertShare: db.prepare(
@@ -368,6 +375,10 @@ async function route(req, res, pathname) {
   // 账号 + 同步（/api/auth/*、/api/sync）。约定同本函数：null = 没匹配，继续走下面的表。
   {
     const hit = await account.route(req, res, pathname);
+    if (hit !== null) return hit;
+  }
+  {
+    const hit = await pay.route(req, res, pathname);
     if (hit !== null) return hit;
   }
 

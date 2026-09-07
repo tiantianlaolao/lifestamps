@@ -358,6 +358,29 @@ export async function syncPush(token, cursor, changes) {
   return { status, cursor: data.cursor, more: !!data.more, changes: data.changes || [] };
 }
 
+// ---- 支付（9-07，配 server/pay.js）----------------------------------------
+// 三个都要 Bearer。返回 { http, ...服务端字段 } / null（网不通）。
+// ⚠️ 字段名叫 http 不叫 status：订单本身有个 status（CREATED/PAID/CLOSED），别撞。
+export async function payCreate(token, product, channel = 'alipay_wap') {
+  const { status, data } = await call('pay/create', {
+    method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
+    body: JSON.stringify({ product, channel }),
+  });
+  if (status === 0) return null;
+  return { http: status, ...(data || {}) };
+}
+export async function payOrder(token, no) {
+  const { status, data } = await call('pay/order?no=' + encodeURIComponent(no),
+    { headers: { authorization: 'Bearer ' + token } });
+  if (status === 0) return null;
+  return { http: status, ...(data || {}) };
+}
+export async function entitlements(token) {
+  const { status, data } = await call('entitlements', { headers: { authorization: 'Bearer ' + token } });
+  if (status === 0) return null;
+  return { http: status, products: (data && data.products) || [] };
+}
+
 // 我现在解开了哪几枚封蜡。网不通返回 null（跟"一枚都没有"要分得开）。
 async function fetchUnlocked() {
   const id = store.installId;

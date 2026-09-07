@@ -186,3 +186,30 @@ CREATE TABLE IF NOT EXISTS sms_codes (
   dayKey   TEXT,                       -- 'YYYY-MM-DD'：当天计数的日期
   dayCount INTEGER NOT NULL DEFAULT 0  -- 当天已发条数；每号每天最多 8 条（护钱包）
 );
+
+-- ============================================================
+-- 支付（2026-09-07）。实现见 pay.js。口径：这两张表归**账号半边**（记 uid），
+-- 跟匿名五张表无关。到账只认支付方（notify 验签 / 主动反查），trade_no UNIQUE 做幂等。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS orders (
+  out_trade_no TEXT PRIMARY KEY,       -- 我们的订单号（LS + base36 时间 + 随机）
+  uid          TEXT NOT NULL,          -- 买的人（必须登录才能买：权益要有归属，换机才找得回）
+  product      TEXT NOT NULL,          -- 'premiuminks' …（价目表在 pay.js）
+  amount_fen   INTEGER NOT NULL,       -- 服务端定的金额（分）；notify/反查回来的金额必须和它一致
+  channel      TEXT NOT NULL,          -- 'alipay_wap' | 'alipay_app'
+  status       TEXT NOT NULL,          -- CREATED | PAID | CLOSED
+  trade_no     TEXT UNIQUE,            -- 支付宝交易号。UNIQUE = 同一笔交易只能落一单
+  created      INTEGER NOT NULL,
+  paid_at      INTEGER,
+  queried_at   INTEGER,                -- 上次主动反查支付宝的时间（限频）
+  raw          TEXT                    -- 到账那条 notify / 反查响应原文（对账用）
+);
+CREATE INDEX IF NOT EXISTS idx_orders_uid ON orders(uid, created);
+
+CREATE TABLE IF NOT EXISTS entitlements (
+  uid        TEXT NOT NULL,
+  product    TEXT NOT NULL,
+  granted_at INTEGER NOT NULL,
+  order_no   TEXT,                     -- 哪一单发的（IAP 那边以后接进来可以是 receipt id）
+  PRIMARY KEY (uid, product)
+);

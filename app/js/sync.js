@@ -22,7 +22,7 @@
 // 队列与游标都按 uid 存：换号登录不会拿着别人的游标乱拉。
 // ============================================================
 import { store } from './store.js';
-import { authLogin, authLoginPhone, authLogout, authDeleteAccount, syncPush } from './net.js';
+import { authLogin, authLoginPhone, authLogout, authDeleteAccount, syncPush, entitlements } from './net.js';
 import { nativeLogin } from './native.js';
 
 // 传输层收在一个可替换的对象里：dev/_synccheck.html 换成假服务端来测引擎本身
@@ -30,7 +30,7 @@ import { nativeLogin } from './native.js';
 // 🔴 net.js 加了新函数，引擎要用的话**必须同时加进这份清单** ——
 //    漏了的话报错是 "net.xxx is not a function"，而且只有真点按钮才炸
 //    （8-31 手机号登录上线当天就这么炸的，断言页测的是假 net 抓不到）。
-const net = { authLogin, authLoginPhone, authLogout, authDeleteAccount, syncPush, nativeLogin };
+const net = { authLogin, authLoginPhone, authLogout, authDeleteAccount, syncPush, nativeLogin, entitlements };
 
 const K = 'lifestamps_sync_';
 function load(k, d) { try { const v = JSON.parse(localStorage.getItem(K + k)); return v ?? d; } catch { return d; } }
@@ -114,7 +114,19 @@ export const sync = {
     this.fullPush();
     this.persist();
     this.flush();                                    // 不等 debounce，立刻推一轮
+    this.refreshEntitlements();                      // 付过的印泥盒跟着账号回来（9-07）
     return { ok: true };
+  },
+
+  // 权益（9-07）：服务端 entitlements 是付费的权威（支付宝到账记在那；以后 IAP 也可以记进去）。
+  // 登录 / 恢复购买 / 付款回来时拉一遍；只往有利方向合（跟 applyRemote 的 pro 同一条规矩）。
+  // 返回商品 id 数组；网不通 / 没登录 = null（跟"一个都没买"要分得开）。
+  async refreshEntitlements() {
+    if (!this.isLoggedIn()) return null;
+    const r = await net.entitlements(this.account.token);
+    if (!r || r.http !== 200) return null;
+    if (r.products.includes('premiuminks') && !store.isPro()) store.setPro(true);
+    return r.products;
   },
 
   async logout() {

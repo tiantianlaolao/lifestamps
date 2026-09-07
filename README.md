@@ -106,6 +106,24 @@ iOS / Play / 官网直装三条线都不用重新出包、不过审。
 - 🔴 **nginx 必须给 `/lifestamps/` 静态文件回 `Access-Control-Allow-Origin *`**（9-07 踩坑）：原生壳是 `capacitor://localhost` / `https://localhost` 去拉 `js/catalog.json`，跨域没这个头浏览器直接扔掉，表现是"网页有新章、App 没有"且不报错。1.13 已加（备份 `…bak-20260907-lifestamps-cors`）；**换主机 / 美服 `stampday.conf` 部署时要同样加**。`dl/android.json`（安卓更新检查）同一个坑，一起治好了。
 - 付费：新印泥 `free:false` 归现有「高级印泥盒」买断；单独定价的盒子（`productId`）还没做，以后再说。
 
+## 支付（9-07，支付宝 手机网站支付 / APP 支付）
+
+国内两条线（网页版 + 安卓官网直装包）买「高级印泥盒」￥8 走支付宝；iOS / Play 照旧 StoreKit / Play Billing。
+实现 `server/pay.js`（零依赖，RSA2 公钥模式，签名验签走 `node:crypto`），客户端 `main.js startAlipay / checkPendingOrder`，
+落点页 `app/pay/`（只给人看，不判到账）。
+
+流程：登录 → `POST /api/pay/create` → 服务端拼签名 URL → 安卓外开系统浏览器 / 网页本页跳转 → 手机拉起支付宝 →
+付完回 App → `checkPendingOrder` 轮询 `GET /api/pay/order?no=` → `PAID` → 开印泥盒。
+🔴 到账只认支付宝 notify（验签 + 金额 + app_id）或服务端主动 `alipay.trade.query`（响应验签）；`trade_no UNIQUE` 幂等；
+   `return_url` 跳回来的参数一个字不信。权益记在账号（`entitlements` 表），登录 / 恢复购买时 `GET /api/entitlements` 拉回。
+
+服务端环境变量（pm2 里配；缺一个 = `/api/pay/*` 全部 501，其它接口不受影响）：
+`LS_ALIPAY_APP_ID`（默认 2021006197636619）· `LS_ALIPAY_PRIVATE_KEY_FILE`（应用私钥）· `LS_ALIPAY_PUBLIC_KEY_FILE`（**支付宝**公钥）·
+`LS_ALIPAY_GATEWAY`（默认正式网关）· `LS_ALIPAY_SELLER_ID`（可选）· `LS_PAY_NOTIFY_URL` / `LS_PAY_RETURN_URL`（有默认）·
+`LS_PAY_TEST_PRODUCT=1`（放开 ￥0.01 的 `test001`，验完真单就删掉）。密钥文件放 `/home/ubuntu/lifestamps-server/secrets/`，⛔ 永不进 git。
+开放平台那边：接口加签方式选**公钥**；`notify_url` 走 `/lifestamps/api/` 反代到 :8781，不需要改 nginx。
+自测：`node server/test.js`（支付 36 条：签名 / 验签 / 金额 / 幂等 / 反查 / 关单）；`dev/_synccheck.html`（权益拉回）。
+
 ## 商业化（已定，未实现）
 
 方案已定，暂不公开。

@@ -53,7 +53,7 @@ jobs:
         run: |
           sed -i "s|^const WEB_BASE = 'https://www.tybbtech.com/lifestamps/';|const WEB_BASE = 'https://stampday.tybbtech.com/lifestamps/';|" app/js/net.js
           grep -q "^const WEB_BASE = 'https://stampday.tybbtech.com/lifestamps/';" app/js/net.js
-          grep -q "^export const IS_OVERSEAS = WEB_BASE.startsWith('https://stampday.');" app/js/net.js
+          grep -q "^export let IS_OVERSEAS = WEB_BASE.startsWith('https://stampday.');" app/js/net.js
           echo "WEB_BASE = 美服 stampday；IS_OVERSEAS 会推成 true"
 
       # 包名 + 显示名在 cap add 之前改 capacitor.config.json（cap add 按它生成 applicationId / app_name / Java 包目录）

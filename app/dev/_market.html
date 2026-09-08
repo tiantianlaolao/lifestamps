@@ -1,0 +1,131 @@
+<!doctype html><meta charset="utf-8"><title>印集 · 藏品 / 集市 · 真 App 断言</title>
+<style>body{font:13px/1.7 monospace;background:#111;color:#ddd;padding:16px}
+.p{color:#7c6}.f{color:#f66;font-weight:700}iframe{width:430px;height:900px;border:1px solid #333;display:block;margin-top:12px}</style>
+<div id="out">running…</div>
+<!-- 9-08 收费边界 ③④：底栏「抽屉」→「印集」，里面「藏品」/「集市」。
+     跟 _catalogboot 一样先往缓存种一份内容包（两个收费盒 + 一枚本周免费章），再把真 App 装进 iframe 看 DOM。
+     跑法：python check_regress.py _market -->
+<script>
+localStorage.clear();
+const P = '<path d="M20,50 Q50,20 80,50 Q50,80 20,50 Z" fill="none" stroke="CC" stroke-width="6"/>';
+const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+localStorage.setItem('lifestamps_catalog', JSON.stringify({
+  version: 999,
+  series: [
+    { id: 'animals', name: '手绘动物', sub: '一笔一笔画的', free: false, price: 8 },
+    { id: 'brandx', name: '联名限量', free: false, price: 12, pass: false },
+  ],
+  stamps: [
+    { id: 'mk_dog', name: '小狗', cat: 'meet', ink: 'mo', series: 'animals', freeUntil: today, d: P },
+    { id: 'mk_pig', name: '小猪', cat: 'meet', ink: 'zhu', series: 'animals', d: P },
+    { id: 'mk_cat', name: '猫猫', cat: 'meet', ink: 'zhu', series: 'animals', d: P },
+    { id: 'mk_ltd', name: '联名章', cat: 'meet', ink: 'zhu', series: 'brandx', d: P },
+  ],
+}));
+</script>
+<script type="module">
+const out = document.getElementById('out'); out.textContent = '';
+let pass = 0, fail = 0;
+function ok(cond, msg) {
+  const d = document.createElement('div'); d.className = cond ? 'p' : 'f';
+  d.textContent = (cond ? 'PASS  ' : 'FAIL  ') + msg; out.appendChild(d); cond ? pass++ : fail++;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const f = document.createElement('iframe'); document.body.appendChild(f);
+const D = () => f.contentDocument;
+const T = sel => [...D().querySelectorAll(sel)].map(e => e.textContent.trim());
+async function open(q) {
+  f.src = '../index.html?skipob=1&noopen=1&book=open&' + (q.includes('tab=') ? '' : 'tab=collection&') + q;
+  await new Promise(r => { f.onload = r; });
+  const ready = q.includes('tab=today') ? '#deck-strip .dk-stamp' : '#page-collection .col-title';
+  for (let i = 0; i < 40 && !D().querySelector(ready); i++) await sleep(100);
+  await sleep(400);
+}
+try {
+  // ---- 1. 底栏 + 分段 ----
+  await open('seg=market');
+  ok(T('#tabbar button[data-tab="collection"]').join('').includes('印集'), '1 底栏第三个 tab 叫「印集」');
+  ok(D().querySelector('#tabbar button[data-tab="collection"] svg path[d^="M5.2,4.3"]'), '1 tab 图标换成了集章册（不是两层抽屉柜）');
+  ok(T('#page-collection .col-title')[0] === '印集', '1 页标题「印集」');
+  ok(JSON.stringify(T('#drawer-seg button')) === '["藏品","集市"]', '1 两段：藏品 / 集市');
+
+  // ---- 2. 集市（没买任何东西）----
+  const mk = () => D().querySelector('#page-collection .mk');
+  ok(!!mk(), '2 ?seg=market 直接开到集市');
+  ok(T('.mk .bs-t').some(t => t.startsWith('本周免费章')) && T('.mk-weekly .mk-t').includes('小狗'), '2 本周免费章一张卡：小狗（freeUntil=今天）');
+  ok(T('.mk-weekly .mk-have')[0] === '在托盘里', '2 没盖过 → 「在托盘里」');
+  ok(T('.mk-card .mk-t').some(t => t.startsWith('印章通行证')) && D().querySelector('.mk [data-buy="pass"]'), '2 通行证卡 + 购买按钮');
+  ok(T('.mk .mk-s').includes('包含现有和以后所有系列章。不含印泥盒、品牌款和限量款。') && T('.mk .mk-s').some(t => t.startsWith('通行证不包含靠盖章解锁')), '2 通行证两句边界原文都在');
+  ok(T('.mk-card .mk-t').some(t => t.startsWith('高级印泥盒')) && D().querySelector('.mk .mk-card [data-pro="buy"]'), '2 印泥盒卡在集市，跟通行证同一套版式');
+  ok(D().querySelectorAll('.mk .mk-card .mk-btn').length === 2 && T('.mk .mk-s').includes('不含任何章。'), '2 两张买断卡按钮同款，印泥盒卡写「不含任何章」');
+  ok(D().querySelectorAll('.mk-links [data-pro="restore"]').length === 1 && !D().querySelector('.mk [data-pro="later"]'), '2 恢复购买只有一行链接，没有「暂时不用」');
+  ok(T('.mk-boxes .mk-box .mk-t').join(',') === '手绘动物,联名限量', '2 系列一盒 + 限量一盒，各在各的栏');
+  ok(D().querySelectorAll('.mk-box .mk-cell').length === 4, '2 盒卡里露出真章缩略（3 + 1）');
+  ok(D().querySelector('.mk-box [data-buy="box_animals"]') && D().querySelector('.mk-box [data-buy="box_brandx"]'), '2 两盒都是购买按钮');
+  ok(T('.mk .bs-t').some(t => t.includes('限量') && t.includes('不含在通行证内')), '2 限量栏标题旁标「不含在通行证内」');
+  ok(T('.mk .dk-note').some(t => t.includes('不退差价')), '2 底部一句「不退差价」');
+  ok(!D().querySelector('#page-collection .badge, #page-collection .dot, #page-collection [class*="countdown"]'), '2 没有红点 / 倒计时');
+  const de = D().documentElement;
+  ok(de.scrollWidth <= de.clientWidth + 1, `2 集市页不横向溢出（scrollWidth ${de.scrollWidth} / clientWidth ${de.clientWidth}）`);
+
+  // ---- 3. 藏品：印泥盒是最底一节，没有购买卡 ----
+  await open('seg=mine');
+  const secs = T('#page-collection .fold-t > span:first-child');
+  ok(secs[secs.length - 1] === '印泥盒', '3 藏品最底一节是印泥盒（' + secs.join(' / ') + '）');
+  ok(!D().querySelector('#page-collection .pro-card, #page-collection .mk-card'), '3 藏品里没有购买卡');
+  ok(D().querySelector('#page-collection [data-fold="ink"]') && D().querySelector('#page-collection .fold.open [data-fold="ink"]'), '3 印泥盒是一折，默认展开');
+  D().querySelector('#page-collection [data-fold="ink"]').click(); await sleep(150);
+  ok(!D().querySelector('#page-collection .sup-list-in') && D().querySelector('#page-collection [data-fold="ink"]'), '3 点标题条能折起来');
+  D().querySelector('#page-collection [data-fold="ink"]').click(); await sleep(150);
+  ok(D().querySelector('#page-collection [data-goseg="market"]'), '3 没买断 → 一句「灰的那些在集市 ›」');
+  ok(D().querySelectorAll('#page-collection .sup-list-in .ink-tray').length >= 1, '3 印泥色板在');
+  ok(!T('#page-collection .dk-cell').some(t => t.includes('小猪')), '3 没买的章不出现在藏品「还没遇到」里');
+  await open('tab=today&deck=open&cat=meet');
+  const tray = [...D().querySelectorAll('#deck-strip .dk-stamp')].map(e => e.dataset.sid);
+  ok(tray.includes('mk_dog') && !tray.includes('mk_pig') && !tray.includes('mk_ltd'), '3 托盘：本周免费的小狗在、没买的小猪和联名章不在（' + tray.join(',') + '）');
+
+  // ---- 4. 买了通行证 ----
+  localStorage.setItem('lifestamps_products', JSON.stringify(['pass']));
+  await open('seg=market');
+  ok(T('.mk-card .mk-t').some(t => t.startsWith('印章通行证') && t.includes('永久拥有')) && !D().querySelector('.mk [data-buy="pass"]'), '4 通行证卡变「永久拥有」、按钮消失');
+  ok(T('.mk-box .mk-have').includes('通行证已含') && !D().querySelector('[data-buy="box_animals"]'), '4 系列盒 → 「通行证已含」');
+  ok(D().querySelector('[data-buy="box_brandx"]'), '4 限量盒不在通行证里，照样可买');
+  await open('tab=today&deck=open&cat=meet');
+  const tray2 = [...D().querySelectorAll('#deck-strip .dk-stamp')].map(e => e.dataset.sid);
+  ok(tray2.includes('mk_pig') && tray2.includes('mk_cat') && !tray2.includes('mk_ltd'), '4 托盘：通行证把动物盒放进来了，联名章还没有');
+
+  // ---- 5. 单买了限量盒 + 印泥盒 ----
+  localStorage.setItem('lifestamps_products', JSON.stringify(['pass', 'box_brandx']));
+  localStorage.setItem('lifestamps_pro', 'true');
+  await open('seg=market');
+  ok(T('.mk-box .mk-have').filter(t => t === '已拥有').length === 1, '5 单买的限量盒 → 「已拥有」（不是「通行证已含」）');
+  ok(T('.mk-card .mk-t').some(t => t.startsWith('高级印泥盒') && t.includes('永久拥有')) && !D().querySelector('.mk [data-pro="buy"]'), '5 印泥盒买断后 pill 写「永久拥有」、按钮消失');
+  ok(!D().querySelector('.mk-links'), '5 通行证和印泥盒都有了 → 恢复购买那行也不显示');
+
+  // ---- 5b. 盒子多了折起来：8 个系列盒只露 4 盒 ----
+  {
+    const cat = JSON.parse(localStorage.getItem('lifestamps_catalog'));
+    for (let i = 0; i < 7; i++) cat.series.push({ id: 'more' + i, name: '盒子' + i, free: false, price: 6 });
+    localStorage.setItem('lifestamps_catalog', JSON.stringify(cat));
+    localStorage.setItem('lifestamps_products', JSON.stringify([]));
+    await open('seg=market');
+    ok(D().querySelectorAll('.mk-boxes .mk-box').length === 4 + 1 && T('[data-mkmore="series"]')[0] === '还有 4 盒 ›', '5b 8 个系列盒默认只露 4 盒 + 「还有 4 盒 ›」；限量 1 盒照常');
+    ok(T('.mk-boxes .mk-box .mk-t')[0] === '盒子6', '5b 最新上架的排最前');
+    D().querySelector('[data-mkmore="series"]').click(); await sleep(200);
+    ok(D().querySelectorAll('.mk-boxes .mk-box').length === 8 + 1 && T('[data-mkmore="series"]')[0] === '收起 ‹', '5b 点开全露，按钮变「收起」');
+  }
+  await open('seg=mine');
+  ok(!D().querySelector('#page-collection [data-goseg]'), '5 买断印泥后藏品里不再有「在集市」那句');
+
+  // ---- 6. 没有任何收费盒时：集市只剩买断两张卡 ----
+  localStorage.clear();
+  localStorage.setItem('lifestamps_catalog', JSON.stringify({ version: 999, stamps: [] }));
+  await open('seg=market');
+  ok(D().querySelectorAll('.mk-box').length === 0 && !T('.mk .bs-t').some(t => t.startsWith('本周免费章')), '6 没有收费盒：没有系列 / 限量 / 本周免费章');
+  ok(T('.mk .mk-s').includes('新盒子会陆续上架') && T('.mk-card .mk-t').some(t => t.startsWith('高级印泥盒')), '6 通行证写「新盒子会陆续上架」，印泥盒卡照旧');
+  ok(!T('.mk .dk-note').some(t => t.includes('不退差价')), '6 没盒子就不写「不退差价」');
+} catch (e) {
+  ok(false, 'CRASH: ' + (e && e.stack || e));
+}
+const s = document.createElement('div'); s.textContent = `— ${pass} pass / ${fail} fail —`; out.appendChild(s);
+</script>

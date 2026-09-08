@@ -86,25 +86,37 @@ export async function saveToAlbum(dataUrl) {
 //    getProducts 拿到空、purchase 直接抛，界面只会看到「没能完成」。
 // 🔴 安卓海外包（9-03）：同一个插件在安卓底下就是 Google Play Billing，**Play Console 里的
 //    内购商品 ID 也要建成同这一串**（Play 的商品 id 按应用隔离，跟包名无关，可以照抄）。
-export const IAP_PRODUCT_ID = 'com.tybbtech.lifestamps.premiuminks';
+// 商品 id 两套说法（9-08 收费边界）：客户端 / 服务端说的是**短 id**——premiuminks / pass / box_<盒> / ltd_<款>，
+// App Store / Play 里建的商品是 com.tybbtech.lifestamps.<短 id>。⚠️ ASC / Play Console 建商品照这个拼，一字不差。
+const IAP_PREFIX = 'com.tybbtech.lifestamps.';
+export const IAP_PRODUCT_ID = IAP_PREFIX + 'premiuminks';
+export const iapIdOf = product => IAP_PREFIX + product;
+const shortIdOf = pid => (typeof pid === 'string' && pid.startsWith(IAP_PREFIX)) ? pid.slice(IAP_PREFIX.length) : pid;
 
-/** 商品的本地化价格（"¥6.00"/"$0.99" 带货币符）。拿不到返回 null，界面用词典兜底价。 */
-export async function iapPrice() {
+/** 一批商品的本地化价格 {短id: "¥6.00"/"$0.99"}。没有原生桥返回 null；拿不到的商品就不在结果里。 */
+export async function iapPrices(products) {
   const p = P();
   if (!p || !p.NativePurchases) return null;
   try {
-    const { products } = await p.NativePurchases.getProducts({ productIdentifiers: [IAP_PRODUCT_ID] });
-    return (products && products[0] && products[0].priceString) || null;
+    const { products: got } = await p.NativePurchases.getProducts({ productIdentifiers: products.map(iapIdOf) });
+    const out = {};
+    for (const x of got || []) if (x && x.priceString) out[shortIdOf(x.productIdentifier)] = x.priceString;
+    return out;
   } catch (_) { return null; }
+}
+/** 单个商品的本地化价格。拿不到返回 null，界面用词典兜底价。 */
+export async function iapPrice(product = 'premiuminks') {
+  const m = await iapPrices([product]);
+  return (m && m[product]) || null;
 }
 
 /** 买。返回 'ok' | 'cancel'（用户自己关了面板，别弹失败）| 'fail' | 'nobridge' */
-export async function iapBuy() {
+export async function iapBuy(product = 'premiuminks') {
   const p = P();
   if (!p || !p.NativePurchases) return 'nobridge';
   try {
     const t = await p.NativePurchases.purchaseProduct({
-      productIdentifier: IAP_PRODUCT_ID, productType: 'inapp',
+      productIdentifier: iapIdOf(product), productType: 'inapp',
     });
     return t && t.transactionId ? 'ok' : 'fail';
   } catch (e) {
@@ -113,15 +125,16 @@ export async function iapBuy() {
   }
 }
 
-/** 恢复购买。返回 'ok' | 'none'（这个 Apple 账号下没有购买记录）| 'fail' | 'nobridge' */
+/** 恢复购买。返回 { status:'ok'|'none'（这个 Apple 账号下没有购买记录）|'fail'|'nobridge', products:[短id…] } */
 export async function iapRestore() {
   const p = P();
-  if (!p || !p.NativePurchases) return 'nobridge';
+  if (!p || !p.NativePurchases) return { status: 'nobridge', products: [] };
   try {
     await p.NativePurchases.restorePurchases();
     const { purchases } = await p.NativePurchases.getPurchases({ onlyCurrentEntitlements: true });
-    return (purchases || []).some(x => x.productIdentifier === IAP_PRODUCT_ID) ? 'ok' : 'none';
-  } catch (_) { return 'fail'; }
+    const products = (purchases || []).map(x => shortIdOf(x.productIdentifier)).filter(Boolean);
+    return { status: products.length ? 'ok' : 'none', products };
+  } catch (_) { return { status: 'fail', products: [] }; }
 }
 
 /**

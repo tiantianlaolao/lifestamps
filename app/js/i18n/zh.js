@@ -7,10 +7,11 @@
 
 export const ZH = {
   // Tab 标签：原来写死在 index.html 里，换语言时由 renderTabLabels() 重写。
-  // ⚠️ data-tab 是内部 id，跟中文名对不上（memories = 本子，collection = 抽屉），别按字面改。
+  // ⚠️ data-tab 是内部 id，跟中文名对不上（memories = 本子，collection = 印集），别按字面改。
+  // 9-08 用户拍板：底栏「抽屉」→「印集」，里面两段「藏品」（我的，含印泥盒）/「集市」（能买的）。
   tab_today: '今日',
   tab_memories: '本子',
-  tab_collection: '抽屉',
+  tab_collection: '印集',
   tab_me: '我的',
   settingLang: '语言',
   // 印泥盒弹层：原本写死在 index.html 里，改由 applyStaticText() 设。
@@ -77,6 +78,25 @@ export const ZH = {
   baseInkDesc: '不用蘸，也不消耗',
   drawerSegStamps: '我盖过的',
   drawerSegInks: '印泥盒',
+  // ---- 印集 · 藏品 / 集市（9-08）----
+  colSegMine: '藏品', colSegMarket: '集市',
+  mkInksAtMarket: '灰的那些在集市 ›',
+  mkWeekly: '本周免费章',
+  mkWeeklyUntil: '到 {m} 月 {d} 日为止，盖过一次就是你的',
+  mkWeeklyInTray: '在托盘里', mkWeeklyMine: '已是你的',
+  mkBuyout: '买断',
+  mkPassName: '印章通行证',
+  // 🔴 这两句是购买页原文，三端一致，苹果审核看的就是它（收费边界 9-08）
+  mkPassDesc: '包含现有和以后所有系列章。不含印泥盒、品牌款和限量款。',
+  mkPassDesc2: '通行证不包含靠盖章解锁的基础章和隐藏章，那些要自己遇到。',
+  mkPassIncl: '已含 {n} 盒，会越来越多', mkPassNone: '新盒子会陆续上架',
+  mkPassBuy: '打开通行证',
+  mkSeries: '系列', mkLimited: '限量', mkNotInPass: '不含在通行证内',
+  mkBoxCount: '{n} 枚', mkPassHas: '通行证已含', mkHave: '已拥有', mkPriceSoon: '价格稍后',
+  mkBoxNote: '已单独购买的盒子，之后买通行证不退差价。',
+  mkThanks: '买好了，章已经在托盘里。', mkRestored: '已经恢复。',
+  mkInkDesc2: '不含任何章。', mkInkBuy: '打开印泥盒',
+  mkMoreBoxes: '还有 {n} 盒 ›', mkLessBoxes: '收起 ‹',
   stampUnused: '还没盖过',
   notePlaceholder: '写一句…',
   noteHint: '写一句',   // 前面那支铅笔现在是内联 SVG（见 main.js:noteHint），别再往文案里塞符号
@@ -113,8 +133,8 @@ export const ZH = {
   tookItAgain: '拿好了，接着盖。',
   actAgain: '再拿这枚章', actTime: '编辑时间', actDelete: '删除',
   actCancel: '取消', actSaveTime: '好', actConfirmDelete: '真的不要了？',
-  ovNewFind: '✦ 新发现', ovNewSub: '一枚新的生活印章', ovPutAway: '收进抽屉',
-  colDrawer: '抽屉',
+  ovNewFind: '✦ 新发现', ovNewSub: '一枚新的生活印章', ovPutAway: '收进印集',
+  colDrawer: '印集',
   firstFoundAt: '首次发现 {m}月{d}日 · 一共 {n} 次',
   unlockedAt: '{m}月{d}日 解锁 · {name}',
   // 🔴 封蜡在抽屉里点开时用这句，不能用上面那句：
@@ -139,7 +159,7 @@ export const ZH = {
   //    「A 分享之前没有提示说分享能找别人送章，也就是 A 不知道这件事，哪来的动力分享呢」
   //    抽屉里那句 giftOnlyHint 只有翻到抽屉才看得见，A 在按分享的那一刻是看不到的。
   //    ⚠️ 只说代码真做得到的事：发出去之后朋友确实能留一枚，那六枚也确实只有这一条路。
-  shareGiftHint: '发给朋友，他们能在这一天上给你留一枚封蜡 —— 抽屉里那六枚，只有这一条路。',
+  shareGiftHint: '发给朋友，他们能在这一天上给你留一枚封蜡 —— 藏品里那六枚，只有这一条路。',
   // 收到赠礼那一屏。⚠️ 不能写成「解开了」——那是隐藏章的话；这枚是别人给的
   giftGotSpark: '✦ 有人给你留了东西',
   // 🔴 又收到一次、但没进抽屉（送它的人名额用过了，或者这枚本来就有）。

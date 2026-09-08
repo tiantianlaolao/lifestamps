@@ -418,6 +418,30 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 /* 买断之后就剩一句陈述，没有任何按钮 —— 卖完了就别再占地方 */
 .pro-card.owned{padding:14px 16px}
 .pro-card.owned .pro-b{margin-bottom:0}
+
+/* ---------- 印集 · 集市（9-08）：卡片用纸色和现有 pro-card 同一套材质 ---------- */
+.fold-b .box-paper{margin-top:4px}
+.mk-links{display:flex; justify-content:flex-end; gap:18px; padding:6px 4px 0}
+.mk-links .pro-plain{border:none; background:none; cursor:pointer; font-family:var(--f-title); font-size:11.5px; color:var(--sub); letter-spacing:.1em; padding:6px 4px}
+.mk .bs-t{margin-top:16px}
+.mk-card{margin:8px 0 0; padding:12px 14px; border-radius:10px; background:var(--card); border:.5px solid var(--line)}
+.mk-weekly{display:flex; align-items:center; gap:10px}
+.mk-weekly .mk-mid{flex:1; min-width:0}
+.mk-face{display:inline-flex; width:46px; height:46px; align-items:center; justify-content:center; border-radius:8px; background:var(--paper); flex:none}
+.mk-t{font-family:var(--f-title); font-size:14px; color:var(--ink); letter-spacing:.04em}
+.mk-s{font-family:var(--f-hand); font-size:12px; color:var(--sub); line-height:1.7; margin-top:2px}
+.mk-row{display:flex; justify-content:space-between; align-items:center; margin-top:8px; gap:8px}
+.mk-pill{display:inline-block; font-family:var(--f-num); font-size:10.5px; padding:1px 7px; border-radius:6px; background:var(--paper); color:var(--sub); margin-left:6px; vertical-align:middle; letter-spacing:.04em}
+.mk-btn{font-family:var(--f-title); font-size:12px; padding:6px 12px; border:none; border-radius:8px; background:var(--accent); color:var(--btn-face); cursor:pointer; letter-spacing:.04em}
+.mk-btn:disabled{opacity:.5}
+.mk-have{font-family:var(--f-title); font-size:11.5px; color:var(--sub); padding:5px 10px; border-radius:8px; background:var(--paper); letter-spacing:.06em; white-space:nowrap}
+.mk-boxes{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px}
+.mk-box{padding:12px 12px 10px; border-radius:10px; background:var(--card); border:.5px solid var(--line); display:flex; flex-direction:column}
+.mk-box .mk-row{margin-top:auto; padding-top:8px}
+.mk-mini{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+.mk-cell{display:inline-flex; flex-direction:column; align-items:center; width:46px; padding:6px 0 4px; border-radius:8px; background:var(--paper)}
+.mk-cell i{font-style:normal; font-size:9.5px; color:var(--sub); margin-top:2px; max-width:44px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.mk .mine-more{margin-top:6px}
 .col-cell .nm{font-size:10.5px; color:var(--ink)}
 .col-cell.locked .nm{color:var(--faint); letter-spacing:.14em}
 .hid-hint{font-size:10px; color:var(--faint); max-width:86px; line-height:1.5; text-align:center}

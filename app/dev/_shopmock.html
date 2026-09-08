@@ -1,0 +1,105 @@
+<!doctype html><meta charset="utf-8"><title>印集 tab · 藏品 / 集市 示意</title>
+<!-- 9-08 文具店布局示意（用户拍板：底栏「抽屉」改「文具」，里面两段：抽屉 = 我的、文具店 = 能买的；印泥盒留在抽屉里）。
+     只是画给人看的，不接数据、不接购买。真章用 stampSVG 渲染，颜色照 app.css 的调子。 -->
+<style>
+ body{margin:0;background:#CFC9BC;font:13px/1.5 system-ui,-apple-system,sans-serif;color:#252421;padding:18px}
+ .row{display:flex;gap:26px;justify-content:center;align-items:flex-start}
+ .phone{width:390px;height:844px;background:#F1ECE2;border-radius:34px;border:6px solid #2A2724;position:relative;overflow:hidden;display:flex;flex-direction:column}
+ .lb{text-align:center;color:#3F3530;font-weight:700;letter-spacing:.08em;margin-top:8px}
+ .top{padding:52px 18px 8px;font-size:20px;font-weight:700}
+ .seg{margin:0 18px 10px;display:flex;background:#E6E0D3;border-radius:10px;padding:3px}
+ .seg span{flex:1;text-align:center;padding:7px 0;border-radius:8px;color:#8C8880;font-size:14px}
+ .seg span.on{background:#FBF7EE;color:#252421;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+ .body{flex:1;overflow:hidden;padding:0 18px 90px}
+ h4{margin:14px 0 8px;font-size:12px;letter-spacing:.14em;color:#8C8880;font-weight:600}
+ .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+ .cell{background:#FBF7EE;border-radius:10px;padding:8px 2px 6px;text-align:center;font-size:10px;color:#5A544A}
+ .cell.dim{opacity:.45}
+ .cell svg{display:block;margin:0 auto 3px}
+ .inks{display:flex;gap:9px;flex-wrap:wrap;margin-top:4px}
+ .ink{width:30px;height:30px;border-radius:50%;box-shadow:inset 0 -3px 0 rgba(0,0,0,.12)}
+ .ink.lock{opacity:.32}
+ .note{font-size:11px;color:#8C8880;margin-top:6px}
+ .card{background:#FBF7EE;border-radius:12px;padding:12px 14px;margin-bottom:10px}
+ .card .t{font-weight:700;font-size:14px}
+ .card .s{font-size:11px;color:#8C8880;margin-top:2px}
+ .card .p{margin-top:8px;display:flex;justify-content:space-between;align-items:center}
+ .btn{font-size:12px;padding:5px 12px;border-radius:8px;background:#C94B3C;color:#fff}
+ .btn.ghost{background:transparent;border:1px solid #B9B2A4;color:#5A544A}
+ .btn.have{background:#E6E0D3;color:#8C8880}
+ .mini{display:flex;gap:6px;margin-top:8px}
+ .mini .cell{width:52px;padding:6px 0 4px}
+ .boxes{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+ .tab{position:absolute;left:0;right:0;bottom:0;height:72px;background:#F6F2EA;border-top:1px solid #E0DACD;display:flex;justify-content:space-around;align-items:center;font-size:11px;color:#8C8880}
+ .tab div{text-align:center}.tab .on{color:#252421;font-weight:700}
+ .tab i{display:block;font-style:normal;font-size:20px;margin-bottom:2px}
+ .pill{display:inline-block;font-size:10px;padding:1px 6px;border-radius:6px;background:#EFE9DC;color:#8C8880;margin-left:6px;vertical-align:middle}
+</style>
+<div class="row">
+  <div>
+    <div class="phone">
+      <div class="top">印集</div>
+      <div class="seg"><span class="on">藏品</span><span>集市</span></div>
+      <div class="body" id="drawer"></div>
+      <div class="tab"><div><i>✎</i>今日</div><div><i>▤</i>本子</div><div class="on"><i>▣</i>印集</div><div><i>☺</i>我的</div></div>
+    </div>
+    <div class="lb">印集 → 藏品（收进来的；印泥盒是最底下一节）</div>
+  </div>
+  <div>
+    <div class="phone">
+      <div class="top">印集</div>
+      <div class="seg"><span>藏品</span><span class="on">集市</span></div>
+      <div class="body" id="shop"></div>
+      <div class="tab"><div><i>✎</i>今日</div><div><i>▤</i>本子</div><div class="on"><i>▣</i>印集</div><div><i>☺</i>我的</div></div>
+    </div>
+    <div class="lb">印集 → 集市（去淘的；印泥和章两个买断并排、各说范围）</div>
+  </div>
+</div>
+<script type="module">
+import { INKS, stampById, HIDDEN } from '../js/data.js';
+import { defsMarkup, stampSVG, inkMainColor } from '../js/stamp.js';
+document.body.insertAdjacentHTML('afterbegin', `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+const S = (id, o = {}) => stampSVG(stampById[id], { size: 34, flat: true, ...o });
+const cell = (id, name, dim) => `<div class="cell${dim ? ' dim' : ''}">${S(id)}${name || stampById[id].name}</div>`;
+
+// ---- 左：抽屉 ----
+const mine = ['milktea', 'coffee', 'takeout', 'water', 'goout', 'series', 'read', 'work', 'lie', 'happy'];
+const notyet = ['hotpot', 'burger', 'cat', 'sunset', 'rainbowsky'];
+const inkRow = ids => ids.map(id => `<span class="ink${INKS[id].free ? '' : ' lock'}" style="background:${inkMainColor(id)}" title="${INKS[id].name}"></span>`).join('');
+document.getElementById('drawer').innerHTML = `
+  <h4>我盖过的 <span class="pill">10 / 47</span></h4>
+  <div class="grid">${mine.map(id => cell(id)).join('')}</div>
+  <h4>还没遇到</h4>
+  <div class="grid">${notyet.map(id => cell(id, '？', true)).join('')}</div>
+  <div class="note">出门累计 3 次会遇到猫 · 傍晚盖两次会看到晚霞 …</div>
+  <h4>珍藏</h4>
+  <div class="grid">${cell('h_zoo')}<div class="cell dim">${S('h_moyu')}？</div><div class="cell dim">${S('h_night')}？</div></div>
+  <h4>印泥盒</h4>
+  <div class="inks">${inkRow(Object.keys(INKS).filter(k => k !== 'mo').slice(0, 13))}</div>
+  <div class="note">免费三款不限量 · 灰的那些在集市</div>`;
+
+// ---- 右：文具店 ----
+const box = (name, sub, ids, price, have) => `
+  <div class="card"><div class="t">${name}</div><div class="s">${sub}</div>
+    <div class="mini">${ids.map(id => `<div class="cell">${S(id)}${stampById[id].name}</div>`).join('')}</div>
+    <div class="p"><span class="s">${ids.length} 枚</span><span class="btn${have ? ' have' : ''}">${have ? '通行证已含' : price}</span></div></div>`;
+document.getElementById('shop').innerHTML = `
+  <h4>本周免费章</h4>
+  <div class="card"><div class="p" style="margin:0"><div>${S('cat', { size: 40 })}</div>
+    <div style="flex:1;margin-left:10px"><div class="t">猫</div><div class="s">到 9 月 14 日为止，盖过一次就是你的</div></div>
+    <span class="btn ghost">在托盘里</span></div></div>
+  <h4>买断</h4>
+  <div class="card"><div class="t">印章通行证 <span class="pill">￥38 · 永久</span></div>
+    <div class="s">含现有和以后所有系列章。不含印泥盒、联名款、限量款。</div>
+    <div class="p"><span class="s">已含 2 盒，会越来越多</span><span class="btn">打开通行证</span></div></div>
+  <div class="card"><div class="t">高级印泥盒 <span class="pill">￥8 · 永久</span></div>
+    <div class="s">10 款彩色印泥，以后新出的也都在。不含任何章。</div>
+    <div class="p"><span class="inks" style="margin:0">${inkRow(['tao', 'wu', 'teng', 'jie', 'rainbow'].filter(k => INKS[k]))}</span><span class="btn">打开印泥盒</span></div></div>
+  <h4>系列</h4>
+  <div class="boxes">
+    ${box('手绘动物', '一笔一笔画的', ['dog', 'cat', 'bird'], '￥8', false)}
+    ${box('手绘植物', '', ['flower', 'sparkle'], '￥6', true)}
+  </div>
+  <h4>限量 <span class="pill">不含在通行证内</span></h4>
+  <div class="boxes">${box('联名 · 某某', '限 500 份', ['sunset', 'rainbowsky'], '￥12', false)}</div>`;
+</script>

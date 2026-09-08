@@ -1,14 +1,14 @@
 // ============================================================
 // 戳了么 · 主逻辑（V1.2：手账翻书 / 印泥消耗 / 2.5D 盖章）
 // ============================================================
-import { STAMPS, GLYPHS, isGlyph, HIDDEN, GIFTS, GIFT_WAX, CATEGORIES, INKS, COPY, stampById, hiddenById, monthPersona, personaKey, lockedMaterial, seriesById } from './data.js';
+import { STAMPS, GLYPHS, isGlyph, HIDDEN, GIFTS, GIFT_WAX, CATEGORIES, INKS, COPY, stampById, hiddenById, monthPersona, personaKey, lockedMaterial, seriesById, SERIES, seriesOf } from './data.js';
 import { setThin, defsMarkup, stampSVG, stampBodySVG, randomPose, inkSwatchPaint, inkMainColor, inkCSS, darken, seedOf, weatherSVG } from './stamp.js';
 import { store, dateKey, fmtTime, posOf } from './store.js';
 import { sync } from './sync.js';
-import { iapPrice, iapBuy, iapRestore, isAndroid, initAndroidShell, appBuild, openExternal } from './native.js';
-import { collectGifts, claimTicket, authSmsSend, smsSupported, androidUpdateInfo, IS_OVERSEAS, initRegion, ICP_APP_NO, webBase, payCreate, payOrder } from './net.js';
+import { iapPrice, iapPrices, iapBuy, iapRestore, isAndroid, initAndroidShell, appBuild, openExternal } from './native.js';
+import { collectGifts, claimTicket, authSmsSend, smsSupported, androidUpdateInfo, IS_OVERSEAS, initRegion, ICP_APP_NO, webBase, payCreate, payOrder, products as fetchProducts } from './net.js';
 import { bootCatalog, refreshCatalog } from './catalog.js';   // 内容包：import 即合并本地缓存（在首屏之前）
-import { checkHidden, dailySecret, checkUnlocks, isUnlocked } from './hidden.js';
+import { checkHidden, dailySecret, checkUnlocks, isUnlocked, isOwned, claimFreeStamps } from './hidden.js';
 import { verdictOf } from './verdict.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
 import { openShare, openShareDay } from './share.js';
@@ -85,7 +85,9 @@ let deckCat = 'all';
 let deckOpen = false;             // 托盘展开态（收起态只有一行常用章）
 let undoRec = null;              // {id, at} 刚盖下的那一枚，10 秒内可以撤
 let undoTimer = null;
-let drawerSeg = 'stamps';         // 抽屉页分段：我盖过的 / 印泥盒（文具店等内购做了再加第三段）
+let drawerSeg = 'mine';           // 印集页分段（9-08）：mine = 藏品（我的，含印泥盒）/ market = 集市（能买的）
+let drawerInkOpen = true;         // 藏品最底一节「印泥盒」折不折（跟上面三折一样可折，默认展开）
+const mkMore = { series: false, limited: false };   // 集市：系列 / 限量超过 4 盒时，其余折在「还有 N 盒」后面
 let drawerCat = 'all';            // 抽屉里的分类过滤（含「字」）
 let drawerMineOpen = false;       // 「我盖过的」展开了吗（默认只露最常盖的 6 枚）
 let drawerHidOpen = false;        // 「隐藏章」展开了吗
@@ -187,7 +189,9 @@ function init() {
   if (params.get('skipob') === '1') { store.settings.onboarded = true; store.persist(); }
   if (params.get('sel')) selStamp = params.get('sel');
   if (params.get('mem') === 'week') memMode = 'week';
-  if (params.get('seg')) drawerSeg = params.get('seg');   // dev：直接开到抽屉的某一段
+  if (params.get('seg')) {                                  // dev：直接开到印集的某一段（老参数 stamps/inks 都算藏品）
+    drawerSeg = params.get('seg') === 'market' ? 'market' : 'mine';
+  }
   // dev：直接把抽屉里某一折展开，方便截图（mine / lock / hid）
   if (params.get('fold')) {
     const f = params.get('fold');
@@ -1436,6 +1440,8 @@ function placeStamp(clientX, clientY, cv) {
     if (curTab === 'today') noteHint(rec.id);   // 「写一句话」这个功能得让人看见
     // 基础章解锁：判据是累计的，所以补盖也算 —— 补的也是真发生过的事。
     // ⚠️ 跟隐藏章分开：隐藏章是"今天做了什么"的奖励，补盖不算。
+    // 本周免费章（9-08）：窗口期内盖过 = 领了，永久归你；登录着就顺手记到账号上（换机也在）
+    for (const id of claimFreeStamps()) sync.claim(id);
     const unlocked = checkUnlocks();
     if (unlocked.length) {
       // 轻一点：不占屏、不弹层。一句话 + 一次触感，跟它"顺手解锁"的性质相称；
@@ -1547,6 +1553,7 @@ function openSupply() {
 // 只出现在印泥盒里（弹层 + 抽屉页那一段），⛔ 首页不弹、不放红点、不写倒计时。
 // 卖点写的是「让每枚章盖回它自己的颜色」，不是"多 10 款颜色"——
 // 免费用户天天看着奶茶是墨色的、心里知道它本该是陶棕，这比任何弹窗都管用。
+// 只用在今日页的印泥弹层（集市里的印泥盒卡是 drawerMarket 的 buyCard，跟通行证同版式）
 function proCardHTML() {
   if (store.isPro()) {
     return `<div class="pro-card owned">
@@ -1594,14 +1601,15 @@ function pendingOrder() {
 //   建单要登录（权益记在账号上，换机才找得回）→ 服务端拼好签名 URL → 安卓外开系统浏览器 / 网页版本页跳转
 //   → 手机上自动拉起支付宝 → 付完回到 App → checkPendingOrder 轮询到账 → setPro。
 //   🔴 到账只认服务端（notify 验签 / 主动反查），支付宝跳回来那页只是给人看的，不参与判断。
-async function startAlipay() {
+async function startAlipay(product = 'premiuminks') {
   if (!sync.isLoggedIn()) { toast(COPY.payNeedLogin, 2600); switchTab('me'); return false; }
-  const r = await payCreate(sync.account.token, payProduct, 'alipay_wap');
+  const prod = product === 'premiuminks' ? payProduct : product;   // dev 的 ?payproduct= 只替换印泥盒那一单
+  const r = await payCreate(sync.account.token, prod, 'alipay_wap');
   if (!r || r.http !== 200 || !r.payUrl) {
     toast(r && r.http === 501 ? COPY.proAndroidSoon : COPY.proFailed, 2200);
     return false;
   }
-  try { localStorage.setItem(PAY_K, JSON.stringify({ no: r.orderNo, at: Date.now() })); } catch (_) { /* 存不下就靠「我已付款」那颗按钮 */ }
+  try { localStorage.setItem(PAY_K, JSON.stringify({ no: r.orderNo, at: Date.now(), product: prod })); } catch (_) { /* 存不下就靠「我已付款」那颗按钮 */ }
   toast(COPY.payOpened, 2200);
   if (window.Capacitor) openExternal(r.payUrl);      // 安卓壳：系统浏览器 → 支付宝 App
   else location.href = r.payUrl;                     // 网页版：本页去收银台，付完从 pay/ 回来
@@ -1625,8 +1633,8 @@ async function checkPendingOrder() {
       if (r.http === 404 || r.status === 'CLOSED') { localStorage.removeItem(PAY_K); return false; }
       if (r.http === 200 && r.status === 'PAID') {
         localStorage.removeItem(PAY_K);
-        if (!store.isPro()) store.setPro(true);                        // setPro 带同步埋点，另一台设备也会亮
-        toast(COPY.proThanks, 2200); haptic();
+        grantProduct(p.product || 'premiuminks');
+        toast(isInkProduct(p.product) ? COPY.proThanks : COPY.mkThanks, 2200); haptic();
         render();                                                      // 当前页整体重画（印泥盒 / 托盘跟着变）
         return true;
       }
@@ -1635,18 +1643,27 @@ async function checkPendingOrder() {
   } finally { _checkingPay = false; }
 }
 
-async function startPurchase() {
-  if (alipayLane()) return startAlipay();
+// 到账落地（9-08 起商品不止一个）：印泥盒 → pro 布尔；通行证 / 盒子 → store.products。
+// 两套分开存是故意的——印泥和章永不互含，存也不混。setPro / setProducts 都只往有利方向合。
+const isInkProduct = p => !p || p === 'premiuminks' || p === 'test001';
+function grantProduct(product) {
+  if (isInkProduct(product)) { if (!store.isPro()) store.setPro(true); }
+  else store.setProducts([product]);
+}
+
+async function startPurchase(product = 'premiuminks') {
+  if (alipayLane()) return startAlipay(product);
   if (!window.Capacitor) {                       // 海外网页版：没有支付通道，内测放行照旧（9-01 拍板）
-    store.setPro(true);
-    toast(COPY.proThanks, 1800); haptic();
+    grantProduct(product);
+    toast(isInkProduct(product) ? COPY.proThanks : COPY.mkThanks, 1800); haptic();
     return true;
   }
-  // 原生壳的另外三条：iOS 国内区 / iOS 海外区 / 安卓 Play——native-purchases 就是 StoreKit / Play Billing，商品 id 同一串
-  const r = await iapBuy();
+  // 原生壳的另外三条：iOS 国内区 / iOS 海外区 / 安卓 Play——native-purchases 就是 StoreKit / Play Billing，
+  // 商品 id 同一串（com.tybbtech.lifestamps.<短 id>，见 native.js）
+  const r = await iapBuy(product);
   if (r === 'ok') {
-    store.setPro(true);                          // setPro 里带同步埋点，另一台设备也会亮
-    toast(COPY.proThanks, 1800); haptic();
+    grantProduct(product);                       // setPro / setProducts 里带同步埋点，另一台设备也会亮
+    toast(isInkProduct(product) ? COPY.proThanks : COPY.mkThanks, 1800); haptic();
     return true;
   }
   if (r === 'cancel') return false;              // 人家自己关的面板，不需要被告知"失败了"
@@ -1658,15 +1675,20 @@ async function restorePurchase() {
   if (alipayLane()) {
     // 国内：权益在服务端 entitlements 里，登录了就能拉回来（换机 / 重装靠这个）
     if (!sync.isLoggedIn()) { toast(COPY.payNeedLogin, 2600); switchTab('me'); return false; }
-    const ps = await sync.refreshEntitlements();
+    const ps = await sync.refreshEntitlements();          // 里面已经 setPro / setProducts
     if (ps && ps.includes('premiuminks')) { toast(COPY.proRestored, 1800); return true; }
+    if (ps && ps.length) { toast(COPY.mkRestored, 1800); return true; }
     toast(ps ? COPY.payNone : COPY.proFailed, 2200);
     return false;
   }
   if (!window.Capacitor) { store.setPro(true); toast(COPY.proRestored, 1800); return true; }   // 海外网页版照旧
   const r = await iapRestore();
-  if (r === 'ok') { store.setPro(true); toast(COPY.proRestored, 1800); return true; }
-  toast(r === 'none' ? COPY.proNoneFound : COPY.proFailed, 2200);
+  if (r.status === 'ok') {
+    r.products.forEach(grantProduct);
+    toast(r.products.includes('premiuminks') ? COPY.proRestored : COPY.mkRestored, 1800);
+    return true;
+  }
+  toast(r.status === 'none' ? COPY.proNoneFound : COPY.proFailed, 2200);
   return false;
 }
 
@@ -1680,6 +1702,14 @@ function bindProCard(root, rerender) {
       let ok;
       if (a === 'check') { ok = await checkPendingOrder(); if (!ok) toast(COPY.payPending, 2200); }
       else ok = a === 'restore' ? await restorePurchase() : await startPurchase();
+      b.disabled = false;
+      if (ok) { rerender(); renderToday(); }
+    }));
+  // 集市里的通行证 / 盒子按钮（9-08）：data-buy = 短商品 id
+  root.querySelectorAll('[data-buy]').forEach(b =>
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      const ok = await startPurchase(b.dataset.buy);
       b.disabled = false;
       if (ok) { rerender(); renderToday(); }
     }));
@@ -1852,7 +1882,9 @@ function renderCollection() {
   const cnt = {};
   for (const r of store.records) cnt[r.stampId] = (cnt[r.stampId] || 0) + 1;
 
-  const seg = [['stamps', COPY.drawerSegStamps], ['inks', COPY.drawerSegInks]].map(([k, n]) =>
+  // 印集（9-08 用户拍板）：藏品 = 我的东西（章 + 印泥盒，最底一节）；集市 = 能买的。
+  // 藏品里永远没有购买按钮——印泥盒的购买卡搬到集市；今日页印泥弹层里那张卡留着（挑颜色时顺手的入口）。
+  const seg = [['mine', COPY.colSegMine], ['market', COPY.colSegMarket]].map(([k, n]) =>
     `<button class="${drawerSeg === k ? 'sel' : ''}" data-seg="${k}">${n}</button>`).join('');
 
   $('#page-collection').innerHTML = `
@@ -1860,16 +1892,19 @@ function renderCollection() {
       <div class="col-title">${COPY.colDrawer}</div>
       <div class="seg" id="drawer-seg">${seg}</div>
     </div>
-    ${drawerSeg === 'stamps' ? drawerStamps(used, cnt) : drawerInks()}`;
+    ${drawerSeg === 'market' ? drawerMarket() : drawerStamps(used, cnt) + drawerInks()}`;
 
-  document.querySelectorAll('#drawer-seg [data-seg]').forEach(b =>
-    b.addEventListener('click', () => { drawerSeg = b.dataset.seg; renderCollection(); }));
+  document.querySelectorAll('#drawer-seg [data-seg], #page-collection [data-goseg]').forEach(b =>
+    b.addEventListener('click', () => { drawerSeg = b.dataset.seg || b.dataset.goseg; renderCollection(); }));
 
-  if (drawerSeg === 'inks') {
-    bindSupply($('#page-collection'), renderCollection);
+  if (drawerSeg === 'market') {
     bindProCard($('#page-collection'), renderCollection);
+    document.querySelectorAll('#page-collection [data-mkmore]').forEach(b =>
+      b.addEventListener('click', () => { mkMore[b.dataset.mkmore] = !mkMore[b.dataset.mkmore]; renderCollection(); }));
+    loadMarketPrices($('#page-collection'));
     return;
   }
+  bindSupply($('#page-collection'), renderCollection);
 
   document.querySelectorAll('#drawer-cats [data-dcat]').forEach(b2 =>
     b2.addEventListener('click', () => { drawerCat = b2.dataset.dcat; renderCollection(); }));
@@ -1878,6 +1913,7 @@ function renderCollection() {
       const f = b2.dataset.fold;
       if (f === 'mine') drawerMineOpen = !drawerMineOpen;
       else if (f === 'lock') drawerLockOpen = !drawerLockOpen;
+      else if (f === 'ink') drawerInkOpen = !drawerInkOpen;
       else drawerHidOpen = !drawerHidOpen;
       renderCollection();
     }));
@@ -1942,7 +1978,8 @@ function drawerStamps(used, cnt) {
   const giftGot = GIFTS.filter(g => store.hidden[g.id]).length;   // 收到的赠礼章也记在 store.hidden 里
   // 还没解锁的（真的不在托盘里的那些）。⚠️ 跟"没盖过"不是一回事：
   // 解锁了但还没盖过的章在托盘里摆着，属于「我盖过的」那折的空缺，不属于这儿。
-  const locked = STAMPS.filter(s2 => !isUnlocked(s2.id) && inCat(s2));
+  // 收费盒里没买的章不算"还没遇到"——它们不是靠用出来的，是文具店的事；进了收集进度会把收集感变成买买买
+  const locked = STAMPS.filter(s2 => !isUnlocked(s2.id) && isOwned(s2.id) && inCat(s2));
   const unlockedCnt = STAMPS.filter(s2 => isUnlocked(s2.id) && inCat(s2)).length;
 
   // 「字」跟托盘的分类栏保持一致——之前只有托盘有，抽屉里它只能待在最底下那一折，
@@ -2029,14 +2066,107 @@ function drawerStamps(used, cnt) {
       + `<div class="dk-note">${COPY.sealOnePerPerson}</div>`)}`;
 }
 
+// 藏品 · 印泥盒（最底一节）。⛔ 这里不放购买卡——藏品里只有我的东西；没买断的人看一句"灰的那些在集市"。
 function drawerInks() {
   const todayDk = dateKey(Date.now());
   const left = store.trialLeft(todayDk, TRIAL_DIPS);
   const note = store.isPro() ? COPY.proOwned
     : (left > 0 ? COPY.trialLeftHint.replace('{n}', left) : COPY.trialOut);
-  return `<div class="col-sub">${note}</div>
-    <div class="box box-paper"><div class="sup-list-in">${supplyRows()}</div></div>
-    ${proCardHTML()}`;
+  // 跟上面三折同一套：标题条可点折叠（data-fold="ink"），默认展开
+  return `<div class="fold ${drawerInkOpen ? 'open' : ''}">
+      <button class="fold-t" data-fold="ink">
+        <span>${COPY.drawerSegInks}</span><span class="fold-n">${note}</span><span class="fold-a">›</span>
+      </button>
+      ${drawerInkOpen ? `<div class="fold-b">
+        <div class="box box-paper"><div class="sup-list-in">${supplyRows()}</div></div>
+        ${store.isPro() ? '' : `<button class="mine-more" data-goseg="market">${COPY.mkInksAtMarket}</button>`}
+      </div>` : ''}
+    </div>`;
+}
+
+// ============================================================
+// 印集 · 集市（9-08 收费边界）
+// 四块：本周免费章 / 买断（通行证 + 印泥盒并排，各说范围）/ 系列盒 / 限量（不进通行证）。
+// 盒子 = SERIES 里 free:false 的（内容包现读，上新不发版）；价 = iOS/Play 问 StoreKit，其余问服务端价目表。
+// ⛔ 不红点、不倒计时、不首页弹窗、不写"限时"。没有收费盒时只剩买断两张卡。
+// ============================================================
+const boxOwned = s => store.hasProduct('box_' + s.id) || (s.pass !== false && store.hasProduct('pass'));
+let marketPrices = {}, marketPricesAt = 0;
+// 把页面上 [data-price="短id"] 的占位换成真价。商店价按地区本地化；服务端价目表是分。
+async function loadMarketPrices(root) {
+  const els = [...root.querySelectorAll('[data-price]')];
+  const ids = [...new Set(els.map(e => e.dataset.price))];
+  if (!ids.length) return;
+  if (Date.now() - marketPricesAt > 60000 || ids.some(p => !marketPrices[p])) {
+    let got = null;
+    if (window.Capacitor && !alipayLane()) got = await iapPrices(ids);
+    else {
+      const r = await fetchProducts();
+      if (r && r.http === 200) {
+        got = {};
+        for (const p of ids) if (r.products[p]) got[p] = '￥' + (r.products[p].fen % 100 ? (r.products[p].fen / 100).toFixed(2) : r.products[p].fen / 100);
+      }
+    }
+    if (got) { Object.assign(marketPrices, got); marketPricesAt = Date.now(); }
+  }
+  for (const e of els) if (e.isConnected && marketPrices[e.dataset.price]) e.textContent = marketPrices[e.dataset.price];
+}
+function drawerMarket() {
+  const today = dateKey(Date.now());
+  const boxes = SERIES.filter(s => s.free === false);
+  const series = boxes.filter(s => s.pass !== false), limited = boxes.filter(s => s.pass === false);
+  const weekly = STAMPS.filter(s => s.freeUntil && s.freeUntil >= today && seriesOf(s.id)?.free === false);
+  const passOwned = store.hasProduct('pass');
+  const price = p => marketPrices[p] || COPY.mkPriceSoon;
+
+  const card = s => {
+    const ids = s.stampIds.filter(id => stampById[id]);
+    const owned = boxOwned(s), viaPass = owned && !store.hasProduct('box_' + s.id);
+    return `<div class="mk-box">
+      <div class="mk-t">${esc(nameOf('series', s.id, s.name))}</div>
+      ${s.sub ? `<div class="mk-s">${esc(nameOf('seriesSub', s.id, s.sub))}</div>` : ''}
+      <div class="mk-mini">${ids.slice(0, 6).map(id => `<span class="mk-cell">${stampSVG(stampById[id], { size: 34 })}<i>${esc(dName(stampById[id]))}</i></span>`).join('')}</div>
+      <div class="mk-row"><span class="mk-s">${COPY.mkBoxCount.replace('{n}', ids.length)}</span>
+        ${owned ? `<span class="mk-have">${viaPass ? COPY.mkPassHas : COPY.mkHave}</span>`
+                : `<button class="mk-btn" data-buy="box_${s.id}" data-price="box_${s.id}">${price('box_' + s.id)}</button>`}</div>
+    </div>`;
+  };
+  const weeklyHtml = !weekly.length ? '' : `<div class="bs-t">${COPY.mkWeekly}</div>` + weekly.map(s => {
+    const d = new Date(s.freeUntil + 'T12:00:00');
+    return `<div class="mk-card mk-weekly"><span class="mk-face">${stampSVG(s, { size: 40 })}</span>
+      <div class="mk-mid"><div class="mk-t">${esc(dName(s))}</div>
+        <div class="mk-s">${COPY.mkWeeklyUntil.replace('{m}', d.getMonth() + 1).replace('{d}', d.getDate())}</div></div>
+      <span class="mk-have">${store.claimed[s.id] ? COPY.mkWeeklyMine : COPY.mkWeeklyInTray}</span></div>`;
+  }).join('');
+  // 两张买断卡同一套版式：标题 + 价格 pill / 两行范围 / 底行左说明右按钮。买了就只剩 pill 写「永久拥有」。
+  const buyCard = (name, product, owned, lines, note, btn) => `<div class="mk-card">
+    <div class="mk-t">${name}<span class="mk-pill"${owned ? '' : ` data-price="${product}"`}>${owned ? COPY.proOwned : price(product)}</span></div>
+    ${lines.map(l => `<div class="mk-s">${esc(l)}</div>`).join('')}
+    <div class="mk-row"><span class="mk-s">${note}</span>${owned ? '' : btn}</div>
+  </div>`;
+  const passHtml = buyCard(COPY.mkPassName, 'pass', passOwned, [COPY.mkPassDesc, COPY.mkPassDesc2],
+    series.length ? COPY.mkPassIncl.replace('{n}', series.length) : COPY.mkPassNone,
+    `<button class="mk-btn" data-buy="pass">${COPY.mkPassBuy}</button>`);
+  const inkHtml = buyCard(COPY.proName, 'premiuminks', store.isPro(), [COPY.proDesc, COPY.mkInkDesc2],
+    COPY.proPitch, `<button class="mk-btn" data-pro="buy">${COPY.mkInkBuy}</button>`);
+  // 恢复购买 / 我已付款：两张卡共用一行小字链接，不在卡里各摆一遍
+  const links = (passOwned && store.isPro()) ? '' : `<div class="mk-links">
+    ${pendingOrder() ? `<button class="pro-plain" data-pro="check">${COPY.payCheck}</button>` : ''}
+    <button class="pro-plain" data-pro="restore">${COPY.proRestore}</button></div>`;
+  // 盒子多了：最新的在前，默认露 4 盒，其余折在「还有 N 盒」后面（跟藏品「我盖过的」同一手法）
+  const shelf = (list, key) => {
+    const all = [...list].reverse();
+    const show = mkMore[key] ? all : all.slice(0, 4);
+    const more = all.length - show.length;
+    return `<div class="mk-boxes">${show.map(card).join('')}</div>`
+      + (all.length > 4 ? `<button class="mine-more" data-mkmore="${key}">${mkMore[key] ? COPY.mkLessBoxes : COPY.mkMoreBoxes.replace('{n}', more)}</button>` : '');
+  };
+  return `<div class="mk">${weeklyHtml}
+    <div class="bs-t">${COPY.mkBuyout}</div>${passHtml}${inkHtml}${links}
+    ${series.length ? `<div class="bs-t">${COPY.mkSeries}</div>${shelf(series, 'series')}` : ''}
+    ${limited.length ? `<div class="bs-t">${COPY.mkLimited}<span class="mk-pill">${COPY.mkNotInPass}</span></div>${shelf(limited, 'limited')}` : ''}
+    ${boxes.length ? `<div class="dk-note">${COPY.mkBoxNote}</div>` : ''}
+  </div>`;
 }
 
 // ============================================================

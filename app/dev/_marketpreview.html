@@ -1,0 +1,31 @@
+<!doctype html><meta charset="utf-8"><title>集市预览种子</title>
+<!-- 9-08：给截图 / 手机预览用。往本机缓存种两个收费盒 + 一枚本周免费章，然后跳真 App 的印集页。
+     ?seg=mine|market 选段；?own=pass,box_brandx 预置权益；?clear=1 清掉。dev/ 不部署不进包。 -->
+<script>
+const q = new URLSearchParams(location.search);
+const K = 'lifestamps_catalog';
+if (q.get('clear') === '1') { localStorage.removeItem(K); localStorage.removeItem('lifestamps_products'); document.write('已清掉。<a href="../index.html">打开 App</a>'); }
+else {
+  const P = '<path d="M20,50 Q50,20 80,50 Q50,80 20,50 Z" fill="none" stroke="CC" stroke-width="6"/>';
+  const d = new Date(); d.setDate(d.getDate() + 3);
+  const until = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  localStorage.setItem(K, JSON.stringify({
+    version: 999,
+    series: [
+      { id: 'animals', name: '手绘动物', sub: '一笔一笔画的', free: false, price: 8 },
+      { id: 'plants', name: '手绘植物', free: false, price: 6 },
+      { id: 'brandx', name: '联名限量', sub: '限 500 份', free: false, price: 12, pass: false },
+    ],
+    stamps: [
+      { id: 'mk_dog', name: '小狗', cat: 'meet', ink: 'mo', series: 'animals', freeUntil: until, d: P },
+      { id: 'mk_pig', name: '小猪', cat: 'meet', ink: 'zhu', series: 'animals', d: P },
+      { id: 'mk_cat', name: '猫猫', cat: 'meet', ink: 'zhu', series: 'animals', d: P },
+      { id: 'mk_leaf', name: '叶子', cat: 'meet', ink: 'song', series: 'plants', d: P },
+      { id: 'mk_feather', name: '羽叶', cat: 'meet', ink: 'song', series: 'plants', d: P },
+      { id: 'mk_ltd', name: '联名章', cat: 'meet', ink: 'zhu', series: 'brandx', d: P },
+    ],
+  }));
+  if (q.get('own')) localStorage.setItem('lifestamps_products', JSON.stringify(q.get('own').split(',')));
+  location.replace('../index.html?skipob=1&noopen=1&book=open&tab=collection&seg=' + (q.get('seg') || 'market'));
+}
+</script>

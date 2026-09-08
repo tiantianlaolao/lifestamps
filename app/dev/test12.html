@@ -371,7 +371,13 @@ function clickAt(el, fx=0.5, fy=0.5){
     f.src = '../index.html?skipob=1&noopen=1&band=day&book=open&deck=open&unlockall=0';
     await sleep(900);
     const ids = [...D().querySelectorAll('#deck-strip .dk-stamp')].map(e => e.dataset.sid);
-    ok('新用户托盘里正好 12 枚', ids.length === 12, 'got ' + ids.length + ': ' + ids.join(','));
+    // 9-07 起包内 catalog.json 会带"一开始就在托盘里"的内容包章（台风）：
+    // 基础 12 枚必须一枚不少，多出来的只能是内容包里没 unlock 的那些
+    const INIT12 = ['milktea', 'takeout', 'water', 'goout', 'series', 'read', 'work', 'lie', 'stayup', 'happy', 'tired', 'sparkle'];
+    const cat = await (await fetch('../js/catalog.json', { cache: 'no-store' })).json().catch(() => ({}));
+    const fromPack = (cat.stamps || []).filter(s => !s.unlock).map(s => s.id);
+    ok('新用户托盘 = 初始 12 枚 + 内容包里不用解锁的', INIT12.every(i => ids.includes(i)) && ids.every(i => INIT12.includes(i) || fromPack.includes(i)),
+       'got ' + ids.length + ': ' + ids.join(','));
     ok('新用户托盘里没有要解锁的章', !ids.some(i => ['coffee', 'cat', 'music', 'rainbowsky'].includes(i)),
        ids.join(','));
   }

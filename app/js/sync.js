@@ -22,7 +22,7 @@
 // 队列与游标都按 uid 存：换号登录不会拿着别人的游标乱拉。
 // ============================================================
 import { store } from './store.js';
-import { authLogin, authLoginPhone, authLogout, authDeleteAccount, syncPush, entitlements } from './net.js';
+import { authLogin, authLoginPhone, authLogout, authDeleteAccount, syncPush, entitlements, claimStamp } from './net.js';
 import { nativeLogin } from './native.js';
 
 // 传输层收在一个可替换的对象里：dev/_synccheck.html 换成假服务端来测引擎本身
@@ -30,7 +30,7 @@ import { nativeLogin } from './native.js';
 // 🔴 net.js 加了新函数，引擎要用的话**必须同时加进这份清单** ——
 //    漏了的话报错是 "net.xxx is not a function"，而且只有真点按钮才炸
 //    （8-31 手机号登录上线当天就这么炸的，断言页测的是假 net 抓不到）。
-const net = { authLogin, authLoginPhone, authLogout, authDeleteAccount, syncPush, nativeLogin, entitlements };
+const net = { authLogin, authLoginPhone, authLogout, authDeleteAccount, syncPush, nativeLogin, entitlements, claimStamp };
 
 const K = 'lifestamps_sync_';
 function load(k, d) { try { const v = JSON.parse(localStorage.getItem(K + k)); return v ?? d; } catch { return d; } }
@@ -126,7 +126,15 @@ export const sync = {
     const r = await net.entitlements(this.account.token);
     if (!r || r.http !== 200) return null;
     if (r.products.includes('premiuminks') && !store.isPro()) store.setPro(true);
+    store.setProducts(r.products.filter(p => p !== 'premiuminks'));   // pass / box_* / claim_*；印泥盒仍走 pro
     return r.products;
+  },
+
+  // 本周免费章领了（9-08）：登录着就记到账号上，换机也在；没登录只记本机。
+  // 服务端窗口期判断跟客户端同口径；它说 400 也不撤本机的——已经盖在纸上了。
+  async claim(stampId) {
+    if (!this.isLoggedIn()) return null;
+    return net.claimStamp(this.account.token, stampId);
   },
 
   async logout() {

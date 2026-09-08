@@ -47,9 +47,11 @@ const HIDDEN_COND = ['combo', 'late', 'distinct', 'catCount', 'discovered'];
 const UNLOCK_COND = ['catTotal', 'stampTotal', 'comboTotal', 'hourTotal', 'total'];
 const ID = /^[a-z][a-z0-9_]{1,31}$/;
 const HEX = /^#[0-9a-fA-F]{6}$/;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const BUILTIN_SERIES = ['basic', 'secret'];   // 内置两盒：内容包不能改它们的 free / 名字
 
 // 已应用的是哪一版、从哪来、追加了多少、哪些条目被跳过（诊断面板读）
-const applied = { version: 0, source: 'builtin', counts: { inks: 0, cats: 0, stamps: 0, hidden: 0 }, warnings: [] };
+const applied = { version: 0, source: 'builtin', counts: { inks: 0, cats: 0, series: 0, stamps: 0, hidden: 0 }, warnings: [] };
 export function catalogInfo() {
   return { ...applied, counts: { ...applied.counts }, warnings: applied.warnings.slice() };
 }
@@ -96,8 +98,28 @@ function normStamp(s, warn) {
   if (!INKS[s.ink]) return warn(`stamp ${id}: ink "${s.ink}" 不存在（新印泥要写在 inks 里）`);
   if (typeof s.d !== 'string' || !s.d.trim()) return warn(`stamp ${id}: 缺 d（SVG 内容）`);
   if (s.unlock !== undefined && !normCond(s.unlock, UNLOCK_COND)) return warn(`stamp ${id}: unlock.type 只能是 ${UNLOCK_COND.join('/')}`);
-  if (s.series !== undefined && !SERIES.some(x => x.id === s.series)) return warn(`stamp ${id}: series "${s.series}" 不存在`);
-  return { id, name: s.name, cat: s.cat, ink: s.ink, d: s.d, unlock: s.unlock, series: s.series || 'basic' };
+  if (s.series !== undefined && !SERIES.some(x => x.id === s.series)) return warn(`stamp ${id}: series "${s.series}" 不存在（新盒子要写在 series 里）`);
+  if (s.freeUntil !== undefined && !DAY.test(s.freeUntil)) return warn(`stamp ${id}: freeUntil 要 YYYY-MM-DD`);
+  // freeUntil 只对收费盒有意义（本周免费章）；免费盒的章本来就在托盘里，写了也不报错、直接忽略
+  return { id, name: s.name, cat: s.cat, ink: s.ink, d: s.d, unlock: s.unlock, series: s.series || 'basic',
+    freeUntil: s.freeUntil !== undefined ? s.freeUntil : undefined };
+}
+
+// 盒子（系列）：收费边界 9-08 拍板。free:false = 要买（商品 box_<id>，价 price 元，服务端 pay.js 同一份读）；
+// pass:false = 不进「印章通行证」（品牌款 / 限量款）。stampIds 不在这儿写，由 stamps[].series 归进去。
+function normSeries(x, warn) {
+  const id = x && x.id;
+  if (!ID.test(id || '')) return warn(`series ${id}: id 不合法`);
+  if (BUILTIN_SERIES.includes(id)) return warn(`series ${id}: basic / secret 是内置盒，内容包不能改`);
+  if (typeof x.name !== 'string' || !x.name) return warn(`series ${id}: 缺 name`);
+  const out = { id, name: x.name, sub: typeof x.sub === 'string' ? x.sub : '', free: !!x.free, pass: x.pass !== false, material: null };
+  if (x.price !== undefined) {
+    if (!Number.isInteger(x.price) || x.price <= 0) return warn(`series ${id}: price 要正整数（元）`);
+    out.price = x.price;
+  }
+  if (!out.free && out.price === undefined) return warn(`series ${id}: 收费盒要写 price（元），不然卖不了`);
+  if (typeof x.box === 'string') out.box = x.box;
+  return out;
 }
 
 function normHidden(h, warn) {
@@ -123,9 +145,9 @@ export function applyCatalog(cat, source = 'manual') {
   if (!isCatalog(cat)) return false;
   const warnings = [];
   const warn = m => { warnings.push(m); return null; };
-  const counts = { inks: 0, cats: 0, stamps: 0, hidden: 0 };
+  const counts = { inks: 0, cats: 0, series: 0, stamps: 0, hidden: 0 };
 
-  // 顺序有讲究：章引用印泥和分类，隐藏章引用印泥 —— 先把被引用的合进去
+  // 顺序有讲究：章引用印泥、分类和盒子，隐藏章引用印泥 —— 先把被引用的合进去
   for (const [id, k] of Object.entries(cat.inks && typeof cat.inks === 'object' ? cat.inks : {})) {
     const n = normInk(id, k, warn); if (!n) continue;
     INKS[id] = n; counts.inks++;
@@ -133,6 +155,13 @@ export function applyCatalog(cat, source = 'manual') {
   for (const c of Array.isArray(cat.cats) ? cat.cats : []) {
     if (!c || !ID.test(c.id || '') || typeof c.name !== 'string' || !c.name) { warn(`cat ${c && c.id}: 要 id + name`); continue; }
     upsert(CATEGORIES, { id: c.id, name: c.name }); counts.cats++;
+  }
+  for (const x of Array.isArray(cat.series) ? cat.series : []) {
+    const n = normSeries(x, warn); if (!n) continue;
+    const cur = SERIES.find(s => s.id === n.id);
+    if (cur) Object.assign(cur, n);                    // 改名 / 改价 / 改边界；stampIds 不动
+    else SERIES.push({ ...n, stampIds: [] });
+    counts.series++;
   }
   for (const s of Array.isArray(cat.stamps) ? cat.stamps : []) {
     const n = normStamp(s, warn); if (!n) continue;

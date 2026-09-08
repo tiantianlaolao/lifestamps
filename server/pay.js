@@ -6,8 +6,14 @@
 //     ① 到账只认支付方——notify 验签 + 主动 alipay.trade.query 反查，return_url 带回来的参数一个字不信；
 //     ② 幂等——orders.trade_no UNIQUE，同一笔支付宝交易重放一百次也只发一次权益。
 //
-// 产品：现在只卖「高级印泥盒」premiuminks ￥8（用户 9-07 拍板）。价目表写死在这里，
-//       客户端只传 product id，金额永远由服务端说了算。
+// 产品：客户端只传 product id，金额永远由服务端说了算。价目表两部分（9-08 收费边界拍板）：
+//   · 写死的：premiuminks ￥8（高级印泥盒，含以后所有印泥）、pass（印章通行证，价随目录涨，LS_PASS_FEN 配）
+//   · 从内容包读的：catalog.json 里 series[] 中 free:false 的盒子 → 商品 box_<id>，价 = series.price（元）
+//     文件路径 LS_CATALOG（生产 = /var/www/lifestamps/js/catalog.json；本机默认 ../app/js/catalog.json），
+//     按 mtime 缓存，改内容包不用重启。读不到就只剩写死的那两个。
+//   🔴 印泥与章永不互含：pass 不含 premiuminks，premiuminks 不含任何章；这是"两套买断不乱"的唯一前提。
+// 本周免费章（9-08）：POST /api/stamp/claim {stamp} —— 内容包里带 freeUntil 且还在窗口期的收费盒章，
+//   登录用户可以领走 = 权益 claim_<stamp>，永久。窗口用北京日期判，跟客户端 dateKey 同口径。
 //
 // 两条支付宝通道，同一套订单表：
 //   alipay_wap  手机网站支付 alipay.trade.wap.pay —— 服务端拼签名 URL，客户端外开浏览器打开，手机上自动拉起支付宝
@@ -28,6 +34,7 @@
 // ============================================================
 'use strict';
 const fs = require('fs');
+const path = require('path');
 const crypto = require('node:crypto');
 
 const APP_ID = process.env.LS_ALIPAY_APP_ID || '2021006197636619';
@@ -42,6 +49,46 @@ const PRODUCTS = {
   premiuminks: { fen: 800, subject: '戳了么 · 高级印泥盒' },
 };
 if (TEST_PRODUCT) PRODUCTS.test001 = { fen: 1, subject: '戳了么 · 支付链路测试' };
+// 通行证：首发 ¥38，随目录涨到 ¥68 封顶 —— 涨价只改 pm2 里的 LS_PASS_FEN，不发版
+PRODUCTS.pass = { fen: Number(process.env.LS_PASS_FEN) > 0 ? Number(process.env.LS_PASS_FEN) : 3800, subject: '戳了么 · 印章通行证' };
+
+// ---- 内容包里的盒子 → 商品（按 mtime 缓存）-------------------------------------
+const CATALOG_PATH = process.env.LS_CATALOG || path.join(__dirname, '..', 'app', 'js', 'catalog.json');
+const BOX_ID = /^[a-z][a-z0-9_]{1,31}$/;
+let _cat = { mtime: -1, doc: null };
+function readCatalog() {
+  let st;
+  try { st = fs.statSync(CATALOG_PATH); } catch (_) { _cat = { mtime: -1, doc: null }; return null; }
+  if (st.mtimeMs !== _cat.mtime) {
+    let doc = null;
+    try { doc = JSON.parse(fs.readFileSync(CATALOG_PATH, 'utf8')); } catch (_) { doc = null; }
+    _cat = { mtime: st.mtimeMs, doc: doc && typeof doc === 'object' ? doc : null };
+  }
+  return _cat.doc;
+}
+// 现在能卖的全部商品：写死的 + 内容包里的收费盒。每次建单现算，内容包一改价目表就跟着变。
+function productsNow() {
+  const out = { ...PRODUCTS };
+  const doc = readCatalog();
+  for (const s of Array.isArray(doc && doc.series) ? doc.series : []) {
+    if (!s || !BOX_ID.test(s.id || '') || s.free !== false) continue;
+    if (!Number.isInteger(s.price) || s.price <= 0) continue;        // 收费盒没写价 = 不卖，跟客户端校验一致
+    out['box_' + s.id] = { fen: s.price * 100, subject: '戳了么 · ' + (typeof s.name === 'string' ? s.name : s.id) };
+  }
+  return out;
+}
+// 北京日期 YYYY-MM-DD（服务器是 UTC；freeUntil 那天整天都算在窗口内，跟客户端 dateKey 同口径）
+function cnDateKey(ts = Date.now()) { return new Date(ts + 8 * 3600e3).toISOString().slice(0, 10); }
+// 这枚章现在能不能免费领：在内容包里、属于收费盒、带 freeUntil 且没过
+function claimable(stampId) {
+  const doc = readCatalog();
+  if (!doc || !BOX_ID.test(stampId || '')) return false;
+  const s = (Array.isArray(doc.stamps) ? doc.stamps : []).find(x => x && x.id === stampId);
+  if (!s || typeof s.freeUntil !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s.freeUntil)) return false;
+  const box = (Array.isArray(doc.series) ? doc.series : []).find(x => x && x.id === s.series);
+  if (!box || box.free !== false) return false;
+  return cnDateKey() <= s.freeUntil;
+}
 
 const ORDER_TTL_MS = 15 * 60 * 1000;      // 支付宝侧 timeout_express 同步 15 分钟
 const QUERY_MIN_GAP_MS = 3000;            // 客户端轮询时，同一单最多 3 秒去支付宝反查一次
@@ -224,7 +271,7 @@ function mount({ db, send, readBody, sessionOf }) {
   // ---- POST /api/pay/create  {product, channel} ----
   async function create(req, res, sess) {
     const b = await readBody(req);
-    const prod = PRODUCTS[b.product];
+    const prod = productsNow()[b.product];
     if (!prod) return send(res, 400, { error: 'product' });
     const channel = b.channel === 'alipay_app' ? 'alipay_app' : 'alipay_wap';
     const no = newOrderNo();
@@ -293,8 +340,31 @@ function mount({ db, send, readBody, sessionOf }) {
     return send(res, 200, { products: q.entitlementsOf.all(sess.uid).map(r => r.product) });
   }
 
+  // ---- GET /api/products  （公开：文具店要标价；不需要登录、不需要支付宝配好）----
+  function products(req, res) {
+    return send(res, 200, { products: productsNow() });
+  }
+
+  // ---- POST /api/stamp/claim {stamp}  （本周免费章：领了 = 权益 claim_<stamp>，永久；幂等）----
+  async function claim(req, res, sess) {
+    const b = await readBody(req);
+    const id = typeof b.stamp === 'string' ? b.stamp : '';
+    const product = 'claim_' + id;
+    const had = q.entitlementsOf.all(sess.uid).some(r => r.product === product);
+    if (!had && !claimable(id)) return send(res, 400, { error: 'claim' });   // 领过的永远算数，窗口过了也不收回
+    if (!had) q.grant.run(sess.uid, product, Date.now(), 'claim');
+    return send(res, 200, { product });
+  }
+
   async function route(req, res, pathname) {
     const m = req.method;
+    // 不靠支付宝的两条：价目表（公开）、领本周免费章（要登录）。密钥没配也照常工作。
+    if (m === 'GET' && pathname === '/api/products') { products(req, res); return true; }
+    if (m === 'POST' && pathname === '/api/stamp/claim') {
+      const sess = sessionOf(req);
+      if (!sess) { send(res, 401, { error: 'auth' }); return true; }
+      await claim(req, res, sess); return true;
+    }
     if (!pathname.startsWith('/api/pay/') && pathname !== '/api/entitlements') return null;
     if (m === 'POST' && pathname === '/api/pay/alipay/notify') {
       if (!READY) { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('fail'); return true; }
@@ -314,7 +384,7 @@ function mount({ db, send, readBody, sessionOf }) {
 }
 
 module.exports = {
-  mount, READY, PRODUCTS, APP_ID,
+  mount, READY, PRODUCTS, APP_ID, productsNow, CATALOG_PATH,
   // 下面这些导出只为 test.js：拿真实的签名/验签/拼串逻辑做断言
-  _internal: { sign, verify, signContent, buildWapPayUrl, buildAppOrderStr, extractResponseNode, cnTimestamp, newOrderNo },
+  _internal: { sign, verify, signContent, buildWapPayUrl, buildAppOrderStr, extractResponseNode, cnTimestamp, newOrderNo, claimable, cnDateKey },
 };

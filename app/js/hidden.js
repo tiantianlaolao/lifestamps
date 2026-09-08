@@ -1,7 +1,7 @@
 // ============================================================
 // 隐藏章条件引擎 + 今日隐藏章（Daily Secret）
 // ============================================================
-import { HIDDEN, stampById, isGlyph, INIT_STAMPS, UNLOCK } from './data.js';
+import { HIDDEN, stampById, isGlyph, INIT_STAMPS, UNLOCK, seriesOf } from './data.js';
 import { store, dateKey } from './store.js';
 
 // ============================================================
@@ -9,9 +9,36 @@ import { store, dateKey } from './store.js';
 // ⚠️ 两边不要混：隐藏章看 todayRecs，基础章看 store.records 全量。
 // ============================================================
 
-// 这枚基础章现在能不能用（初始 12 枚永远能用，其余看解锁记录）
+// 本周免费章的窗口：freeUntil 那天（本地日期）整天都算。跟服务端 pay.js 的 cnDateKey 同口径。
+function inFreeWindow(def) { return !!(def && def.freeUntil) && dateKey(Date.now()) <= def.freeUntil; }
+
+// 这枚章"归不归你"（9-08 收费边界）——跟"解锁了没"是两回事：
+//   免费盒（basic / secret / 内容包 free:true）永远归你；收费盒要买那盒、或有通行证（pass:false 的盒除外）、
+//   或领过本周免费章、或此刻还在它的免费窗口里。不归你的章不进托盘、不进抽屉的"还没遇到"、不算收集进度，
+//   但纸上已经盖的照样画（stampById 里一直有它）。
+export function isOwned(id) {
+  const s = seriesOf(id);
+  if (!s || s.free !== false) return true;
+  if (store.claimed[id] || store.hasProduct('box_' + s.id)) return true;
+  if (s.pass !== false && store.hasProduct('pass')) return true;
+  return inFreeWindow(stampById[id]);
+}
+
+// 这枚基础章现在能不能用：得归你（上面）+ 已解锁（初始 12 枚永远能用，其余看解锁记录）
 export function isUnlocked(id) {
-  return INIT_STAMPS.includes(id) || !!store.unlocked[id];
+  return isOwned(id) && (INIT_STAMPS.includes(id) || !!store.unlocked[id]);
+}
+
+// 本周免费章：窗口期内盖过 = 领了，永久归你。盖完章调一次，返回这次新领到的 id（main.js 拿去同步到账号）
+export function claimFreeStamps() {
+  const got = [];
+  for (const r of store.records) {
+    const d = stampById[r.stampId];
+    if (!d || store.claimed[d.id] || !inFreeWindow(d)) continue;
+    if (seriesOf(d.id)?.free !== false) continue;          // 免费盒的章不用领
+    if (store.claimStamp(d.id)) got.push(d.id);
+  }
+  return got;
 }
 
 // 🔴🔴 累计计数的核心规矩（8-28 用户拍板）：**同一枚章，同一天只算一次**。

@@ -71,6 +71,23 @@ process.env.LS_ALIPAY_APP_ID = '2021006197636619';
 process.env.LS_ALIPAY_GATEWAY = 'http://127.0.0.1:8797/gateway.do';
 process.env.LS_PAY_TEST_PRODUCT = '1';
 delete process.env.LS_ALIPAY_SELLER_ID;
+delete process.env.LS_PASS_FEN;                        // 测默认价 ¥38
+// 按盒商品 + 本周免费章（9-08）：服务端从内容包读盒子和 freeUntil，测试给它一份临时内容包
+process.env.LS_CATALOG = path.join(TMP, 'catalog.json');
+fs.writeFileSync(process.env.LS_CATALOG, JSON.stringify({
+  version: 9,
+  series: [
+    { id: 'animals', name: '手绘动物', free: false, price: 8 },
+    { id: 'plants', name: '手绘植物', free: false, price: 6, pass: false },
+    { id: 'gift', name: '赠品盒', free: true },
+    { id: 'nopr', name: '没写价', free: false },
+  ],
+  stamps: [
+    { id: 'dog', name: '小狗', cat: 'meet', ink: 'mo', series: 'animals', freeUntil: '2099-12-31', d: '<path d="M0,0Z" fill="CC"/>' },
+    { id: 'pig', name: '小猪', cat: 'meet', ink: 'zhu', series: 'animals', freeUntil: '2020-01-01', d: '<path d="M0,0Z" fill="CC"/>' },
+    { id: 'leaf', name: '叶子', cat: 'meet', ink: 'song', series: 'gift', freeUntil: '2099-12-31', d: '<path d="M0,0Z" fill="CC"/>' },
+  ],
+}));
 // 假网关：只会 alipay.trade.query；每单的状态由测试用 GW_STATE 摆布。响应签名照支付宝规则签 response 节点原文。
 const GW_STATE = {};
 const GW_SEEN = [];
@@ -683,6 +700,43 @@ function client() {
     ok(O6.body.status === 'CLOSED', '关单 notify → CLOSED');
     const anonCols = ['shares', 'gifts', 'unlocks', 'tickets', 'bindings'].flatMap(t => srv.db.prepare(`PRAGMA table_info(${t})`).all().map(c => t + '.' + c.name));
     ok(!anonCols.some(c => /uid|token/.test(c)), '加了 orders/entitlements 之后匿名五张表仍没有 uid/token 列');
+
+    console.log('\n== 按盒商品 + 通行证 + 本周免费章（9-08）==');
+    const P = await ja('GET', '/api/products');
+    ok(P.status === 200 && P.body.products.premiuminks.fen === 800, '价目表公开可读，印泥盒仍 ¥8');
+    ok(P.body.products.pass && P.body.products.pass.fen === 3800, '通行证默认 ¥38（LS_PASS_FEN 没配）');
+    ok(P.body.products.box_animals && P.body.products.box_animals.fen === 800 && P.body.products.box_animals.subject.includes('手绘动物'), '内容包 free:false 的盒子进价目表：box_animals ¥8');
+    ok(P.body.products.box_plants && P.body.products.box_plants.fen === 600, 'pass:false 的限量盒照样单卖：box_plants ¥6');
+    ok(!P.body.products.box_gift, 'free:true 的盒子不卖');
+    ok(!P.body.products.box_nopr, '收费盒没写 price = 不卖（跟客户端校验一致）');
+    const CB = await ja('POST', '/api/pay/create', { product: 'box_animals' }, TOK);
+    ok(CB.status === 200 && CB.body.amountFen === 800 && CB.body.payUrl, '按盒建单：金额由服务端按内容包定');
+    ok((await ja('POST', '/api/pay/create', { product: 'box_nope' }, TOK)).status === 400, '内容包里没有的盒子建不了单');
+    ok((await ja('POST', '/api/pay/create', { product: 'box_gift' }, TOK)).status === 400, '免费盒建不了单');
+    ok(await notifyPost({ out_trade_no: CB.body.orderNo, trade_no: 'TRADE_BOX1' }) === 'success', '盒子单 notify 到账');
+    ok((await ja('GET', '/api/entitlements', null, TOK)).body.products.includes('box_animals'), '权益里多了 box_animals');
+    const CP = await ja('POST', '/api/pay/create', { product: 'pass' }, TOK);
+    ok(CP.status === 200 && CP.body.amountFen === 3800, '通行证建单 ¥38');
+    ok(await notifyPost({ out_trade_no: CP.body.orderNo, trade_no: 'TRADE_PASS1', total_amount: '38.00' }) === 'success', '通行证 notify 到账');
+    ok((await ja('GET', '/api/entitlements', null, TOK)).body.products.includes('pass'), '权益里有 pass');
+    // 内容包改了价，不重启也生效（按 mtime 重读）
+    const catDoc = JSON.parse(fs.readFileSync(process.env.LS_CATALOG, 'utf8'));
+    catDoc.series[0].price = 12;
+    await new Promise(r => setTimeout(r, 20));
+    fs.writeFileSync(process.env.LS_CATALOG, JSON.stringify(catDoc));
+    const P2 = await ja('GET', '/api/products');
+    ok(P2.body.products.box_animals.fen === 1200, '改内容包里的 price → 价目表跟着变，不用重启');
+    // 本周免费章
+    ok((await ja('POST', '/api/stamp/claim', { stamp: 'dog' })).status === 401, '领章要登录');
+    const CL1 = await ja('POST', '/api/stamp/claim', { stamp: 'dog' }, TOK2);
+    ok(CL1.status === 200 && CL1.body.product === 'claim_dog', '窗口期内领本周免费章 → claim_dog');
+    ok((await ja('GET', '/api/entitlements', null, TOK2)).body.products.includes('claim_dog'), '权益里有 claim_dog');
+    ok((await ja('POST', '/api/stamp/claim', { stamp: 'dog' }, TOK2)).status === 200, '重复领 → 200 幂等');
+    ok(srv.db.prepare('SELECT COUNT(*) AS c FROM entitlements WHERE uid = ? AND product = ?').get(U2.body.uid, 'claim_dog').c === 1, '重复领只有一条权益');
+    ok((await ja('POST', '/api/stamp/claim', { stamp: 'pig' }, TOK2)).status === 400, '过了窗口的领不了');
+    ok((await ja('POST', '/api/stamp/claim', { stamp: 'leaf' }, TOK2)).status === 400, '免费盒里的章不用领（400）');
+    ok((await ja('POST', '/api/stamp/claim', { stamp: 'milktea' }, TOK2)).status === 400, '内容包外的章领不了');
+    ok((await ja('POST', '/api/stamp/claim', { stamp: '../x' }, TOK2)).status === 400, '怪 id 领不了');
   }
 
   console.log('\n== 白名单跟前端对得上 ==');

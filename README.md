@@ -83,10 +83,16 @@ iOS / Play / 官网直装三条线都不用重新出包、不过审。
     "plaid":  { "name": "格子", "type": "pattern", "bg": "#F3E9D2", "c1": "#C94B3C", "c2": "#668878" }
   },
   "cats": [{ "id": "season", "name": "时节" }],   // 新分类（可选）
+  "series": [                                      // 盒子（9-08 收费边界）。free:false = 要买，商品 box_<id>，price 元（服务端同一份读）
+    { "id": "animals", "name": "手绘动物", "sub": "一笔一笔画的", "free": false, "price": 8 },
+    { "id": "brandx", "name": "联名限量", "free": false, "price": 12, "pass": false }   // pass:false = 不进「印章通行证」
+  ],
   "stamps": [                                      // 新章。d = SVG 内容，viewBox 0 0 100 100，CC = 印泥占位
     { "id": "pumpkin", "name": "南瓜", "cat": "season", "ink": "moss", "d": "<path … stroke=\"CC\"/>",
       "unlock": { "type": "catTotal", "cat": "food", "n": 2 } },   // 有 unlock = 靠用解锁；没有 = 一开始就在托盘里
-    { "id": "lantern", "name": "灯笼", "cat": "season", "ink": "aurora", "d": "…" }
+    { "id": "lantern", "name": "灯笼", "cat": "season", "ink": "aurora", "d": "…" },
+    { "id": "dog", "name": "小狗", "cat": "meet", "ink": "mo", "series": "animals",   // 归到收费盒：没买不进托盘
+      "freeUntil": "2026-09-14", "d": "…" }         // 本周免费章：到这天为止免费用，窗口内盖过 = 领了，永久
   ],
   "hidden": [                                      // 新隐藏章。id 必须 h_ 开头；cond.type 只能是现有五种
     { "id": "h_autumn", "name": "秋日限定", "ink": "aurora", "hint": "两样都遇到的话。",
@@ -104,7 +110,14 @@ iOS / Play / 官网直装三条线都不用重新出包、不过审。
 - 🔴 **内容不审，代码才审**：要新的印泥类型（箔感 / 金属）、新的滤镜、新的解锁条件类型——那是代码，得发版。
 - 🔴 文件必须留在 `app/js/` 下：部署脚本是目录白名单制，放根目录会静默漏传。
 - 🔴 **nginx 必须给 `/lifestamps/` 静态文件回 `Access-Control-Allow-Origin *`**（9-07 踩坑）：原生壳是 `capacitor://localhost` / `https://localhost` 去拉 `js/catalog.json`，跨域没这个头浏览器直接扔掉，表现是"网页有新章、App 没有"且不报错。1.13 已加（备份 `…bak-20260907-lifestamps-cors`）；**换主机 / 美服 `stampday.conf` 部署时要同样加**。`dl/android.json`（安卓更新检查）同一个坑，一起治好了。
-- 付费：新印泥 `free:false` 归现有「高级印泥盒」买断；单独定价的盒子（`productId`）还没做，以后再说。
+- 付费（9-08 收费边界拍板，价格表见 memory `lifestamps-pricing-20260908`）：
+  · 新印泥 `free:false` 归现有「高级印泥盒」premiuminks ￥8 买断，**含以后所有印泥**；
+  · 新章归到 `series[]` 里 `free:false` 的盒子 = 商品 `box_<盒>`，价 `price` 元；`pass:false` 的盒不进「印章通行证」pass；
+  · 没买的盒子里的章：不进托盘、不进抽屉「还没遇到」、不算收集进度，但纸上盖过的照样画；
+  · `freeUntil`（本周免费章）：那天之前所有人都能用，窗口内盖过 = 领了（`claim_<章>` 权益，登录着就记到账号）；
+  · 🔴 印泥与章永不互含：pass 不含 premiuminks，不出套装。
+  服务端：`GET /api/products` 价目表（公开）、`POST /api/pay/create {product:'box_x'|'pass'}`、`POST /api/stamp/claim {stamp}`（⚠️ `/api/claim` 是兑换码的）；
+  盒子价从 `LS_CATALOG` 指的 catalog.json 现读（生产 pm2 配 `/var/www/lifestamps/js/catalog.json`），通行证价 `LS_PASS_FEN`（分，默认 3800）。
 
 ## 支付（9-07，支付宝 手机网站支付 / APP 支付）
 

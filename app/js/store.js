@@ -42,6 +42,11 @@ export const store = {
   trialUsed: load('trialUsed', 0),// 那天已经蘸过几次付费色
   proDeclined: load('proDeclined', 0), // 上次点「暂时不用」的时间戳（7 天内不再主动提）
   unlocked: load('unlocked', {}),      // 基础章 stampId -> 解锁时间。初始 12 枚不写进来，见 INIT_STAMPS
+  // 按盒权益（9-08 收费边界）：商品 id 列表——'pass'（印章通行证）/ 'box_<盒>' / 'claim_<章>'（本周免费章领过）。
+  // 来源 = 服务端 entitlements（支付宝线的权威）+ 商店恢复购买。只增不减，跟 pro 同一条规矩。
+  // ⚠️ premiuminks 不走这里，它还是 pro 那个布尔——印泥和章两套买断永不互含，存也分开存。
+  products: load('products', []),
+  claimed: load('claimed', {}),        // 本周免费章 stampId -> 领取时间（窗口期内盖过 = 领了，永久）
   // 我发出去的分享。[{code, day, expires, seen:{sealId:已收到的枚数}}]
   // 🔴 这就是 A 的全部"身份" —— 服务端不认识任何人，谁拿着短码谁能看。
   //    清了本地数据 = 这些分享再也收不回来，这是匿名换来的代价，写在这儿别忘。
@@ -78,6 +83,8 @@ export const store = {
     save('trialUsed', this.trialUsed);
     save('proDeclined', this.proDeclined);
     save('unlocked', this.unlocked);
+    save('products', this.products);
+    save('claimed', this.claimed);
     save('shares', this.shares);
     save('installId', this.installId);
     if (this.onPersist) this.onPersist();
@@ -125,6 +132,26 @@ export const store = {
   // 拒绝之后 7 天内不主动提 —— 文档拍板：不追问、不倒计时、不红点。
   // 只是"不主动弹"，用户自己进印泥盒时该看到的还是看得到。
   declinePro() { this.proDeclined = Date.now(); this.persist(); },
+
+  // ---- 按盒权益（9-08）----
+  hasProduct(id) { return this.products.includes(id); },
+  // 只往有利方向合：服务端 / 商店给的并进来，永不删（买过的东西永远在）。返回有没有新增。
+  setProducts(list) {
+    let changed = false;
+    for (const p of Array.isArray(list) ? list : []) {
+      if (typeof p !== 'string' || !p || this.products.includes(p)) continue;
+      this.products.push(p); changed = true;
+      if (p.startsWith('claim_') && !this.claimed[p.slice(6)]) this.claimed[p.slice(6)] = Date.now();
+    }
+    if (changed) this.persist();
+    return changed;
+  },
+  claimStamp(id) {
+    if (this.claimed[id]) return false;
+    this.claimed[id] = Date.now();
+    this.persist();
+    return true;
+  },
   proQuiet() { return this.proDeclined && Date.now() - this.proDeclined < 7 * 864e5; },
 
   // 没买断时，每天可以蘸几次付费色 —— 这不是"限制"，是试用额度：

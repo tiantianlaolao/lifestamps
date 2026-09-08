@@ -380,6 +380,21 @@ export async function entitlements(token) {
   if (status === 0) return null;
   return { http: status, products: (data && data.products) || [] };
 }
+// 价目表（9-08）：公开，不用登录。{ premiuminks:{fen,subject}, pass:{…}, box_<盒>:{…} }，文具店标价用。
+export async function products() {
+  const { status, data } = await call('products');
+  if (status === 0) return null;
+  return { http: status, products: (data && data.products) || {} };
+}
+// 本周免费章领取（9-08）：要 Bearer。200 = { product:'claim_<章>' }；400 = 不在窗口期 / 不是收费盒的章。
+export async function claimStamp(token, stamp) {
+  const { status, data } = await call('stamp/claim', {     // ⚠️ 不是 /api/claim——那是兑换码（欢迎章）的
+    method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
+    body: JSON.stringify({ stamp }),
+  });
+  if (status === 0) return null;
+  return { http: status, ...(data || {}) };
+}
 
 // 我现在解开了哪几枚封蜡。网不通返回 null（跟"一枚都没有"要分得开）。
 async function fetchUnlocked() {

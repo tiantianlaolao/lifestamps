@@ -13,7 +13,8 @@ import { INKS, CATEGORIES, STAMPS, HIDDEN, UNLOCK, INIT_STAMPS, SERIES, stampByI
 import { applyCatalog, fetchCatalog, bootCatalog, refreshCatalog, catalogInfo } from '../js/catalog.js';
 import { defsMarkup, stampSVG, inkCSS, inkMainColor } from '../js/stamp.js';
 import { setLang, nameOf } from '../js/i18n.js';
-import { isUnlocked } from '../js/hidden.js';
+import { isUnlocked, isOwned, claimFreeStamps } from '../js/hidden.js';
+import { store, dateKey } from '../js/store.js';
 
 const out = document.getElementById('out'); out.textContent = '';
 let pass = 0, fail = 0;
@@ -142,6 +143,51 @@ try {
   const real = await fetchCatalog('../js/catalog.json');
   ok(real && Number.isInteger(real.version) && real.version >= 1, `7 js/catalog.json 能拉到且合法（v${real && real.version}）`);
   ok(real && ['inks', 'cats', 'stamps', 'hidden', 'names'].every(k => k in real), '7 五个段都在');
+
+  // ---- 8. 盒子 + 权益（9-08 收费边界：没买的盒不进托盘、本周免费章、通行证边界）----
+  const today = dateKey(Date.now()), yesterday = dateKey(Date.now() - 864e5);
+  const r8 = applyCatalog({ version: 6,
+    series: [
+      { id: 'animals', name: '手绘动物', sub: '一笔一笔画的', free: false, price: 8 },
+      { id: 'brand', name: '联名限量', free: false, price: 12, pass: false },
+      { id: 'basic', name: '篡改内置盒' },
+      { id: 'nopr', name: '收费盒没写价', free: false },
+      { id: 'giftbox', name: '免费盒', free: true },
+    ],
+    stamps: [
+      { id: 'dogx', name: '小狗', cat: 'meet', ink: 'mo', series: 'animals', d: PATH },
+      { id: 'pigx', name: '小猪', cat: 'meet', ink: 'zhu', series: 'animals', freeUntil: today, d: PATH },
+      { id: 'brx', name: '联名章', cat: 'meet', ink: 'zhu', series: 'brand', d: PATH },
+      { id: 'gfx', name: '免费盒的章', cat: 'meet', ink: 'zhu', series: 'giftbox', d: PATH },
+      { id: 'badday', name: '日期格式坏', cat: 'meet', ink: 'zhu', series: 'animals', freeUntil: '9/14', d: PATH },
+      { id: 'noseries', name: '盒不存在', cat: 'meet', ink: 'zhu', series: 'nopr', d: PATH },
+    ] }, 'test');
+  ok(r8 && seriesById.animals && seriesById.animals.free === false && seriesById.animals.price === 8 && seriesById.animals.pass === true && seriesById.animals.sub === '一笔一笔画的', '8 收费盒进 SERIES：free:false / price / pass 默认 true / sub');
+  ok(seriesById.brand.pass === false, '8 pass:false 记住了（联名 / 限量不进通行证）');
+  ok(seriesById.basic.name === '基础章' && seriesById.basic.free === true && !seriesById.nopr, '8 内置盒改不了；收费盒没写价不进（服务端同样不卖）');
+  ok(seriesOf('dogx') === seriesById.animals && seriesById.animals.stampIds.includes('dogx') && seriesById.animals.stampIds.includes('pigx') && !seriesById.basic.stampIds.includes('dogx'), '8 章归到盒里，不再算基础章');
+  ok(!stampById.badday && !stampById.noseries, '8 freeUntil 格式不对 / 盒不存在的章不进');
+  ok(stampById.dogx && !isOwned('dogx') && !isUnlocked('dogx') && INIT_STAMPS.includes('dogx'), '8 没买的盒：章在库里（纸上能画）但不归你、不进托盘');
+  ok(isOwned('pigx') && isUnlocked('pigx'), '8 freeUntil=今天 → 窗口内归你、进托盘');
+  ok(isOwned('gfx') && isUnlocked('gfx'), '8 free:true 的盒里的章直接归你');
+  ok(isOwned('milktea') && isOwned('h_moyu') && isOwned('g0') && isOwned('lantern'), '8 基础 / 隐藏 / 字形 / 没写 series 的内容包章永远归你');
+  store.records.push({ id: 'r_pigx', stampId: 'pigx', ink: 'zhu', ts: Date.now() });
+  store.records.push({ id: 'r_dogx', stampId: 'dogx', ink: 'mo', ts: Date.now() });   // 另一台设备买了盒盖的，同步过来
+  const got = claimFreeStamps();
+  ok(got.length === 1 && got[0] === 'pigx' && store.claimed.pigx, '8 窗口内盖过 → 领到 pigx；没窗口的 dogx 盖过也领不到');
+  ok(claimFreeStamps().length === 0, '8 再调一次不重复领');
+  applyCatalog({ version: 7, stamps: [{ id: 'pigx', name: '小猪', cat: 'meet', ink: 'zhu', series: 'animals', freeUntil: yesterday, d: PATH }] }, 'test');
+  ok(stampById.pigx.freeUntil === yesterday && isOwned('pigx') && isUnlocked('pigx'), '8 窗口过了，领过的永远归你');
+  applyCatalog({ version: 8, stamps: [{ id: 'pigx', name: '小猪', cat: 'meet', ink: 'zhu', series: 'animals', d: PATH }] }, 'test');
+  ok(stampById.pigx.freeUntil === undefined && isOwned('pigx'), '8 内容包把 freeUntil 拿掉 → 字段真的没了，领过的照样归你');
+  ok(store.setProducts(['box_animals']) === true && isOwned('dogx') && isUnlocked('dogx') && !isOwned('brx'), '8 买了盒 → 盒里的章归你、进托盘；别的盒不归');
+  store.setProducts(['pass']);
+  ok(isOwned('dogx') && !isOwned('brx'), '8 通行证 → 收费盒归你，但 pass:false 的联名盒不归');
+  store.setProducts(['box_brand', 'claim_zzz', '', 42]);
+  ok(isOwned('brx') && store.claimed.zzz && !store.products.includes('') && !store.products.includes(42), '8 单买联名盒 → 归你；claim_ 权益落进 claimed；脏值不进');
+  ok(store.setProducts(['pass']) === false && store.products.filter(p => p === 'pass').length === 1, '8 setProducts 幂等、只增不减');
+  ok(JSON.parse(localStorage.getItem('lifestamps_products')).includes('box_brand') && JSON.parse(localStorage.getItem('lifestamps_claimed')).pigx, '8 权益和领取都落了盘');
+  ok(stampSVG(stampById.dogx, { size: 30 }).includes('<svg') && stampSVG(stampById.brx, { size: 30 }).includes('<svg'), '8 不管归不归你，纸上都画得出来');
 } catch (e) {
   ok(false, 'CRASH: ' + (e && e.stack || e));
 }

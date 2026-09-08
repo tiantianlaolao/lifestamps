@@ -1,0 +1,50 @@
+<!doctype html><meta charset="utf-8"><title>叶子章 · 四版比稿</title>
+<style>
+ body{margin:0;background:#DDD8CC;font:13px/1.7 system-ui;color:#252421;padding:22px}
+ .wrap{max-width:1000px;margin:0 auto}
+ h2{font-size:14px;letter-spacing:.14em;margin:0 0 14px;color:#5A544A}
+ .box{background:#F6F2EA;border-radius:12px;padding:16px 18px;margin-bottom:14px}
+ .ttl{font-size:12px;letter-spacing:.12em;color:#8C8880;margin-bottom:10px}
+ .row{display:flex;gap:26px;align-items:flex-end;flex-wrap:wrap}
+ .cell{text-align:center}
+ .cap{font-size:10.5px;color:#8C8880;margin-top:4px}
+ .paper{background:#FBF7EE;border-radius:8px;padding:14px 16px;display:inline-block}
+</style>
+<div class="wrap"><h2>叶子章 · 四版比稿（真实密度：托盘 30px / 纸上 56px / 分享卡 120px）</h2><div id="out"></div></div>
+<script type="module">
+import { INKS, stampById } from '../js/data.js';
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+document.body.insertAdjacentHTML('afterbegin',
+  `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+
+const V = await (await fetch('./_leaf.json', { cache: 'no-store' })).json();
+const NOTE = {
+  L1: 'L1 轮廓 + 主脉 + 三对侧脉（最克制，跟现有章一路）',
+  L2: 'L2 = L1 + 十来根短排线（带一点原稿的手绘排线感）',
+  L3: 'L3 不封轮廓：主脉 + 侧脉 + 边缘短线示意（最贴原稿气质）',
+  L4: 'L4 轮廓 + 四对侧脉（脉更密、更像原稿的叶脉走向）',
+};
+let h = '';
+for (const [k, d] of Object.entries(V)) {
+  const def = { id: 'leaf_' + k, name: "叶子", cat: 'meet', ink: 'song', d };
+  h += `<div class="box"><div class="ttl">${NOTE[k]}</div><div class="row">`;
+  for (const [size, cap] of [[30, '托盘 30'], [56, '纸上 56'], [120, '分享卡 120']]) {
+    h += `<div class="cell"><span class="paper">${stampSVG(def, { size, ink: 'song' })}</span><div class="cap">${cap}</div></div>`;
+  }
+  // 三款可选印泥并排看
+  for (const ink of ['song', 'mo', 'wu']) {
+    h += `<div class="cell"><span class="paper">${stampSVG(def, { size: 56, ink })}</span><div class="cap">${INKS[ink].name}</div></div>`;
+  }
+  h += `</div></div>`;
+}
+// 参照：库里现有的三枚章，同尺寸并排 —— 判断"合不合群"只能这样看
+h += `<div class="box" style="background:#EFE9DC"><div class="ttl">参照 · 库里现有的章（同尺寸）</div><div class="row">`;
+for (const id of ['rainbowsky', 'sunset', 'milktea', 'sparkle']) {
+  const d0 = stampById[id];
+  for (const size of [30, 56]) {
+    h += `<div class="cell"><span class="paper">${stampSVG(d0, { size })}</span><div class="cap">${d0.name} ${size}</div></div>`;
+  }
+}
+h += `</div></div>`;
+document.getElementById('out').innerHTML = h;
+</script>

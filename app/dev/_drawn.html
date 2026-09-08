@@ -1,0 +1,24 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>手绘章 · 真 App 预览</title>
+<style>body{font:15px/1.8 system-ui;background:#DDD8CC;color:#252421;padding:24px;max-width:520px;margin:0 auto}
+a{display:inline-block;margin:8px 12px 0 0;padding:8px 14px;border-radius:8px;background:#F6F2EA;border:1px solid #B9B2A4;color:#252421;text-decoration:none}</style>
+<!-- 9-08：把 _drawn.json（线上内容包 + 十枚手绘章，version 999）种进本机缓存，再跳真 App。
+     原理同 _catalogboot.html：开机先吃缓存，版本比线上大就不会被线上覆盖。
+     只影响当前这个网址（origin）的本机数据；?clear=1 清掉恢复原样。dev/ 不部署不进包。 -->
+<h3>手绘章 · 真 App 预览</h3>
+<div id="m">正在种入本机缓存…</div>
+<script type="module">
+const K = 'lifestamps_catalog', q = new URLSearchParams(location.search), m = document.getElementById('m');
+if (q.get('clear') === '1') {
+  localStorage.removeItem(K);
+  m.innerHTML = '已清掉手绘章缓存，App 恢复线上内容包。<br><a href="../index.html">打开 App</a><a href="_drawn.html">重新种入</a>';
+} else {
+  try {
+    const cat = await (await fetch('_drawn.json', { cache: 'no-store' })).json();
+    localStorage.setItem(K, JSON.stringify(cat));
+    m.innerHTML = `已种入 ${cat.stamps.length} 枚章（含线上的台风章），托盘「遇见」末尾看。<br>
+      <a href="../index.html?skipob=1&book=open&deck=open&cat=meet">打开 App</a><a href="_drawn.html?clear=1">看完清掉</a>`;
+    if (q.get('go') === '1') location.replace('../index.html?skipob=1&book=open&deck=open&cat=meet');
+  } catch (e) { m.textContent = '种入失败：' + e; }
+}
+</script>

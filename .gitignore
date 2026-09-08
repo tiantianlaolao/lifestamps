@@ -44,3 +44,6 @@ __pycache__/
 
 # 安卓签名 keystore + 口令卡（9-02）：绝不进仓，备份在 D:\ios密钥备份\lifestamps-android\
 _android_signing/
+
+# 图片转章 demo 的样图（用户手绘），过程物料
+app/dev/_samples/

@@ -1,0 +1,147 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>戳了么 · 后台</title>
+<!-- 运营后台（9-09）：注册用户 / 活跃登录 / 启动设备估算 / 匿名估算 / 付费 / 分享，中国版 + 海外版并排。
+     数据来自 /api/admin/stats（server/admin.js），口令存 sessionStorage，关标签页就忘。
+     线上放在 /lifestamps/tools/admin/（手动 sftp，tools/ 不进网页部署也不进壳）；dev/ 里这份是源码。 -->
+<style>
+ :root{--bg:#F6F2EA;--paper:#FBF7EE;--ink:#252421;--sub:#6B655C;--faint:#9B958B;--line:#D9D2C4;--red:#C94B3C;--green:#668878;--blue:#7593A6}
+ *{box-sizing:border-box}
+ body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;padding:22px 18px 60px}
+ .wrap{max-width:980px;margin:0 auto}
+ h1{font-size:16px;letter-spacing:.14em;margin:0 0 14px;font-weight:600;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+ h1 small{font-weight:400;color:var(--faint);letter-spacing:0;font-size:12px}
+ .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+ input,select,button{font:13px system-ui;padding:6px 10px;border:1px solid var(--line);border-radius:7px;background:var(--paper);color:var(--ink)}
+ button{cursor:pointer}button.pri{background:var(--red);color:#fff;border-color:var(--red)}
+ .msg{color:var(--red);font-size:13px}
+ .box{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px;overflow-x:auto}
+ .ttl{font-size:12px;letter-spacing:.12em;color:var(--faint);margin-bottom:8px}
+ table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+ th,td{padding:5px 8px;text-align:right;border-bottom:1px solid #EFE9DC;white-space:nowrap}
+ th{font-weight:500;color:var(--sub);font-size:12px}
+ td:first-child,th:first-child{text-align:left}
+ tr.sec td{background:#F3EEE3;color:var(--sub);font-size:12px;letter-spacing:.08em;padding-top:8px}
+ tr.big td{font-size:17px;font-weight:600}
+ .sm{color:var(--faint);font-size:11.5px;font-weight:400}
+ .b{display:inline-block;height:9px;background:var(--blue);border-radius:2px;vertical-align:middle;margin-right:6px;opacity:.75}
+ .b.r{background:var(--red)}
+ .note{color:var(--faint);font-size:12px;line-height:1.7;margin-top:6px}
+ .err{color:var(--red)}
+</style>
+<div class="wrap">
+<h1>戳了么 · 后台 <small id="gen"></small></h1>
+<div class="bar">
+  <input id="key" type="password" placeholder="管理口令" autocomplete="off" style="width:200px">
+  <select id="days"><option value="14">近 14 天</option><option value="30" selected>近 30 天</option><option value="60">近 60 天</option><option value="90">近 90 天</option></select>
+  <button class="pri" id="go">查询</button>
+  <button id="forget">忘掉口令</button>
+  <span class="msg" id="msg"></span>
+</div>
+<div id="out"></div>
+</div>
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const API = location.pathname.includes('/tools/admin/') ? '../../api/' : '../api/';
+  const KEY_K = 'ls_admin_key';
+  try { $('key').value = sessionStorage.getItem(KEY_K) || ''; } catch (_) {}
+  const n = v => (v == null ? '<span class="sm">—</span>' : Number(v).toLocaleString('zh-CN'));
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const PROV = { phone: '手机号', apple: 'Apple 登录', google: 'Google 登录' };
+  const PROD = { premiuminks: '高级印泥盒', pass: '印章通行证' };
+
+  async function load() {
+    const key = $('key').value.trim();
+    if (!key) { $('msg').textContent = '先填口令'; return; }
+    try { sessionStorage.setItem(KEY_K, key); } catch (_) {}
+    $('msg').textContent = '查询中…'; $('go').disabled = true;
+    try {
+      const r = await fetch(API + 'admin/stats?days=' + $('days').value + '&peer=1', { headers: { 'x-admin-key': key }, cache: 'no-store' });
+      if (r.status === 401) { $('msg').textContent = '口令不对'; try { sessionStorage.removeItem(KEY_K); } catch (_) {} return; }
+      if (r.status === 501) { $('msg').textContent = '服务端还没配 LS_ADMIN_KEY'; return; }
+      if (!r.ok) { $('msg').textContent = 'HTTP ' + r.status; return; }
+      render(await r.json()); $('msg').textContent = '';
+    } catch (e) { $('msg').textContent = '拉不到：' + (e && e.message || e); }
+    finally { $('go').disabled = false; }
+  }
+
+  function render(cn) {
+    const us = cn.peer && !cn.peer.error ? cn.peer : null;
+    const usErr = cn.peer && cn.peer.error ? cn.peer.error : (cn.peer ? '' : '未配置 peer');
+    $('gen').textContent = '生成于 ' + new Date(cn.generatedAt).toLocaleString('zh-CN') + '（北京时间口径）';
+    const g = (o, path) => path.split('.').reduce((a, k) => (a == null ? null : a[k]), o);
+    const sum = (a, b) => (a == null && b == null) ? null : (Number(a || 0) + Number(b || 0));
+    const row = (label, path, cls = '', fmt = n) => {
+      const a = g(cn, path), b = us ? g(us, path) : null;
+      return `<tr class="${cls}"><td>${label}</td><td>${fmt(a)}</td><td>${us ? fmt(b) : '<span class="sm">—</span>'}</td><td>${fmt(us ? sum(a, b) : a)}</td></tr>`;
+    };
+    const sec = t => `<tr class="sec"><td colspan="4">${t}</td></tr>`;
+    const plat = d => d ? `${n(d.all)} <span class="sm">iOS ${d.ios} · 安卓 ${d.android} · 网页 ${d.web}${d.other ? ' · 其他 ' + d.other : ''}</span>` : '<span class="sm">—</span>';
+    const platRow = (label, path) => {
+      const a = g(cn, path), b = us ? g(us, path) : null;
+      const s = us && a && b ? { all: a.all + b.all, ios: a.ios + b.ios, android: a.android + b.android, web: a.web + b.web, other: (a.other || 0) + (b.other || 0) } : a;
+      return `<tr><td>${label}</td><td>${plat(a)}</td><td>${us ? plat(b) : '<span class="sm">—</span>'}</td><td>${plat(s)}</td></tr>`;
+    };
+    let h = `<div class="box"><div class="ttl">总览</div><table>
+      <tr><th>指标</th><th>中国版 <span class="sm">www</span></th><th>海外版 <span class="sm">stampday${us ? '' : ' · ' + esc(usErr)}</span></th><th>合计</th></tr>
+      ${sec('注册用户')}
+      ${row('注册用户总数', 'users.total', 'big')}
+      ${row('　手机号', 'users.byProvider.phone')}
+      ${row('　Apple 登录', 'users.byProvider.apple')}
+      ${row('　Google 登录', 'users.byProvider.google')}
+      ${row('近 1 天新注册', 'users.new1d')}
+      ${row('近 7 天新注册', 'users.new7d')}
+      ${row('近 30 天新注册', 'users.new30d')}
+      ${sec('活跃登录用户（有会话在用）')}
+      ${row('近 1 天', 'active.uid1d')}
+      ${row('近 7 天', 'active.uid7d')}
+      ${row('近 30 天', 'active.uid30d')}
+      ${sec('启动过的设备（估算：nginx 日志里拉内容包的 ip+UA 去重，含未登录）')}
+      ${platRow('近 1 天', 'devices.d1')}
+      ${platRow('近 7 天', 'devices.d7')}
+      ${platRow('近 30 天', 'devices.d30')}
+      ${sec('匿名用户（估算 = 启动设备 − 同期活跃登录）')}
+      ${row('近 1 天', 'anon.est1d')}
+      ${row('近 7 天', 'anon.est7d', 'big')}
+      ${row('近 30 天', 'anon.est30d')}
+      ${sec('付费')}
+      ${row('付费人数', 'paid.payers')}
+      ${row('已付订单', 'paid.orders.PAID')}
+      ${row('　' + PROD.premiuminks, 'paid.entitlements.premiuminks')}
+      ${row('　' + PROD.pass, 'paid.entitlements.pass')}
+      ${sec('分享 / 封蜡')}
+      ${row('有效分享', 'share.shares')}
+      ${row('分享过的安装（匿名号）', 'share.authors')}
+      ${row('收到的封蜡', 'share.gifts')}
+      ${row('兑换过欢迎章的安装', 'share.claimers')}
+      ${sec('其它')}
+      ${row('登录过的安装数', 'installs.total')}
+    </table>
+    <div class="note">${esc(cn.devices && cn.devices.note || '')}<br>${esc(cn.anon && cn.anon.note || '')}。同一台手机换网络会算成两台，一家人同一 Wi-Fi 同机型会算成一台，看趋势别抠个位数。</div></div>`;
+
+    // 每日
+    const days = cn.users.daily.map(d => d.day);
+    const cnDev = Object.fromEntries((cn.devices.daily || []).map(d => [d.day, d]));
+    const usNew = us ? Object.fromEntries(us.users.daily.map(d => [d.day, d])) : {};
+    const usDev = us ? Object.fromEntries((us.devices.daily || []).map(d => [d.day, d])) : {};
+    const maxDev = Math.max(1, ...days.map(d => (cnDev[d] ? cnDev[d].all : 0) + (usDev[d] ? usDev[d].all : 0)));
+    const bar = (v, max, cls) => `<span class="b ${cls}" style="width:${Math.round(60 * v / max)}px"></span>`;
+    h += `<div class="box"><div class="ttl">每日 · 新注册 / 启动设备（估）</div><table>
+      <tr><th>日期</th><th>中国版 新注册</th><th>中国版 设备</th><th>海外版 新注册</th><th>海外版 设备</th></tr>
+      ${days.slice().reverse().map(day => {
+        const a = cn.users.daily.find(x => x.day === day) || {}, ad = cnDev[day] || {};
+        const b = usNew[day] || {}, bd = usDev[day] || {};
+        const nr = d => d.total ? `${d.total} <span class="sm">${['phone', 'apple', 'google'].filter(k => d[k]).map(k => PROV[k].replace(' 登录', '') + ' ' + d[k]).join(' · ')}</span>` : '<span class="sm">0</span>';
+        const dv = d => d.all != null ? `${bar(d.all, maxDev, '')}${d.all} <span class="sm">iOS ${d.ios} · 安卓 ${d.android} · 网页 ${d.web}</span>` : '<span class="sm">—</span>';
+        return `<tr><td>${day}</td><td>${nr(a)}</td><td>${dv(ad)}</td><td>${us ? nr(b) : '<span class="sm">—</span>'}</td><td>${us ? dv(bd) : '<span class="sm">—</span>'}</td></tr>`;
+      }).join('')}
+    </table></div>`;
+    $('out').innerHTML = h;
+  }
+
+  $('go').addEventListener('click', load);
+  $('key').addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
+  $('days').addEventListener('change', load);
+  $('forget').addEventListener('click', () => { try { sessionStorage.removeItem(KEY_K); } catch (_) {} $('key').value = ''; $('out').innerHTML = ''; $('msg').textContent = '已忘掉'; });
+  if ($('key').value) load();
+})();
+</script>

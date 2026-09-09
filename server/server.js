@@ -95,6 +95,8 @@ const pay = require('./pay.js').mount({
   readBody: (...a) => readBody(...a),
   sessionOf: account.sessionOf,
 });
+// 后台统计（9-09）：/api/admin/stats，x-admin-key 鉴权；LS_ADMIN_KEY 没配一律 501。
+const admin = require('./admin.js').mount({ db, send: (...a) => send(...a) });
 
 const q = {
   insertShare: db.prepare(
@@ -379,6 +381,10 @@ async function route(req, res, pathname) {
   }
   {
     const hit = await pay.route(req, res, pathname);
+    if (hit !== null) return hit;
+  }
+  {
+    const hit = await admin.route(req, res, pathname);
     if (hit !== null) return hit;
   }
 

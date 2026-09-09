@@ -1338,13 +1338,15 @@ function bindStampCell(el) {
       const cv = $('#today-canvas');
       const r = cv.getBoundingClientRect();
       const dropY = e.clientY - liftPx;            // 落点 = 影子的位置，不是手指的位置
+      // 🔴 9-09 用户：选章 → 换印泥 → 拖着盖，盖出来是章的默认色。pickStamp 会把印泥重置成章自带的那款，
+      //    点选路只在选章时走一次、之后换印泥不受影响；拖章路却在松手时又走了一次。
+      //    拖的就是手里已经选中的那枚 → 不再重选，印泥保持用户换过的。
+      if (selStamp !== sid) pickStamp(sid);
       if (e.clientX >= r.left && e.clientX <= r.right && dropY >= r.top && dropY <= r.bottom) {
-        pickStamp(sid);
         placeStamp(e.clientX, dropY, cv, pendingPose);
       } else {
         // 拎起来又放回托盘：不当"没发生过"，就当选中了它——手都伸过去了
         clearPreview(); pendingPose = null;
-        pickStamp(sid);
         renderToday();
       }
     } else if (!wasPan && Date.now() - t0 < 600
@@ -1386,7 +1388,7 @@ function showPreview(sid, clientX, clientY) {
   clearPreview();
   const isPhoto = selMat === 'p';
   // 拖章路到松手才 pickStamp：自带颜色的章那时会换成它自己的墨、并给满三下 —— 影子得先按那个算
-  const ownInk = !isPhoto && def.ink ? usableInk(def.ink) : null;
+  const ownInk = !isPhoto && def.ink && sid !== selStamp ? usableInk(def.ink) : null;   // 已选中的那枚：印泥是用户现在手里的
   const left = ownInk ? INK_USES : inkLeft;
   const depth = isPhoto ? 0.95 : (DEPTH[left] ?? 0.18);
   const { px, py } = previewPos(clientX, clientY, cv);

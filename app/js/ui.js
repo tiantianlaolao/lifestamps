@@ -52,19 +52,38 @@ export function haptic() {
 }
 
 // 「啪」：合成的轻响，不用音频资产
+// 🔴 9-09 安卓/鸿蒙用户反馈"声音很小"：原来只有一层 420Hz 低通的闷响，
+//    手机外放 500Hz 以下基本没输出（iPhone 双喇叭勉强撑得住，安卓单喇叭直接没声）。
+//    真章落纸本来就有一下 2kHz 上下的脆响，叠上去小喇叭才听得见；总量抬到 0.9，
+//    出口挂压缩器防削波。⛔ 不按平台分两套音量——改配方两边都受益。
 let actx = null;
 export function thump() {
   if (!store.settings.sound) return;
   try {
     actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-    const t0 = actx.currentTime;
-    const buf = actx.createBuffer(1, actx.sampleRate * 0.06, actx.sampleRate);
-    const ch = buf.getChannelData(0);
-    for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / ch.length, 3);
-    const src = actx.createBufferSource(); src.buffer = buf;
+    if (actx.state === 'suspended') actx.resume();
+    const t0 = actx.currentTime, sr = actx.sampleRate;
+    const burst = (sec, curve) => {
+      const buf = actx.createBuffer(1, Math.max(1, Math.round(sr * sec)), sr);
+      const ch = buf.getChannelData(0);
+      for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / ch.length, curve);
+      const src = actx.createBufferSource(); src.buffer = buf; return src;
+    };
+    const out = actx.createDynamicsCompressor();
+    out.threshold.value = -14; out.knee.value = 6; out.ratio.value = 8;
+    out.attack.value = 0.001; out.release.value = 0.08;
+    const master = actx.createGain(); master.gain.setValueAtTime(0.9, t0);
+    out.connect(master); master.connect(actx.destination);
+    // 低频「闷」：章体压到纸上
+    const lo = burst(0.06, 3);
     const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420;
-    const g = actx.createGain(); g.gain.setValueAtTime(0.5, t0);
-    src.connect(lp); lp.connect(g); g.connect(actx.destination);
-    src.start(t0);
+    const gLo = actx.createGain(); gLo.gain.setValueAtTime(0.7, t0);
+    lo.connect(lp); lp.connect(gLo); gLo.connect(out);
+    // 中高频「啪」：木头/橡皮触纸那一下脆响，很短，小喇叭靠它出声
+    const hi = burst(0.014, 2);
+    const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2200; bp.Q.value = 1.1;
+    const gHi = actx.createGain(); gHi.gain.setValueAtTime(0.55, t0);
+    hi.connect(bp); bp.connect(gHi); gHi.connect(out);
+    lo.start(t0); hi.start(t0);
   } catch { /* 静默 */ }
 }

@@ -81,6 +81,8 @@ let selInk = 'zhu';
 let selMat = 'r';                // 'r' 橡皮 | 'w' 木质 | 'p' 光敏
 let inkLeft = INK_USES;          // 当前这次蘸墨还能盖几下（光敏不消耗）
 let eraser = false;              // 橡皮擦模式
+let holdGesture = null;          // 拿着章按在纸上不放的那个手势（出影子、滑动对位、松手盖）
+let pendingPose = null;          // 影子出现时就掷好的姿态 —— 影子长什么样，盖下去就是什么样
 let deckCat = 'all';
 let deckOpen = false;             // 托盘展开态（收起态只有一行常用章）
 let undoRec = null;              // {id, at} 刚盖下的那一枚，10 秒内可以撤
@@ -1005,6 +1007,7 @@ function bindToday() {
   if (bookEl) attachCurl(bookEl, {
     paper: () => $('#today-canvas'),
     canTurn: () => true,          // 前后都能翻；还没到的日子是空白页，只能看不能盖
+    locked: () => !!holdGesture,  // 影子已经出来 = 这根手指在对位置，不是在翻页
     pageEl: dir => paperElement(shiftDk(pageDk, dir)),
     commit: dir => flipDay(dir),
   });
@@ -1013,6 +1016,7 @@ function bindToday() {
 
   // 画布：点=盖（或擦）
   const cv = $('#today-canvas');
+  bindHoldPreview(cv);
   cv.addEventListener('click', e => {
     if (Date.now() - (window.__lastLongPress || 0) < 600) return;
     if (Date.now() - (window.__lastTurn || 0) < 400) return;   // 刚翻完页，这一下不是盖章
@@ -1030,7 +1034,7 @@ function bindToday() {
     placeStamp(e.clientX, e.clientY, cv);
   });
   document.querySelectorAll('#today-canvas .chip').forEach(el =>
-    onLongPress(el, () => openActions(el.dataset.rid)));
+    onLongPress(el, () => { if (!(selStamp && !eraser)) openActions(el.dataset.rid); }));
 
   // 天气小章：点一枚就落在纸上，其余的消失
   document.querySelectorAll('#today-canvas .wx.pick [data-wx]').forEach(b =>
@@ -1285,6 +1289,8 @@ function bindStampCell(el) {
     ghost.style.left = x + 'px'; ghost.style.top = y + 'px';
     ghost.style.display = 'block';
     $('#today-canvas')?.classList.add('armed');
+    pendingPose = randomPose();                 // 影子的姿态就是最后盖出来的姿态
+    movePreview(sid, x, y);                     // 拎起时手指多半还在托盘上，进纸才出影子
   };
   const dropLongPress = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
   const unblock = () => document.removeEventListener('touchmove', blockScroll, { passive: false });
@@ -1305,7 +1311,7 @@ function bindStampCell(el) {
     if (deckOpen) {
       // 还没拎起来：手指一挪就当是要滚网格，把长按取消掉
       if (lpTimer && Math.hypot(dx, dy) > LP_SLOP) dropLongPress();
-      if (mode === 'drag') { ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px'; }
+      if (mode === 'drag') { ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px'; movePreview(sid, e.clientX, e.clientY); }
       return;   // 没拎起来就什么都不做，纵向归网格
     }
     // 收起态：横滑条带，手势自判（8-25 铁律，一个字没动）
@@ -1314,7 +1320,7 @@ function bindStampCell(el) {
       if (Math.abs(dy) > Math.abs(dx)) lift(e.clientX, e.clientY);
       else mode = 'pan';
     }
-    if (mode === 'drag') { ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px'; }
+    if (mode === 'drag') { ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px'; movePreview(sid, e.clientX, e.clientY); }
     else if (mode === 'pan') {
       const s = document.getElementById('deck-strip');
       if (s) s.scrollLeft = panL - (e.clientX - sx);
@@ -1333,9 +1339,10 @@ function bindStampCell(el) {
       const r = cv.getBoundingClientRect();
       if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
         pickStamp(sid);
-        placeStamp(e.clientX, e.clientY, cv);
+        placeStamp(e.clientX, e.clientY, cv, pendingPose);
       } else {
         // 拎起来又放回托盘：不当"没发生过"，就当选中了它——手都伸过去了
+        clearPreview(); pendingPose = null;
         pickStamp(sid);
         renderToday();
       }
@@ -1355,19 +1362,126 @@ function bindStampCell(el) {
     releaseDeckDrag();
     dropLongPress(); unblock();
     mode = null; pid = null; ghost.style.display = 'none';
+    clearPreview(); pendingPose = null;
   });
 }
 
-// 落章（含蘸墨深浅）
-function placeStamp(clientX, clientY, cv) {
+// ============================================================
+// 落点影子：盖之前先看到印痕会落在哪。真章就是这么用的——悬在纸上对好位置再压下去。
+// 两条路共用：拖章（章体跟手指走，影子贴在指尖）、点选后按住（见 bindHoldPreview）。
+// 🔴 影子的姿态（歪多少、大多少、纹理 seed）在影子出现那一刻就掷好（pendingPose），
+//    placeStamp 用同一个 —— 影子长什么样，盖下去就是什么样，不然影子在骗人。
+// ============================================================
+function previewPos(clientX, clientY, cv) {     // 跟 placeStamp 同一套钳制，影子也会贴着纸边停下
+  const rect = cv.getBoundingClientRect();
+  return {
+    px: Math.min(93, Math.max(7, (clientX - rect.left) / rect.width * 100)),
+    py: Math.min(86, Math.max(10, (clientY - rect.top) / rect.height * 100)),
+  };
+}
+function showPreview(sid, clientX, clientY) {
+  const cv = $('#today-canvas'); const def = stampById[sid];
+  if (!cv || !def || !pendingPose) return;
+  clearPreview();
   const isPhoto = selMat === 'p';
-  if (!isPhoto && inkLeft <= 0) { toast(COPY.noInk, 1400); return; }
+  // 拖章路到松手才 pickStamp：自带颜色的章那时会换成它自己的墨、并给满三下 —— 影子得先按那个算
+  const ownInk = !isPhoto && def.ink ? usableInk(def.ink) : null;
+  const left = ownInk ? INK_USES : inkLeft;
+  const depth = isPhoto ? 0.95 : (DEPTH[left] ?? 0.18);
+  const { px, py } = previewPos(clientX, clientY, cv);
+  cv.insertAdjacentHTML('beforeend',
+    `<div class="chip ghost" style="left:${px.toFixed(1)}%;top:${py.toFixed(1)}%">
+      ${stampSVG(def, { size: Math.round(CHIP * pendingPose.sc), ink: isPhoto ? 'zhu' : (ownInk || selInk),
+        rot: pendingPose.rot, opacity: +(depth * pendingPose.op).toFixed(2), mat: selMat, seed: pendingPose.seed })}</div>`);
+}
+function movePreview(sid, clientX, clientY) {
+  const cv = $('#today-canvas'); if (!cv) return;
+  const r = cv.getBoundingClientRect();
+  const inside = clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+  const g = cv.querySelector('.chip.ghost');
+  if (!inside) { g?.remove(); return; }          // 拖出纸外：影子收掉，松手也不会盖
+  if (!g) return showPreview(sid, clientX, clientY);
+  const { px, py } = previewPos(clientX, clientY, cv);
+  g.style.left = px.toFixed(1) + '%'; g.style.top = py.toFixed(1) + '%';
+}
+function clearPreview() {
+  document.querySelectorAll('#today-canvas .chip.ghost').forEach(g => g.remove());
+}
+
+// 点选后按在纸上：轻点还是立即盖（「戳一下」的节奏一个字不动）；
+// 按住 HOLD_MS 不抬 → 出影子（章体也浮到指尖上，跟拖章一个手感），滑动对位，松手才盖。
+// 影子出来之前手指一动 = 不是在对位置（多半是翻页），放弃；影子出来之后翻页手势让路（curl locked）。
+const HOLD_MS = 180, HOLD_SLOP = 8;
+function bindHoldPreview(cv) {
+  const blockScroll = ev => ev.preventDefault();
+  const ghost = $('#drag-ghost');
+  const finish = (h, place) => {
+    if (holdGesture !== h) return;
+    holdGesture = null;
+    clearTimeout(h.timer);
+    document.removeEventListener('touchmove', blockScroll, { passive: false });
+    document.removeEventListener('pointerup', h.bail);
+    document.removeEventListener('pointercancel', h.bail);
+    if (!h.live) return;                         // 影子还没出来就抬手 = 轻点，交给 click
+    ghost.style.display = 'none';
+    window.__lastLongPress = Date.now();         // 紧跟着的 click 不许再盖一枚
+    if (place && cv.querySelector('.chip.ghost')) placeStamp(h.x, h.y, cv, pendingPose);
+    else { clearPreview(); pendingPose = null; }
+  };
+  cv.addEventListener('pointerdown', e => {
+    if (!(selStamp && !eraser)) return;
+    if (e.button) return;                        // 只认主键 / 手指
+    if (e.target.closest('button, .note-pop, .daynote-pop, .note-hint')) return;
+    if (holdGesture) finish(holdGesture, false);
+    const h = { pid: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, live: false, timer: null, bail: null };
+    // 纸在手势中途被整页重渲染拆掉的话，元素上的 pointerup 永远不会响——document 上兜底
+    h.bail = ev => { if (ev.pointerId === h.pid) finish(h, ev.type === 'pointerup'); };
+    h.timer = setTimeout(() => {
+      h.timer = null;
+      if (holdGesture !== h) return;
+      h.live = true;
+      pendingPose = randomPose();
+      const def = stampById[selStamp];
+      ghost.innerHTML = stampBodySVG(def, {
+        size: 66, ink: selMat === 'p' ? 'zhu' : selInk, charge: selMat === 'p' ? 3 : inkLeft,
+      });
+      ghost.style.left = h.x + 'px'; ghost.style.top = h.y + 'px'; ghost.style.display = 'block';
+      showPreview(selStamp, h.x, h.y);
+      haptic();
+      document.addEventListener('touchmove', blockScroll, { passive: false });
+      document.addEventListener('pointerup', h.bail);
+      document.addEventListener('pointercancel', h.bail);
+      try { cv.setPointerCapture(h.pid); } catch { /* 抓不到就算了 */ }
+    }, HOLD_MS);
+    holdGesture = h;
+  });
+  cv.addEventListener('pointermove', e => {
+    const h = holdGesture; if (!h || e.pointerId !== h.pid) return;
+    h.x = e.clientX; h.y = e.clientY;
+    if (!h.live) {
+      if (Math.hypot(h.x - h.x0, h.y - h.y0) > HOLD_SLOP) { clearTimeout(h.timer); holdGesture = null; }
+      return;
+    }
+    ghost.style.left = h.x + 'px'; ghost.style.top = h.y + 'px';
+    movePreview(selStamp, h.x, h.y);
+    e.preventDefault();
+  });
+  cv.addEventListener('pointerup', e => { const h = holdGesture; if (h && e.pointerId === h.pid) finish(h, true); });
+  cv.addEventListener('pointercancel', e => { const h = holdGesture; if (h && e.pointerId === h.pid) finish(h, false); });
+  cv.addEventListener('contextmenu', e => { if (holdGesture?.live) e.preventDefault(); });
+}
+
+// 落章（含蘸墨深浅）
+function placeStamp(clientX, clientY, cv, pose0) {
+  const isPhoto = selMat === 'p';
+  if (!isPhoto && inkLeft <= 0) { clearPreview(); pendingPose = null; toast(COPY.noInk, 1400); return; }
 
   const rect = cv.getBoundingClientRect();
   const px = Math.min(93, Math.max(7, (clientX - rect.left) / rect.width * 100));
   const py = Math.min(86, Math.max(10, (clientY - rect.top) / rect.height * 100));
   const def = stampById[selStamp];
-  const pose = randomPose();
+  const pose = pose0 || randomPose();          // 有影子就用影子的姿态
+  pendingPose = null;
 
   // 深浅：光敏恒实；橡皮/木质三下由浓到淡（第 3 下几乎看不见）
   const inkUsed = isPhoto ? 'zhu' : selInk;
@@ -1383,7 +1497,7 @@ function placeStamp(clientX, clientY, cv) {
   // 补盖过去的页：记录落在那一天，钟点用当下的。
   // 8-26 用户拍板恢复且不加条件——"真实感也是想补就补"，真本子任何一页都能补写。
   const todayDk = dateKey(Date.now());
-  if (pageDk > todayDk) { toast(COPY.futureStamp, 1400); return; }   // 还没到的日子只能看
+  if (pageDk > todayDk) { clearPreview(); toast(COPY.futureStamp, 1400); return; }   // 还没到的日子只能看
   const isBackfill = pageDk !== todayDk;
   let ts = Date.now();
   if (isBackfill) {
@@ -1412,6 +1526,7 @@ function placeStamp(clientX, clientY, cv) {
     toast(isBackfill ? COPY.backfilled : (n > 1 ? COPY.repeatStamp : COPY.firstStamp), 900);
 
     const cv2 = $('#today-canvas');
+    clearPreview();                              // 影子到此为止，换真印痕
     if (cv2 && curTab === 'today') {
       cv2.querySelector('.canvas-hint')?.remove();
       cv2.insertAdjacentHTML('beforeend',
@@ -1434,7 +1549,7 @@ function placeStamp(clientX, clientY, cv) {
     // flushNoteEditors 会保住字，但没必要为一个装饰性刷新把人家的输入框合上）。
     undoTimer = setTimeout(() => {
       undoRec = null;
-      if (curTab === 'today' && !document.querySelector('.note-pop, .daynote-pop')) renderToday();
+      if (curTab === 'today' && !holdGesture && !document.querySelector('.note-pop, .daynote-pop')) renderToday();
     }, UNDO_MS + 50);
     if (curTab === 'today') renderToday();
     if (curTab === 'today') noteHint(rec.id);   // 「写一句话」这个功能得让人看见

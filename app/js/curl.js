@@ -70,6 +70,7 @@ function mirrorMatrix(nx, ny, d) {
  * @param {object} o
  *   o.paper()        → 当前那张纸的元素（用来量尺寸、做快照）
  *   o.canTurn(dir)   → 这个方向还能不能翻（dir: -1 往回翻/看更早, +1 往前翻）
+ *   o.locked?.()     → 纸上这根手指正被别的手势占着（拿着章按住对位置）：不起手、起了手也放弃
  *   o.pageEl(dir)    → 目标那页的元素（垫在底下先露出来的那张）
  *   o.commit(dir)    → 翻完成，切数据并重渲染
  *   o.grab           → 从哪个角起手：'bl' 左下（默认）
@@ -236,7 +237,7 @@ export function attachCurl(book, o) {
   };
 
   book.addEventListener('pointerdown', e => {
-    if (drag || layers) return;
+    if (drag || layers || o.locked?.()) return;
     const paper = o.paper();
     if (!paper || !paper.contains(e.target) && e.target !== paper) {
       // 页边（露在纸外的那一角）也算抓手
@@ -250,6 +251,7 @@ export function attachCurl(book, o) {
     if (!drag) return;
     const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
     if (!drag.armed) {
+      if (o.locked?.()) { drag = null; return; }   // 按住出影子之后再滑 = 对位置，不是翻页
       if (Math.hypot(dx, dy) < 12) return;
       // 起手方向判定放宽（8-27）：以前是"纵向多一点就放弃"，可纸上本来就没有纵向手势，
       // 放弃的结果不是"滚页面"而是"什么都没发生"，手感就是翻不动。现在只有明显是竖着划才让开。

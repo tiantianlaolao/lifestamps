@@ -667,6 +667,11 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 #drag-ghost{position:fixed; z-index:80; pointer-events:none; display:none; transform:translate(-50%,-86%)}
 .canvas.armed{border-color:rgba(201,75,60,.5)}
 .canvas.erase-mode{border-color:rgba(117,147,166,.6)}
+/* 🔴 9-09「右下角的章擦不掉」：.corner-grip(z3) 和 .riddle-note(z3) 压在 .chip(z2) 上面，
+   橡皮点到它们 closest('.chip') 为空、静默无反应。橡皮态不需要翻页也不需要看谜面，让开。 */
+.canvas.erase-mode .corner-grip,.canvas.erase-mode .riddle-note{pointer-events:none}
+/* 落点影子：盖之前先看到印痕会落在哪（拖章 / 按住对位）。压在抓角之上，角上也看得见 */
+.canvas .chip.ghost{opacity:.45; pointer-events:none; z-index:4}
 
 /* 印泥扩散（盖章瞬间） */
 .splat{position:absolute; width:64px; height:64px; border-radius:50%; pointer-events:none;

@@ -51,6 +51,13 @@ jobs:
           npx cap add android
           npx cap sync android
 
+      - name: Volume keys control media stream (盖章音效走媒体音量)
+        run: |
+          MA=$(find android/app/src/main/java -name MainActivity.java | head -1)
+          test -n "$MA"
+          python3 ci/android_volume_stream.py "$MA"
+          grep -q "setVolumeControlStream(AudioManager.STREAM_MUSIC)" "$MA"
+
       # 🔴 dev/ 是校验探针页，能改 localStorage，不能随包出去
       - name: Strip dev harnesses from the bundle
         run: |

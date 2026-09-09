@@ -1248,7 +1248,7 @@ function releaseDeckDrag() {
 
 function bindStampCell(el) {
   let sx = 0, sy = 0, t0 = 0, mode = null, pid = null, panL = 0;
-  let lpTimer = null, lx = 0, ly = 0, lift = 0;
+  let lpTimer = null, lx = 0, ly = 0, liftPx = 0;
   const ghost = $('#drag-ghost');
   const sid = el.dataset.sid;
 
@@ -1286,17 +1286,17 @@ function bindStampCell(el) {
       ink: selMat === 'p' ? 'zhu' : selInk,
       charge: selMat === 'p' ? 3 : inkLeft,
     });
-    ghost.style.left = x + 'px'; ghost.style.top = (y - lift - BODY_ABOVE) + 'px';
+    ghost.style.left = x + 'px'; ghost.style.top = (y - liftPx - BODY_ABOVE) + 'px';
     ghost.style.display = 'block';
     $('#today-canvas')?.classList.add('armed');
     pendingPose = randomPose();                 // 影子的姿态就是最后盖出来的姿态
-    movePreview(sid, x, y - lift);              // 拎起时手指多半还在托盘上，进纸才出影子
+    movePreview(sid, x, y - liftPx);              // 拎起时手指多半还在托盘上，进纸才出影子
   };
   const dropLongPress = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
   const unblock = () => document.removeEventListener('touchmove', blockScroll, { passive: false });
 
   el.addEventListener('pointerdown', e => {
-    sx = e.clientX; sy = e.clientY; lx = sx; ly = sy; lift = liftOf(e);
+    sx = e.clientX; sy = e.clientY; lx = sx; ly = sy; liftPx = liftOf(e);
     t0 = Date.now(); mode = null; pid = e.pointerId;
     panL = document.getElementById('deck-strip')?.scrollLeft || 0;
     if (deckOpen) {
@@ -1311,7 +1311,7 @@ function bindStampCell(el) {
     if (deckOpen) {
       // 还没拎起来：手指一挪就当是要滚网格，把长按取消掉
       if (lpTimer && Math.hypot(dx, dy) > LP_SLOP) dropLongPress();
-      if (mode === 'drag') { ghost.style.left = e.clientX + 'px'; ghost.style.top = (e.clientY - lift - BODY_ABOVE) + 'px'; movePreview(sid, e.clientX, e.clientY - lift); }
+      if (mode === 'drag') { ghost.style.left = e.clientX + 'px'; ghost.style.top = (e.clientY - liftPx - BODY_ABOVE) + 'px'; movePreview(sid, e.clientX, e.clientY - liftPx); }
       return;   // 没拎起来就什么都不做，纵向归网格
     }
     // 收起态：横滑条带，手势自判（8-25 铁律，一个字没动）
@@ -1320,7 +1320,7 @@ function bindStampCell(el) {
       if (Math.abs(dy) > Math.abs(dx)) lift(e.clientX, e.clientY);
       else mode = 'pan';
     }
-    if (mode === 'drag') { ghost.style.left = e.clientX + 'px'; ghost.style.top = (e.clientY - lift - BODY_ABOVE) + 'px'; movePreview(sid, e.clientX, e.clientY - lift); }
+    if (mode === 'drag') { ghost.style.left = e.clientX + 'px'; ghost.style.top = (e.clientY - liftPx - BODY_ABOVE) + 'px'; movePreview(sid, e.clientX, e.clientY - liftPx); }
     else if (mode === 'pan') {
       const s = document.getElementById('deck-strip');
       if (s) s.scrollLeft = panL - (e.clientX - sx);
@@ -1337,7 +1337,7 @@ function bindStampCell(el) {
     if (wasDrag) {
       const cv = $('#today-canvas');
       const r = cv.getBoundingClientRect();
-      const dropY = e.clientY - lift;            // 落点 = 影子的位置，不是手指的位置
+      const dropY = e.clientY - liftPx;            // 落点 = 影子的位置，不是手指的位置
       if (e.clientX >= r.left && e.clientX <= r.right && dropY >= r.top && dropY <= r.bottom) {
         pickStamp(sid);
         placeStamp(e.clientX, dropY, cv, pendingPose);

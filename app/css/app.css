@@ -842,6 +842,11 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   max-width:96px; text-align:center; word-break:break-all;
 }
 .chip.has-note .tm{opacity:.5}
+/* 🔴 9-09 写一句话之后章往上跳 34px：印痕按"章+时间+一句话"整列的中心定位，字一长整列变高、章被顶上去，
+   用影子对好的位置一写字就作废。时间和一句话改成挂在章底下、不占高度 —— 章永远钉在落点。 */
+.canvas .chip .tm,.canvas .chip .note{position:absolute; top:100%; left:50%; transform:translateX(-50%); white-space:nowrap}
+.canvas .chip .note{top:calc(100% + 9px); white-space:normal; width:max-content; max-width:96px}
+.canvas .chip svg + .note{top:100%}     /* 封蜡没有时间戳，一句话直接贴章底 */
 .note-pop{
   position:absolute; z-index:6; transform:translate(-50%,14px);
   background:var(--card,var(--card)); border:1px solid var(--line); border-radius:8px;

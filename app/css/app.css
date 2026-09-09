@@ -672,6 +672,10 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 .canvas.erase-mode .corner-grip,.canvas.erase-mode .riddle-note{pointer-events:none}
 /* 落点影子：盖之前先看到印痕会落在哪（拖章 / 按住对位）。压在抓角之上，角上也看得见 */
 .canvas .chip.ghost{opacity:.45; pointer-events:none; z-index:4}
+/* 🔴 9-09 拿着章长按纸，浏览器自带的长按选字会把日期章/计数/时间戳选中（pointer-events:none 挡不住选字）。
+   整张纸不可选；便签和判词的输入框要能编辑，单独放开。 */
+.canvas.bookpage{user-select:none; -webkit-user-select:none; -webkit-touch-callout:none}
+.canvas.bookpage input,.canvas.bookpage textarea,.note-pop .np-in,.daynote-pop textarea{user-select:text; -webkit-user-select:text}
 
 /* 印泥扩散（盖章瞬间） */
 .splat{position:absolute; width:64px; height:64px; border-radius:50%; pointer-events:none;

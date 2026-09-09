@@ -1248,7 +1248,7 @@ function releaseDeckDrag() {
 
 function bindStampCell(el) {
   let sx = 0, sy = 0, t0 = 0, mode = null, pid = null, panL = 0;
-  let lpTimer = null, lx = 0, ly = 0;
+  let lpTimer = null, lx = 0, ly = 0, lift = 0;
   const ghost = $('#drag-ghost');
   const sid = el.dataset.sid;
 
@@ -1286,17 +1286,17 @@ function bindStampCell(el) {
       ink: selMat === 'p' ? 'zhu' : selInk,
       charge: selMat === 'p' ? 3 : inkLeft,
     });
-    ghost.style.left = x + 'px'; ghost.style.top = y + 'px';
+    ghost.style.left = x + 'px'; ghost.style.top = (y - lift - BODY_ABOVE) + 'px';
     ghost.style.display = 'block';
     $('#today-canvas')?.classList.add('armed');
     pendingPose = randomPose();                 // 影子的姿态就是最后盖出来的姿态
-    movePreview(sid, x, y);                     // 拎起时手指多半还在托盘上，进纸才出影子
+    movePreview(sid, x, y - lift);              // 拎起时手指多半还在托盘上，进纸才出影子
   };
   const dropLongPress = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
   const unblock = () => document.removeEventListener('touchmove', blockScroll, { passive: false });
 
   el.addEventListener('pointerdown', e => {
-    sx = e.clientX; sy = e.clientY; lx = sx; ly = sy;
+    sx = e.clientX; sy = e.clientY; lx = sx; ly = sy; lift = liftOf(e);
     t0 = Date.now(); mode = null; pid = e.pointerId;
     panL = document.getElementById('deck-strip')?.scrollLeft || 0;
     if (deckOpen) {
@@ -1311,7 +1311,7 @@ function bindStampCell(el) {
     if (deckOpen) {
       // 还没拎起来：手指一挪就当是要滚网格，把长按取消掉
       if (lpTimer && Math.hypot(dx, dy) > LP_SLOP) dropLongPress();
-      if (mode === 'drag') { ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px'; movePreview(sid, e.clientX, e.clientY); }
+      if (mode === 'drag') { ghost.style.left = e.clientX + 'px'; ghost.style.top = (e.clientY - lift - BODY_ABOVE) + 'px'; movePreview(sid, e.clientX, e.clientY - lift); }
       return;   // 没拎起来就什么都不做，纵向归网格
     }
     // 收起态：横滑条带，手势自判（8-25 铁律，一个字没动）
@@ -1320,7 +1320,7 @@ function bindStampCell(el) {
       if (Math.abs(dy) > Math.abs(dx)) lift(e.clientX, e.clientY);
       else mode = 'pan';
     }
-    if (mode === 'drag') { ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px'; movePreview(sid, e.clientX, e.clientY); }
+    if (mode === 'drag') { ghost.style.left = e.clientX + 'px'; ghost.style.top = (e.clientY - lift - BODY_ABOVE) + 'px'; movePreview(sid, e.clientX, e.clientY - lift); }
     else if (mode === 'pan') {
       const s = document.getElementById('deck-strip');
       if (s) s.scrollLeft = panL - (e.clientX - sx);
@@ -1337,9 +1337,10 @@ function bindStampCell(el) {
     if (wasDrag) {
       const cv = $('#today-canvas');
       const r = cv.getBoundingClientRect();
-      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+      const dropY = e.clientY - lift;            // 落点 = 影子的位置，不是手指的位置
+      if (e.clientX >= r.left && e.clientX <= r.right && dropY >= r.top && dropY <= r.bottom) {
         pickStamp(sid);
-        placeStamp(e.clientX, e.clientY, cv, pendingPose);
+        placeStamp(e.clientX, dropY, cv, pendingPose);
       } else {
         // 拎起来又放回托盘：不当"没发生过"，就当选中了它——手都伸过去了
         clearPreview(); pendingPose = null;
@@ -1412,6 +1413,12 @@ function clearPreview() {
 // 按住 HOLD_MS 不抬 → 出影子（章体也浮到指尖上，跟拖章一个手感），滑动对位，松手才盖。
 // 影子出来之前手指一动 = 不是在对位置（多半是翻页），放弃；影子出来之后翻页手势让路（curl locked）。
 const HOLD_MS = 180, HOLD_SLOP = 8;
+// 🔴 9-09 用户：影子正好在指尖底下，被手指全遮住了。触摸时影子（=落点）抬到手指上方一枚章的距离，
+//    章体虚影再坐在影子上面 —— 手指等于捏着章柄，抬头看章在哪；松手落在影子处，不是手指处。
+//    鼠标不遮挡，不抬。轻点那条路不出影子、仍落在指尖底下，不受影响。
+const TOUCH_LIFT = 64;
+const liftOf = e => (e.pointerType === 'touch' ? TOUCH_LIFT : 0);
+const BODY_ABOVE = 34;                           // 章体虚影的锚点再高于影子多少：面不压住印痕
 function bindHoldPreview(cv) {
   const blockScroll = ev => ev.preventDefault();
   const ghost = $('#drag-ghost');
@@ -1425,7 +1432,7 @@ function bindHoldPreview(cv) {
     if (!h.live) return;                         // 影子还没出来就抬手 = 轻点，交给 click
     ghost.style.display = 'none';
     window.__lastLongPress = Date.now();         // 紧跟着的 click 不许再盖一枚
-    if (place && cv.querySelector('.chip.ghost')) placeStamp(h.x, h.y, cv, pendingPose);
+    if (place && cv.querySelector('.chip.ghost')) placeStamp(h.x, h.y - h.lift, cv, pendingPose);
     else { clearPreview(); pendingPose = null; }
   };
   cv.addEventListener('pointerdown', e => {
@@ -1433,7 +1440,7 @@ function bindHoldPreview(cv) {
     if (e.button) return;                        // 只认主键 / 手指
     if (e.target.closest('button, .note-pop, .daynote-pop, .note-hint')) return;
     if (holdGesture) finish(holdGesture, false);
-    const h = { pid: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, live: false, timer: null, bail: null };
+    const h = { pid: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, lift: liftOf(e), live: false, timer: null, bail: null };
     // 纸在手势中途被整页重渲染拆掉的话，元素上的 pointerup 永远不会响——document 上兜底
     h.bail = ev => { if (ev.pointerId === h.pid) finish(h, ev.type === 'pointerup'); };
     h.timer = setTimeout(() => {
@@ -1445,8 +1452,8 @@ function bindHoldPreview(cv) {
       ghost.innerHTML = stampBodySVG(def, {
         size: 66, ink: selMat === 'p' ? 'zhu' : selInk, charge: selMat === 'p' ? 3 : inkLeft,
       });
-      ghost.style.left = h.x + 'px'; ghost.style.top = h.y + 'px'; ghost.style.display = 'block';
-      showPreview(selStamp, h.x, h.y);
+      ghost.style.left = h.x + 'px'; ghost.style.top = (h.y - h.lift - BODY_ABOVE) + 'px'; ghost.style.display = 'block';
+      showPreview(selStamp, h.x, h.y - h.lift);
       haptic();
       document.addEventListener('touchmove', blockScroll, { passive: false });
       document.addEventListener('pointerup', h.bail);
@@ -1462,8 +1469,8 @@ function bindHoldPreview(cv) {
       if (Math.hypot(h.x - h.x0, h.y - h.y0) > HOLD_SLOP) { clearTimeout(h.timer); holdGesture = null; }
       return;
     }
-    ghost.style.left = h.x + 'px'; ghost.style.top = h.y + 'px';
-    movePreview(selStamp, h.x, h.y);
+    ghost.style.left = h.x + 'px'; ghost.style.top = (h.y - h.lift - BODY_ABOVE) + 'px';
+    movePreview(selStamp, h.x, h.y - h.lift);
     e.preventDefault();
   });
   cv.addEventListener('pointerup', e => { const h = holdGesture; if (h && e.pointerId === h.pid) finish(h, true); });

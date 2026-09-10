@@ -51,7 +51,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const BUILTIN_SERIES = ['basic', 'secret'];   // 内置两盒：内容包不能改它们的 free / 名字
 
 // 已应用的是哪一版、从哪来、追加了多少、哪些条目被跳过（诊断面板读）
-const applied = { version: 0, source: 'builtin', counts: { inks: 0, cats: 0, series: 0, stamps: 0, hidden: 0 }, warnings: [] };
+const applied = { version: 0, source: 'builtin', counts: { inks: 0, cats: 0, series: 0, stamps: 0, hidden: 0 }, warnings: [], notice: null };
 export function catalogInfo() {
   return { ...applied, counts: { ...applied.counts }, warnings: applied.warnings.slice() };
 }
@@ -121,6 +121,22 @@ function normSeries(x, warn) {
   if (typeof x.box === 'string') out.box = x.box;
   return out;
 }
+
+// 公告（9-10）：条款实质变更 / 停止运营这类「要在 App 内公告」的事走这里，不用发版。
+// { id, zh, en?, ja?, until?: 'YYYY-MM-DD', url?: 'https://…' }。id 换了才会再弹（看过的记在 settings.noticeSeen）。
+function normNotice(n, warn) {
+  if (n === undefined || n === null) return null;
+  if (typeof n !== 'object' || typeof n.id !== 'string' || !n.id || typeof n.zh !== 'string' || !n.zh) return warn('notice: 要 id + zh');
+  const out = { id: n.id, zh: n.zh };
+  for (const k of ['en', 'ja']) if (typeof n[k] === 'string' && n[k]) out[k] = n[k];
+  if (n.until !== undefined) {
+    if (!DAY.test(n.until)) return warn('notice: until 要 YYYY-MM-DD');
+    out.until = n.until;
+  }
+  if (typeof n.url === 'string' && /^https:\/\//.test(n.url)) out.url = n.url;
+  return out;
+}
+export const catalogNotice = () => applied.notice;
 
 function normHidden(h, warn) {
   const id = h && h.id;
@@ -192,6 +208,7 @@ export function applyCatalog(cat, source = 'manual') {
   rebuildStampIndex();
   rebuildSeriesIndex();
 
+  applied.notice = normNotice(cat.notice, warn);   // 新包没写 notice = 撤掉旧公告
   applied.version = cat.version; applied.source = source;
   applied.counts = counts; applied.warnings = warnings;
   return true;

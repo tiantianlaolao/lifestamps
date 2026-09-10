@@ -7,11 +7,12 @@ import { store, dateKey, fmtTime, posOf } from './store.js';
 import { sync } from './sync.js';
 import { iapPrice, iapPrices, iapBuy, iapRestore, isAndroid, initAndroidShell, appBuild, openExternal } from './native.js';
 import { collectGifts, claimTicket, authSmsSend, smsSupported, androidUpdateInfo, IS_OVERSEAS, initRegion, ICP_APP_NO, webBase, payCreate, payOrder, products as fetchProducts } from './net.js';
-import { bootCatalog, refreshCatalog } from './catalog.js';   // 内容包：import 即合并本地缓存（在首屏之前）
+import { bootCatalog, refreshCatalog, catalogNotice } from './catalog.js';   // 内容包：import 即合并本地缓存（在首屏之前）
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked, isOwned, claimFreeStamps } from './hidden.js';
 import { verdictOf } from './verdict.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
 import { openShare, openShareDay } from './share.js';
+import { legalOk, acceptLegal, setLegalAsker, requireLegal, openLegal } from './legal.js';
 import { attachCurl } from './curl.js';
 import { initDiag } from './diag.js';
 import { setLang, getLang, detectLang, weekName, monthDay, LANGS, nameOf, weekOffset, monthArg, monthArgShort, personaKeyOfTitle } from './i18n.js';
@@ -265,6 +266,7 @@ function init() {
     $('#defs-holder').innerHTML = defsMarkup();
     checkUnlocks();
     render();
+    showNotice();             // 9-10：新内容包可能带了新公告
   });
 
   renderTabLabels();
@@ -311,7 +313,22 @@ function init() {
   if (params.get('open') === 'share') openShare(memY, memM);
   if (params.get('open') === 'supply') openSupply();
   if (params.get('open') === 'shareday') openShareDay(dateKey(Date.now()));
-  if (!store.settings.onboarded) showOnboard(+(params.get('ob') || 0));
+  // 协议同意（9-10）：新装先同意再走引导；老用户（9-10 之前装的）也弹一次 —— 他们从没同意过这一版。
+  // 不同意照样往下走（引导照走、盖章照用），登录 / 购买 / 分享时 requireLegal 会再问。
+  // ⚠️ dev 的 ?skipob=1（截图 / smoke_today.mjs）连这一步也跳过：弹层盖住今日页，手势测试会全落空。
+  setLegalAsker(then => showLegal(then, () => toast(COPY.legalNeed, 2600)));
+  document.addEventListener('click', e => {        // 页面里任何 data-legal 链接 → 外开官网协议页
+    const a = e.target.closest && e.target.closest('[data-legal]');
+    if (!a) return;
+    e.preventDefault();                            // 链接在 <label> 里时，这一下也挡住了勾选框被顺带勾上
+    openLegal(a.dataset.legal);
+  });
+  const startOb = () => {
+    if (!store.settings.onboarded) showOnboard(+(params.get('ob') || 0));
+    else showNotice();
+  };
+  if (!legalOk() && params.get('skipob') !== '1') showLegal(startOb, () => { toast(COPY.legalLater, 3200); startOb(); });
+  else startOb();
 
   if (params.get('probe')) {
     const d = document.createElement('div'); d.id = 'probe';
@@ -1689,6 +1706,7 @@ function proCardHTML() {
     <div class="pro-t">${COPY.proCardTitle}</div>
     <div class="pro-b">${esc(COPY.proCardBody).replace(/\n/g, '<br>')}</div>
     <button class="cta pro-buy" data-pro="buy">${COPY.proBuy}</button>
+    ${alipayLane() ? `<div class="pro-refund">${legalLinks(esc(COPY.payRefundNote))}</div>` : ''}
     <div class="pro-row">
       <button class="pro-plain" data-pro="later">${COPY.proLater}</button>
       ${pendingOrder() ? `<button class="pro-plain" data-pro="check">${COPY.payCheck}</button>` : ''}
@@ -1821,6 +1839,7 @@ function bindProCard(root, rerender) {
     b.addEventListener('click', async () => {
       const a = b.dataset.pro;
       if (a === 'later') { store.declinePro(); closeSheets(); return; }
+      if (a === 'buy' && !requireLegal(() => b.click())) return;     // 9-10：没同意协议先弹，同意后自动再点一次
       // 等 StoreKit 的这几百毫秒里连点会叠单，锁住
       b.disabled = true;
       let ok;
@@ -1832,6 +1851,7 @@ function bindProCard(root, rerender) {
   // 集市里的通行证 / 盒子按钮（9-08）：data-buy = 短商品 id
   root.querySelectorAll('[data-buy]').forEach(b =>
     b.addEventListener('click', async () => {
+      if (!requireLegal(() => b.click())) return;
       b.disabled = true;
       const ok = await startPurchase(b.dataset.buy);
       b.disabled = false;
@@ -2287,6 +2307,7 @@ function drawerMarket() {
   };
   return `<div class="mk">${weeklyHtml}
     <div class="bs-t">${COPY.mkBuyout}</div>${passHtml}${inkHtml}${links}
+    ${alipayLane() ? `<div class="mk-refund">${legalLinks(esc(COPY.payRefundNote))}</div>` : ''}
     ${series.length ? `<div class="bs-t">${COPY.mkSeries}</div>${shelf(series, 'series')}` : ''}
     ${limited.length ? `<div class="bs-t">${COPY.mkLimited}<span class="mk-pill">${COPY.mkNotInPass}</span></div>${shelf(limited, 'limited')}` : ''}
     ${boxes.length ? `<div class="dk-note">${COPY.mkBoxNote}</div>` : ''}
@@ -2624,6 +2645,11 @@ function phoneRowsHTML() {
       <button class="pk dark" id="acc-phlogin">${COPY.accLoginPhone}</button></div>`;
 }
 
+// 登录前的「已阅读并同意」（9-10）。默认不勾：国内规定同意必须是用户自己勾的，不能替他勾好。
+function agreeRow() {
+  return `<label class="acc-agree"><input type="checkbox" id="acc-agree"><span>${legalLinks(esc(COPY.accAgree))}</span></label>`;
+}
+
 // 账号区块（8-30）。三种态：网页版（一句话；国内站再加手机号登录）/ 没登录 / 已登录。
 function accountHTML() {
   if (!sync.isLoggedIn()) {
@@ -2631,6 +2657,7 @@ function accountHTML() {
       if (!phoneLoginOK()) return `<div class="acc-hint">${COPY.accWebOnly}</div>`;
       return `<div class="acc-hint">${COPY.accHint}</div>
         ${phoneRowsHTML()}
+        ${agreeRow()}
         <div class="acc-msg" id="acc-msg"></div>`;
     }
     // 安卓壳按构建参数分两条（9-02 / 9-03 用户拍板）：
@@ -2642,12 +2669,14 @@ function accountHTML() {
       return `<div class="acc-hint">${COPY.accHint}</div>
         ${IS_OVERSEAS ? `<button class="acc-btn" id="acc-google">${COPY.accLoginGoogle}</button>` : ''}
         ${!IS_OVERSEAS && phoneLoginOK() ? phoneRowsHTML() : ''}
+        ${IS_OVERSEAS || phoneLoginOK() ? agreeRow() : ''}
         <div class="acc-msg" id="acc-msg"></div>`;
     }
     return `<div class="acc-hint">${COPY.accHint}</div>
       <button class="acc-btn dark" id="acc-apple"> ${COPY.accLoginApple}</button>
       <button class="acc-btn" id="acc-google">${COPY.accLoginGoogle}</button>
       ${phoneLoginOK() ? phoneRowsHTML() : ''}
+      ${agreeRow()}
       <div class="acc-msg" id="acc-msg"></div>`;
   }
   const a = sync.account;
@@ -2665,7 +2694,14 @@ function accountHTML() {
 
 function bindAccount() {
   const msg = () => $('#acc-msg');
+  // 没勾同意就不往下走；勾了 = 同意这一版协议，顺手记下（之后购买 / 分享不再弹）
+  const agreed = () => {
+    const c = $('#acc-agree');
+    if (c && !c.checked) { if (msg()) msg().textContent = COPY.accAgreeNeed; return false; }
+    acceptLegal(); return true;
+  };
   const doLogin = async prov => {
+    if (!agreed()) return;
     if (msg()) msg().textContent = COPY.accBusy;
     const r = await sync.login(prov);
     if (r.ok) { toast(COPY.accSynced); renderMe(); return; }
@@ -2694,6 +2730,7 @@ function bindAccount() {
     coolTimer = setInterval(tick, 1000);
   };
   $('#acc-send')?.addEventListener('click', async () => {
+    if (!agreed()) return;
     const phone = ($('#acc-phone')?.value || '').trim();
     if (!/^1[3-9]\d{9}$/.test(phone)) { if (msg()) msg().textContent = COPY.accPhoneBad; return; }
     if (msg()) msg().textContent = '';
@@ -2704,6 +2741,7 @@ function bindAccount() {
     if (msg()) msg().textContent = r.error === 'daily' ? COPY.accSmsDaily : COPY.accSmsFail;
   });
   $('#acc-phlogin')?.addEventListener('click', async () => {
+    if (!agreed()) return;
     const phone = ($('#acc-phone')?.value || '').trim();
     const code = ($('#acc-code')?.value || '').trim();
     if (!/^1[3-9]\d{9}$/.test(phone)) { if (msg()) msg().textContent = COPY.accPhoneBad; return; }
@@ -2822,6 +2860,7 @@ function renderMe() {
     </div>
     ${updInfo ? `<div class="me-item"><span class="k">${COPY.updRow.replace('{v}', 'V' + esc(updInfo.versionName || ''))}</span>
       <button class="pk dark" id="btn-upd">${COPY.updGet}</button></div>` : ''}
+    <div class="me-legal"><a href="#" data-legal="terms">${COPY.meTerms}</a><a href="#" data-legal="privacy">${COPY.mePrivacy}</a></div>
     <div class="me-foot">${COPY.appName} · V1.18</div>
     ${/* 工信部 App 备案号（9-05）：只在国内线的壳里显示 —— iOS 中国区账号 / 安卓官网直装包 /
          adhoc 测试包（连 www）。海外构建（美服）和网页版都不显示；是不是国内线由 net.js 一处判。
@@ -2936,6 +2975,48 @@ function finishOnboard(ov) {
   ov.classList.remove('show');
   store.settings.onboarded = true; store.persist();
   playOpening();
+}
+
+// ============================================================
+// 协议同意弹层 + 内容包公告（9-10）
+// ============================================================
+// 文案里的 {terms} / {privacy} 换成可点的链接（点了外开官网，见启动时挂的 data-legal 委托）
+function legalLinks(s) {
+  return s.replace('{terms}', `<a href="#" data-legal="terms">${COPY.legalTerms}</a>`)
+    .replace('{privacy}', `<a href="#" data-legal="privacy">${COPY.legalPrivacy}</a>`);
+}
+function showLegal(onAgree, onDecline) {
+  const ov = $('#ov-legal');
+  if (!ov || ov.classList.contains('show')) return;
+  const upd = store.settings.onboarded;          // 老用户：这是一次「协议更新」，不是初次见面
+  ov.innerHTML = `
+    <h2>${COPY.legalTitle}</h2>
+    ${upd ? `<p class="lg-upd">${COPY.legalUpdated}</p>` : ''}
+    <p>${legalLinks(esc(COPY.legalBody))}</p>
+    <button class="ov-btn" id="lg-yes">${COPY.legalAgree}</button>
+    <button class="ov-btn ghost" id="lg-no">${COPY.legalDisagree}</button>`;
+  ov.classList.add('show');
+  $('#lg-yes').onclick = () => { acceptLegal(); ov.classList.remove('show'); if (onAgree) onAgree(); };
+  $('#lg-no').onclick = () => { ov.classList.remove('show'); if (onDecline) onDecline(); };
+}
+// 内容包里的 notice：条款实质变更 / 停止运营这类「要在 App 内公告」的事走这里，不用发版。
+// 看过的 id 记在 settings.noticeSeen；id 换了才会再弹。别的弹层开着就不叠上去，下次开机再说。
+function showNotice() {
+  if (new URLSearchParams(location.search).get('skipob') === '1') return;
+  const n = catalogNotice();
+  if (!n || store.settings.noticeSeen === n.id) return;
+  if (n.until && n.until < dateKey(Date.now())) return;
+  if (document.querySelector('.overlay.show')) return;
+  const ov = $('#ov-notice');
+  if (!ov) return;
+  ov.innerHTML = `
+    <h2>${COPY.noticeTitle}</h2>
+    <p>${esc(n[getLang()] || n.zh)}</p>
+    <button class="ov-btn" id="nt-ok">${COPY.noticeOk}</button>
+    ${n.url ? `<button class="ov-btn ghost" id="nt-more">${COPY.noticeMore}</button>` : ''}`;
+  ov.classList.add('show');
+  $('#nt-more')?.addEventListener('click', () => openExternal(n.url));
+  $('#nt-ok').onclick = () => { store.settings.noticeSeen = n.id; store.persist(); ov.classList.remove('show'); };
 }
 
 // ============================================================

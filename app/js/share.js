@@ -16,6 +16,7 @@ const LSA = v => (getLang() === 'en' ? 0 : v);
 const heroFont = () => (getLang() === 'en' ? HAND : HAND_CN);
 import { isNative, shareImage, shareText, saveToAlbum } from './native.js';
 import { createShare, shareURL, codeForDay } from './net.js';
+import { legalOk, requireLegal } from './legal.js';
 
 // 「保存」和「分享」8-30 拆成两颗键（用户拍板：存图的人不该多走一层分享面板）。
 // 原生：保存 = 直接进相册（add-only 轻量授权）；分享 = 系统分享面板（sh-share2，模板按 isNative 渲染）。
@@ -488,6 +489,7 @@ function bindLinkBtn(dk) {
   if (already) showLink(shareURL(already.code), false);
 
   btn.onclick = async () => {
+    if (!requireLegal(() => btn.click())) return;      // 9-10：分享会把这一天传上服务器，先同意协议
     const recs = store.recordsOf(dk);
     if (!recs.length) { box.textContent = COPY.shDayEmpty; return; }
     btn.disabled = true;
@@ -540,7 +542,8 @@ export async function openShareDay(dk) {
   async function draw() {
     ov.innerHTML = `<div class="gen">${COPY.genBusy}</div>`;
     ov.classList.add('show');
-    if (!rec) {
+    // 9-10：没同意协议就不上传 —— 卡照样画，二维码回落成下载中转页（跟没网同一条路）
+    if (!rec && legalOk()) {
       try { rec = await createShare(dk, store.recordsOf(dk), verdictOf(store.recordsOf(dk)),
         store.dayNoteOf(dk) || ''); } catch (_) { rec = null; }
     }

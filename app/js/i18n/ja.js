@@ -100,6 +100,11 @@ export const JA = {
   mkThanks: '買えました。はんこはトレイにあります。', mkRestored: '復元しました。',
   mkInkDesc2: 'はんこは含みません。', mkInkBuy: 'インク台を開く',
   mkMoreBoxes: 'あと {n} 箱 ›', mkLessBoxes: '閉じる ‹',
+  // ---- シリーズ箱の新レイアウト（9-10）----
+  mkNew: '新着', mkNewTag: 'NEW', mkTapAll: 'タップして全部見る', mkAllN: '全{n}個', mkTapOpen: 'ひらく', mkAllLink: 'すべて ›',
+  mkAllTitle: 'すべてのシリーズ', mkAllSub: '箱をタップすると中のはんこが見られます', mkBoxesN: '{n}箱',
+  mkBuyoutForever: '買い切り・ずっと使える', mkOpenBox: 'この箱をひらく', mkOrPass: 'または {pass}（今あるシリーズもこれからのも）',
+  mkInTray: 'ぜんぶ「今日」のトレイにあります', mkGoStamp: '押しに行く', mkWeeklyTag: '今週無料',
   stampUnused: 'まだ押してない',
   notePlaceholder: 'ひとこと…',
   noteHint: 'ひとこと',

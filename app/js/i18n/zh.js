@@ -110,6 +110,11 @@ export const ZH = {
   mkThanks: '买好了，章已经在托盘里。', mkRestored: '已经恢复。',
   mkInkDesc2: '不含任何章。', mkInkBuy: '打开印泥盒',
   mkMoreBoxes: '还有 {n} 盒 ›', mkLessBoxes: '收起 ‹',
+  // ---- 系列盒新排法（9-10）----
+  mkNew: '新上架', mkNewTag: 'NEW', mkTapAll: '点开看全部', mkAllN: '全部 {n} 个', mkTapOpen: '点开看', mkAllLink: '全部 ›',
+  mkAllTitle: '全部系列', mkAllSub: '点一盒，看里面的章', mkBoxesN: '{n} 盒',
+  mkBuyoutForever: '买断，永久用', mkOpenBox: '打开这一盒', mkOrPass: '或者 {pass}，现在和以后的系列都包含',
+  mkInTray: '都在今日页的托盘里', mkGoStamp: '去盖一枚', mkWeeklyTag: '本周免费',
   stampUnused: '还没盖过',
   notePlaceholder: '写一句…',
   noteHint: '写一句',   // 前面那支铅笔现在是内联 SVG（见 main.js:noteHint），别再往文案里塞符号

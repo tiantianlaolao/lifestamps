@@ -100,6 +100,11 @@ export const EN = {
   mkThanks: 'Done — the stamps are in your tray.', mkRestored: 'Restored.',
   mkInkDesc2: 'Does not include any stamps.', mkInkBuy: 'Get the ink pads',
   mkMoreBoxes: '{n} more boxes ›', mkLessBoxes: 'Show less ‹',
+  // ---- Series boxes, new layout (9-10) ----
+  mkNew: 'New', mkNewTag: 'NEW', mkTapAll: 'tap to see all', mkAllN: 'All {n}', mkTapOpen: 'tap to open', mkAllLink: 'All ›',
+  mkAllTitle: 'All series', mkAllSub: 'Tap a box to see its stamps', mkBoxesN: '{n} boxes',
+  mkBuyoutForever: 'buy once, keep forever', mkOpenBox: 'Get this box', mkOrPass: 'or {pass}: every series, now and later',
+  mkInTray: 'They’re all in your tray on Today', mkGoStamp: 'Go stamp one', mkWeeklyTag: 'Free this week',
   stampUnused: 'not used yet',
   notePlaceholder: 'a line…',
   noteHint: 'add a line',

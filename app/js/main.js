@@ -90,7 +90,6 @@ let undoRec = null;              // {id, at} 刚盖下的那一枚，10 秒内�
 let undoTimer = null;
 let drawerSeg = 'mine';           // 印集页分段（9-08）：mine = 藏品（我的，含印泥盒）/ market = 集市（能买的）
 let drawerInkOpen = true;         // 藏品最底一节「印泥盒」折不折（跟上面三折一样可折，默认展开）
-const mkMore = { series: false, limited: false };   // 集市：系列 / 限量超过 4 盒时，其余折在「还有 N 盒」后面
 let drawerCat = 'all';            // 抽屉里的分类过滤（含「字」）
 let drawerMineOpen = false;       // 「我盖过的」展开了吗（默认只露最常盖的 6 枚）
 let drawerHidOpen = false;        // 「隐藏章」展开了吗
@@ -2043,8 +2042,7 @@ function renderCollection() {
 
   if (drawerSeg === 'market') {
     bindProCard($('#page-collection'), renderCollection);
-    document.querySelectorAll('#page-collection [data-mkmore]').forEach(b =>
-      b.addEventListener('click', () => { mkMore[b.dataset.mkmore] = !mkMore[b.dataset.mkmore]; renderCollection(); }));
+    bindBoxOpeners($('#page-collection'));
     loadMarketPrices($('#page-collection'));
     return;
   }
@@ -2255,26 +2253,101 @@ async function loadMarketPrices(root) {
   }
   for (const e of els) if (e.isConnected && marketPrices[e.dataset.price]) e.textContent = marketPrices[e.dataset.price];
 }
+// ============================================================
+// 集市 · 系列盒（9-10 用户定稿 v3，设计稿 dev/_boxdesign.html）
+//   · 最新一个系列：整宽大卡突出（NEW、露 6 枚 + 「+N」、价格按钮直接买）
+//   · 以前的系列：小方块（前 4 枚拼小图 + 名字 + 价格），一排 4 个、最多两排；超出 → 第 8 块「全部 N 个」
+//   · 限量款单独一段（通行证不含，有通行证也照样标价）
+//   · 任何盒子点开 → 底部面板 #sheet-box 看整盒章 + 价格；买过的 / 通行证覆盖的，一律写「已拥有」
+// ============================================================
+const mkPrice = p => marketPrices[p] || COPY.mkPriceSoon;
+const boxName = s => esc(nameOf('series', s.id, s.name));
+const boxSub = s => (s.sub ? esc(nameOf('seriesSub', s.id, s.sub)) : '');
+const boxStampIds = s => s.stampIds.filter(id => stampById[id]);
+function boxFeatureHTML(s) {
+  const ids = boxStampIds(s), owned = boxOwned(s);
+  return `<div class="bx-feature" data-box="${s.id}">
+    <div class="bx-top"><span class="mk-t">${boxName(s)}</span><span class="bx-new">${COPY.mkNewTag}</span></div>
+    ${s.sub ? `<div class="mk-s">${boxSub(s)}</div>` : ''}
+    <div class="bx-strip">${ids.slice(0, 6).map(id => `<span class="mk-cell">${stampSVG(stampById[id], { size: 34 })}<i>${esc(dName(stampById[id]))}</i></span>`).join('')}${ids.length > 6 ? `<span class="bx-more">+${ids.length - 6}</span>` : ''}</div>
+    <div class="mk-row"><span class="bx-tap">${COPY.mkBoxCount.replace('{n}', ids.length)} · <b>${COPY.mkTapAll}</b></span>
+      ${owned ? `<span class="mk-have">${COPY.mkHave}</span>` : `<button class="mk-btn" data-buy="box_${s.id}" data-price="box_${s.id}">${mkPrice('box_' + s.id)}</button>`}</div>
+  </div>`;
+}
+function boxTileHTML(s) {
+  const ids = boxStampIds(s), owned = boxOwned(s);
+  return `<div class="mk-tl" data-box="${s.id}">${s.pass === false ? `<span class="mk-tl-lt">${COPY.mkLimited}</span>` : ''}
+    <div class="mk-tl-q">${ids.slice(0, 4).map(id => `<span>${stampSVG(stampById[id], { size: 26, flat: true })}</span>`).join('')}</div>
+    <div class="mk-tl-n">${boxName(s)}</div>
+    <div class="mk-tl-p${owned ? ' own' : ''}"${owned ? '' : ` data-price="box_${s.id}"`}>${owned ? COPY.mkHave : mkPrice('box_' + s.id)}</div></div>`;
+}
+// 最多两排（8 块）；超出：前 7 块 + 第 8 块「全部 N 个」
+function boxTilesHTML(list) {
+  if (list.length <= 8) return `<div class="mk-tiles">${list.map(boxTileHTML).join('')}</div>`;
+  return `<div class="mk-tiles">${list.slice(0, 7).map(boxTileHTML).join('')}
+    <div class="mk-tl more" data-allbox="1"><b>+${list.length - 7}</b><div class="mk-tl-n">${COPY.mkAllN.replace('{n}', list.length)}</div><div class="mk-tl-p own">${COPY.mkTapOpen}</div></div></div>`;
+}
+function bindBoxOpeners(root) {
+  root.querySelectorAll('[data-box]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('[data-buy]')) return;          // 大卡上的价格按钮是直接买，不是点开
+    openBoxSheet(el.dataset.box);
+  }));
+  root.querySelectorAll('[data-allbox]').forEach(el => el.addEventListener('click', () => openAllBoxes()));
+}
+let boxSheetId = null;       // 面板当前是哪一盒（null = 「全部系列」）
+function openBoxSheet(id) {
+  const s = SERIES.find(x => x.id === id);
+  if (!s) return;
+  boxSheetId = id;
+  const ids = boxStampIds(s), owned = boxOwned(s), ltd = s.pass === false;
+  const today = dateKey(Date.now());
+  const el = $('#box-sheet');
+  el.innerHTML = `
+    <div class="bx-head"><div class="bx-t">${boxName(s)}</div>${s.sub ? `<div class="bx-s">${boxSub(s)}</div>` : ''}
+      <div class="bx-m">${owned ? `<span class="mk-pill">${COPY.mkHave}</span>` : ''}<span>${COPY.mkBoxCount.replace('{n}', ids.length)} · ${COPY.mkBuyoutForever}</span>${ltd ? `<span class="mk-pill">${COPY.mkNotInPass}</span>` : ''}</div></div>
+    <div class="bx-body"><div class="bx-grid">${ids.map(sid => {
+      const d = stampById[sid], free = !owned && d.freeUntil && d.freeUntil >= today;
+      return `<div class="bx-g">${stampSVG(d, { size: 54 })}<i>${esc(dName(d))}</i>${free ? `<span class="bx-tag">${COPY.mkWeeklyTag}</span>` : ''}</div>`;
+    }).join('')}</div></div>
+    <div class="bx-foot">${owned
+      ? `<div class="mk-row"><span class="bx-tap">${COPY.mkInTray}</span><button class="mk-btn" data-gotoday="1">${COPY.mkGoStamp}</button></div>`
+      : `<button class="cta bx-buy" data-buy="box_${s.id}">${COPY.mkOpenBox} <span data-price="box_${s.id}">${mkPrice('box_' + s.id)}</span></button>
+         ${!ltd && !store.hasProduct('pass') ? `<div class="bx-alt">${COPY.mkOrPass.replace('{pass}', `<button class="bx-link" data-buy="pass">${COPY.mkPassBuy} <span data-price="pass">${mkPrice('pass')}</span></button>`)}</div>` : ''}
+         ${alipayLane() ? `<div class="bx-fine">${legalLinks(esc(COPY.payRefundNote))}</div>` : ''}`}</div>`;
+  bindBoxSheet(el);
+  openSheet('sheet-box');
+}
+function openAllBoxes() {
+  boxSheetId = null;
+  const boxes = SERIES.filter(s => s.free === false);
+  const series = boxes.filter(s => s.pass !== false).reverse(), limited = boxes.filter(s => s.pass === false).reverse();
+  const el = $('#box-sheet');
+  el.innerHTML = `
+    <div class="bx-head"><div class="bx-t">${COPY.mkAllTitle}</div><div class="bx-s">${COPY.mkAllSub}</div></div>
+    <div class="bx-body">
+      <div class="mk-sub2">${COPY.mkSeries}<span class="mk-pill">${COPY.mkBoxesN.replace('{n}', series.length)}</span></div>
+      <div class="mk-tiles">${series.map(boxTileHTML).join('')}</div>
+      ${limited.length ? `<div class="mk-sub2">${COPY.mkLimited}<span class="mk-pill">${COPY.mkNotInPass}</span></div><div class="mk-tiles">${limited.map(boxTileHTML).join('')}</div>` : ''}
+    </div>`;
+  bindBoxSheet(el);
+  openSheet('sheet-box');
+}
+function bindBoxSheet(el) {
+  bindBoxOpeners(el);                                   // 「全部系列」里点一盒 → 同一个面板换成那一盒
+  bindProCard(el, () => { renderCollection(); if (boxSheetId) openBoxSheet(boxSheetId); else openAllBoxes(); });
+  el.querySelector('[data-gotoday]')?.addEventListener('click', () => { closeSheets(); switchTab('today'); });
+  loadMarketPrices(el);
+}
+
 function drawerMarket() {
   const today = dateKey(Date.now());
   const boxes = SERIES.filter(s => s.free === false);
   const series = boxes.filter(s => s.pass !== false), limited = boxes.filter(s => s.pass === false);
-  const weekly = STAMPS.filter(s => s.freeUntil && s.freeUntil >= today && seriesOf(s.id)?.free === false);
+  // 章所在的盒子已经拥有（单独买过 / 通行证覆盖）→ 本周免费这一块不出（9-10）
+  const weekly = STAMPS.filter(s => s.freeUntil && s.freeUntil >= today && seriesOf(s.id)?.free === false && !boxOwned(seriesOf(s.id)));
   const passOwned = store.hasProduct('pass');
   const price = p => marketPrices[p] || COPY.mkPriceSoon;
 
-  const card = s => {
-    const ids = s.stampIds.filter(id => stampById[id]);
-    const owned = boxOwned(s), viaPass = owned && !store.hasProduct('box_' + s.id);
-    return `<div class="mk-box">
-      <div class="mk-t">${esc(nameOf('series', s.id, s.name))}</div>
-      ${s.sub ? `<div class="mk-s">${esc(nameOf('seriesSub', s.id, s.sub))}</div>` : ''}
-      <div class="mk-mini">${ids.slice(0, 6).map(id => `<span class="mk-cell">${stampSVG(stampById[id], { size: 34 })}<i>${esc(dName(stampById[id]))}</i></span>`).join('')}</div>
-      <div class="mk-row"><span class="mk-s">${COPY.mkBoxCount.replace('{n}', ids.length)}</span>
-        ${owned ? `<span class="mk-have">${viaPass ? COPY.mkPassHas : COPY.mkHave}</span>`
-                : `<button class="mk-btn" data-buy="box_${s.id}" data-price="box_${s.id}">${price('box_' + s.id)}</button>`}</div>
-    </div>`;
-  };
   const weeklyHtml = !weekly.length ? '' : `<div class="bs-t">${COPY.mkWeekly}</div>` + weekly.map(s => {
     const d = new Date(s.freeUntil + 'T12:00:00');
     return `<div class="mk-card mk-weekly"><span class="mk-face">${stampSVG(s, { size: 40 })}</span>
@@ -2297,19 +2370,16 @@ function drawerMarket() {
   const links = (passOwned && store.isPro()) ? '' : `<div class="mk-links">
     ${pendingOrder() ? `<button class="pro-plain" data-pro="check">${COPY.payCheck}</button>` : ''}
     <button class="pro-plain" data-pro="restore">${COPY.proRestore}</button></div>`;
-  // 盒子多了：最新的在前，默认露 4 盒，其余折在「还有 N 盒」后面（跟藏品「我盖过的」同一手法）
-  const shelf = (list, key) => {
-    const all = [...list].reverse();
-    const show = mkMore[key] ? all : all.slice(0, 4);
-    const more = all.length - show.length;
-    return `<div class="mk-boxes">${show.map(card).join('')}</div>`
-      + (all.length > 4 ? `<button class="mine-more" data-mkmore="${key}">${mkMore[key] ? COPY.mkLessBoxes : COPY.mkMoreBoxes.replace('{n}', more)}</button>` : '');
-  };
+  // 系列盒排法（9-10 定稿 v3，设计稿 dev/_boxdesign.html）：新的在前（内容包里后加的排后面，所以反过来）；
+  // 最新一个系列做大卡，其余小方块；限量单独一段
+  const newest = [...series].reverse(), featured = newest[0], older = newest.slice(1);
+  const ltdList = [...limited].reverse();
   return `<div class="mk">${weeklyHtml}
     <div class="bs-t">${COPY.mkBuyout}</div>${passHtml}${inkHtml}${links}
     ${alipayLane() ? `<div class="mk-refund">${legalLinks(esc(COPY.payRefundNote))}</div>` : ''}
-    ${series.length ? `<div class="bs-t">${COPY.mkSeries}</div>${shelf(series, 'series')}` : ''}
-    ${limited.length ? `<div class="bs-t">${COPY.mkLimited}<span class="mk-pill">${COPY.mkNotInPass}</span></div>${shelf(limited, 'limited')}` : ''}
+    ${featured ? `<div class="bs-t">${COPY.mkNew}</div>${boxFeatureHTML(featured)}` : ''}
+    ${older.length ? `<div class="bs-t mk-sec"><span>${COPY.mkSeries} · ${older.length}</span>${older.length > 8 ? `<button class="mk-all" data-allbox="1">${COPY.mkAllLink}</button>` : ''}</div>${boxTilesHTML(older)}` : ''}
+    ${ltdList.length ? `<div class="bs-t">${COPY.mkLimited}<span class="mk-pill">${COPY.mkNotInPass}</span></div>${boxTilesHTML(ltdList)}` : ''}
     ${boxes.length ? `<div class="dk-note">${COPY.mkBoxNote}</div>` : ''}
   </div>`;
 }

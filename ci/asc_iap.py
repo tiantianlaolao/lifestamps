@@ -3,7 +3,7 @@
 
 密钥不出 D:\\ios密钥备份（Key ID / Issuer ID 从 asc-api-密钥信息.txt 读，.p8 同目录）。
 幂等：已存在的商品不重建，本地化 / 价格 / 可用地区 / 审核截图按需补。
-用法：python asc_iap.py [--product pass|box_market] [--dry] [--inspect] [--reshot] [--submit]
+用法：python asc_iap.py [--product pass|box_market|box_travel] [--dry] [--inspect] [--reshot] [--submit]
   --dry     只列 app 和现有内购，不改任何东西
   --submit  建完顺手提交内购审核（不带 App 版本，单独审）
 """
@@ -39,6 +39,18 @@ PRODUCTS = {
               'Purchase UI: Album tab > Market segment > Series > Farmers Market > price button. '
               'After purchase the 14 stamps appear in the stamp tray on the Today page.'),
         shot='iap_box_market_review.png'),
+    # 9-10：描述里不写枚数 —— 以后往盒子里补章，商店描述不用改（改了要重新过内购审核）
+    'box_travel': dict(
+        ref='出行（交通盒）', price='8',
+        locales={
+            'zh-Hans': {'name': '出行', 'description': '出行主题印章：自行车、地铁、公交、打车、高铁、飞机等，买断永久用。'},
+            'en-US':   {'name': 'On the Go', 'description': 'Bike, subway, bus, taxi, train, plane. Buy once.'},
+            'ja':      {'name': 'おでかけ', 'description': '自転車・地下鉄・バス・タクシー・高速鉄道・飛行機などのはんこ。ずっと使えます。'},
+        },
+        note=('Unlocks the "On the Go" box: travel stamps (bike, bus, taxi, subway, e-bike, walk, drive, ferry, flight, high-speed rail). '
+              'Purchase UI: Album tab > Market segment > Series > On the Go > price button. '
+              'After purchase the stamps appear in the stamp tray on the Today page.'),
+        shot='iap_box_travel_review.png'),
 }
 _sel = sys.argv[sys.argv.index('--product') + 1] if '--product' in sys.argv else 'pass'
 P = PRODUCTS[_sel]

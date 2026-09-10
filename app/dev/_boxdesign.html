@@ -1,0 +1,213 @@
+<!doctype html><meta charset="utf-8"><title>系列盒 · 设计稿 v3</title>
+<!-- 9-10 设计稿 v3（dev/ 不部署不进包）。用户定的规则：
+     · 最新的系列：整宽大卡突出显示（NEW、露 6 枚 + 「+N」、价格）
+     · 以前的系列：小方块（前 4 枚拼的小图 + 名字 + 价格），一排 4 个、最多两排；超出 → 第 8 块变「全部 N 个」，点开看全部
+     · 任何一个系列点开 → 底部面板展开这一盒全部章 + 价格
+     · 买过的、有通行证的 → 直接写「已拥有」（不再分「通行证已含」）
+     · 限量款仍然和系列分开（通行证不含，有通行证也照样标价）
+     四个画面：①没有通行证·集市长图 ②点开小方块「菜市场」 ③点开「全部系列」 ④有通行证·集市长图
+     用真模块渲染（app.css / stamp.js / 内容包）。除出行、菜市场外，其余盒子是拿库里现有的章凑的示意。 -->
+<link rel="stylesheet" href="../css/app.css">
+<style>
+  html, body { height: auto !important; overflow: auto !important; position: static !important; }
+  body { margin: 0; background: #E6DFD3; }
+  .board { display: flex; gap: 28px; padding: 22px 26px 30px; align-items: flex-start; width: max-content; }
+  .cap { font: 600 13px system-ui; color: #6B655C; margin: 0 0 8px 6px; letter-spacing: .04em }
+  .cap small { font-weight: 400; color: #9B958B; margin-left: 6px }
+  .scr { width: 430px; overflow: hidden; position: relative; border-radius: 30px; background: var(--paper);
+         box-shadow: 0 10px 30px rgba(60, 50, 35, .18); font-family: var(--f-title) }
+  .scr.fixed { height: 932px }
+  .pad { padding: 18px 16px 30px }
+  .h1 { font-family: var(--f-title); font-size: 26px; color: var(--ink); letter-spacing: .1em; margin: 34px 0 12px 2px }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 2px; margin-bottom: 4px }
+  .seg span { font-size: 13px; padding: 4px 16px; border-radius: 7px; color: var(--sub) }
+  .seg span.on { background: var(--paper-deep, #EDE6D8); color: var(--ink) }
+  .sec { display: flex; justify-content: space-between; align-items: baseline }
+  .sec .lk { font-family: var(--f-title); font-size: 12px; color: var(--sub); letter-spacing: .04em }
+
+  /* ---- 新上架：整宽大卡 ---- */
+  .bx-feature { margin-top: 8px; padding: 14px 14px 12px; border-radius: 12px; background: var(--card); border: .5px solid var(--line) }
+  .bx-feature .top { display: flex; align-items: baseline; gap: 8px }
+  .bx-new { font-family: var(--f-num); font-size: 10px; letter-spacing: .08em; color: var(--btn-face); background: var(--accent); border-radius: 5px; padding: 1px 6px }
+  .bx-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 10px }
+  .bx-strip .mk-cell { width: auto }
+  .bx-more { display: flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--paper);
+             font-family: var(--f-num); font-size: 13px; color: var(--sub) }
+  .bx-tap { font-family: var(--f-hand); font-size: 12px; color: var(--sub) }
+  .bx-tap b { font-weight: 400; color: var(--accent) }
+
+  /* ---- 以前的系列 / 限量：小方块 ---- */
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px }
+  .tl { position: relative; display: flex; flex-direction: column; align-items: center; padding: 8px 4px 7px; border-radius: 12px;
+        background: var(--card); border: .5px solid var(--line); min-width: 0 }
+  .tl .q { display: grid; grid-template-columns: repeat(2, 28px); grid-template-rows: repeat(2, 28px); gap: 2px; padding: 4px;
+           border-radius: 9px; background: var(--paper) }
+  .tl .q span { display: flex; align-items: center; justify-content: center }
+  .tl .n { font-family: var(--f-title); font-size: 12px; color: var(--ink); margin-top: 6px; letter-spacing: .04em;
+           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100% }
+  .tl .p { font-family: var(--f-num); font-size: 11.5px; color: var(--accent); margin-top: 1px }
+  .tl .p.own { color: var(--sub); font-family: var(--f-title); font-size: 10.5px; letter-spacing: .06em }
+  .tl .lt { position: absolute; top: -6px; right: -3px; font-family: var(--f-title); font-size: 9.5px; color: var(--btn-face);
+            background: var(--accent); border-radius: 6px; padding: 1px 5px; letter-spacing: .04em }
+  .tl.more { justify-content: center; background: var(--paper); border: 1px dashed var(--line) }
+  .tl.more b { height: 66px; display: flex; align-items: center; font-family: var(--f-num); font-size: 22px; font-weight: 400; color: var(--sub) }
+  .tl.more .p { color: var(--sub); font-family: var(--f-title); font-size: 10.5px }
+
+  /* ---- 底部面板 ---- */
+  .dim { position: absolute; inset: 0; background: rgba(40, 32, 22, .38) }
+  .bx-sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 86%; display: flex; flex-direction: column;
+              background: var(--paper); border-radius: 22px 22px 0 0; box-shadow: 0 -6px 24px rgba(40, 32, 22, .16) }
+  .bx-sheet .sheet-grab { flex: none }
+  .bx-head { padding: 6px 20px 10px; flex: none }
+  .bx-head .t { font-family: var(--f-title); font-size: 21px; color: var(--ink); letter-spacing: .08em }
+  .bx-head .s { font-family: var(--f-hand); font-size: 13px; color: var(--sub); margin-top: 2px }
+  .bx-head .m { display: flex; gap: 8px; align-items: center; margin-top: 8px; font-family: var(--f-num); font-size: 11.5px; color: var(--sub) }
+  .bx-head .m .mk-pill { margin-left: 0 }
+  .bx-body { flex: 1; overflow: hidden; padding: 4px 18px 12px }
+  .bx-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 8px }
+  .bx-g { display: flex; flex-direction: column; align-items: center; padding: 10px 0 7px; border-radius: 12px; background: var(--card);
+          border: .5px solid var(--line); position: relative }
+  .bx-g i { font-style: normal; font-size: 11px; color: var(--ink); margin-top: 4px; letter-spacing: .04em }
+  .bx-g .tag { position: absolute; top: -6px; right: -3px; font-family: var(--f-title); font-size: 9.5px; color: var(--btn-face);
+               background: var(--accent); border-radius: 6px; padding: 1px 5px }
+  .bx-foot { flex: none; padding: 10px 18px 26px; border-top: .5px solid var(--line); background: var(--paper) }
+  .bx-foot .cta { width: 100%; margin: 0 }
+  .bx-foot .alt { text-align: center; font-family: var(--f-hand); font-size: 12px; color: var(--sub); margin-top: 9px }
+  .bx-foot .alt b { font-weight: 400; color: var(--accent) }
+  .bx-foot .fine { text-align: center; font-size: 10.5px; color: var(--faint); margin-top: 6px; line-height: 1.6 }
+  .bx-foot .fine a { color: var(--accent); text-decoration: none }
+  .sub2 { display: flex; align-items: baseline; gap: 6px; font-family: var(--f-title); font-size: 13px; color: var(--ink); letter-spacing: .08em; margin: 16px 2px 0 }
+</style>
+<div id="defs"></div>
+<div class="board">
+  <section><div class="cap">① 没有通行证 · 集市<small>新系列大卡 + 以前的系列小方块（两排）+ 限量</small></div><div class="scr" id="s1"></div></section>
+  <section><div class="cap">② 点开小方块「菜市场」<small>整盒章 + 价格</small></div><div class="scr fixed" id="s2"></div></section>
+  <section><div class="cap">③ 点开「全部系列」<small>超过两排时从第 8 块进来</small></div><div class="scr fixed" id="s3"></div></section>
+  <section><div class="cap">④ 有通行证 · 集市<small>系列都「已拥有」· 限量照样标价</small></div><div class="scr" id="s4"></div></section>
+</div>
+<script type="module">
+import { SERIES, stampById } from '../js/data.js';
+import { applyCatalog } from '../js/catalog.js';
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+import { setLang, nameOf, COPY } from '../js/i18n.js';
+setLang('zh');
+const cat = await (await fetch('../js/catalog.json', { cache: 'no-store' })).json();
+applyCatalog(cat, 'design');
+document.getElementById('defs').innerHTML = `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`;
+
+const nm = id => nameOf('stamp', id, stampById[id].name);
+const face = (id, size) => stampSVG(stampById[id], { size, flat: size < 40 });
+const S = id => SERIES.find(s => s.id === id);
+const travel = { ...S('travel'), price: 8 }, market = { ...S('market'), price: 8 };
+// 以前的系列（新 → 旧）。除了菜市场，都是拿库里现有的章凑的示意
+const OLD = [
+  market,
+  { id: 'f1', name: '好好吃饭', sub: '一日三餐也值得盖一下', price: 8, stampIds: ['hotpot', 'burger', 'dessert', 'takeout', 'nightsnack', 'fruit'] },
+  { id: 'f2', name: '心情', sub: '今天是什么天气的心', price: 8, stampIds: ['happy', 'angry', 'emo', 'cry', 'love', 'tired'] },
+  { id: 'f3', name: '周末', sub: '什么都不干也算', price: 8, stampIds: ['game', 'series', 'movie', 'music', 'browse'] },
+  { id: 'f4', name: '家务', sub: '做完了就盖一个', price: 8, stampIds: ['laundry', 'clean', 'cook', 'shower', 'water'] },
+  { id: 'f5', name: '学习', sub: '今天也有在进步', price: 8, stampIds: ['read', 'study', 'write', 'work', 'meeting'] },
+  { id: 'f6', name: '夜猫子', sub: '一点都不想睡', price: 8, stampIds: ['stayup', 'phone', 'sleepin', 'daze', 'lie'] },
+  { id: 'f7', name: '遇见', sub: '路上看到的', price: 8, stampIds: ['cat', 'dog', 'bird', 'flower'] },
+  { id: 'f8', name: '天空', sub: '抬头看了一眼', price: 8, stampIds: ['sunset', 'rainbowsky', 'sparkle', 'typhoon'] },
+  { id: 'f9', name: '喝点什么', sub: '续命的那一杯', price: 8, stampIds: ['milktea', 'coffee', 'water', 'dessert'] },
+  { id: 'f10', name: '出门', sub: '走出家门就算', price: 8, stampIds: ['goout', 'bird', 'flower', 'sunset'] },
+];
+const LTD = [
+  { id: 'l1', name: '中秋限定', sub: '只在中秋前后上架（示意）', price: 12, ltd: true, stampIds: ['sparkle', 'sunset', 'flower', 'love'] },
+  { id: 'l2', name: '联名限量', sub: '和某个品牌合作 · 限 500 份（示意）', price: 12, ltd: true, stampIds: ['rainbowsky', 'sparkle', 'cat', 'milktea'] },
+];
+const own = (s, u) => u.boxes.has(s.id) || (u.pass && !s.ltd);     // 通行证不含限量
+const price = (s, u) => own(s, u) ? '已拥有' : `￥${s.price}`;
+
+const tile = u => s => `<div class="tl">${s.ltd ? '<span class="lt">限量</span>' : ''}
+  <div class="q">${s.stampIds.slice(0, 4).map(id => `<span>${face(id, 26)}</span>`).join('')}</div>
+  <div class="n">${s.name}</div><div class="p ${own(s, u) ? 'own' : ''}">${price(s, u)}</div></div>`;
+// 最多两排（8 块）；超出：前 7 块 + 第 8 块「全部 N 个」
+function tilesUpTo2Rows(list, u) {
+  if (list.length <= 8) return list.map(tile(u)).join('');
+  return list.slice(0, 7).map(tile(u)).join('')
+    + `<div class="tl more"><b>+${list.length - 7}</b><div class="n">全部 ${list.length} 个</div><div class="p">点开看</div></div>`;
+}
+
+function marketPage(u) {
+  const weekly = market.stampIds.map(id => stampById[id]).find(s => s && s.freeUntil);
+  const showWeekly = weekly && !own(market, u);            // 章所在的盒子已经拥有 → 不出
+  const wd = weekly && new Date(weekly.freeUntil + 'T12:00:00');
+  const card = (name, pill, lines, note, btn) => `<div class="mk-card">
+    <div class="mk-t">${name}<span class="mk-pill">${pill}</span></div>
+    ${lines.map(l => `<div class="mk-s">${l}</div>`).join('')}
+    <div class="mk-row"><span class="mk-s">${note}</span>${btn}</div></div>`;
+  const nSeries = OLD.length + 1;
+  const strip = travel.stampIds.slice(0, 6).map(id => `<span class="mk-cell">${face(id, 34)}<i>${nm(id)}</i></span>`).join('')
+    + (travel.stampIds.length > 6 ? `<span class="bx-more">+${travel.stampIds.length - 6}</span>` : '');
+  return `<div class="pad mk">
+    <div class="h1">印集</div>
+    <div class="seg"><span>藏品</span><span class="on">集市</span></div>
+    ${showWeekly ? `<div class="bs-t">${COPY.mkWeekly}</div>
+    <div class="mk-card mk-weekly"><span class="mk-face">${stampSVG(weekly, { size: 40 })}</span>
+      <div class="mk-mid"><div class="mk-t">${nm(weekly.id)}</div>
+        <div class="mk-s">${COPY.mkWeeklyUntil.replace('{m}', wd.getMonth() + 1).replace('{d}', wd.getDate())}</div></div>
+      <span class="mk-have">${COPY.mkWeeklyInTray}</span></div>` : ''}
+    <div class="bs-t">${COPY.mkBuyout}</div>
+    ${u.pass ? card(COPY.mkPassName, COPY.proOwned, [COPY.mkPassDesc, COPY.mkPassDesc2], COPY.mkPassIncl.replace('{n}', nSeries), '')
+             : card(COPY.mkPassName, '￥38', [COPY.mkPassDesc, COPY.mkPassDesc2], COPY.mkPassIncl.replace('{n}', nSeries), `<button class="mk-btn">${COPY.mkPassBuy}</button>`)}
+    ${card(COPY.proName, '￥8', [COPY.proDesc, COPY.mkInkDesc2], COPY.proPitch, `<button class="mk-btn">${COPY.mkInkBuy}</button>`)}
+    <div class="mk-links"><button class="pro-plain">${COPY.proRestore}</button></div>
+    <div class="mk-refund">${COPY.payRefundNote.replace('{terms}', '<a>《服务协议》</a>')}</div>
+
+    <div class="bs-t">新上架</div>
+    <div class="bx-feature">
+      <div class="top"><span class="mk-t" style="font-size:16px">${travel.name}</span><span class="bx-new">NEW</span></div>
+      <div class="mk-s">${travel.sub}</div>
+      <div class="bx-strip">${strip}</div>
+      <div class="mk-row"><span class="bx-tap">${travel.stampIds.length} 枚 · <b>点开看全部</b></span>
+        ${own(travel, u) ? '<span class="mk-have">已拥有</span>' : `<button class="mk-btn">￥${travel.price}</button>`}</div>
+    </div>
+
+    <div class="bs-t sec"><span>${COPY.mkSeries} · ${OLD.length}</span>${OLD.length > 8 ? '<span class="lk">全部 ›</span>' : ''}</div>
+    <div class="tiles">${tilesUpTo2Rows(OLD, u)}</div>
+
+    <div class="bs-t">${COPY.mkLimited}<span class="mk-pill">${COPY.mkNotInPass}</span></div>
+    <div class="tiles">${tilesUpTo2Rows(LTD, u)}</div>
+    <div class="dk-note">${COPY.mkBoxNote}</div>
+  </div>`;
+}
+
+// 小方块点开：整盒章 + 价格
+function boxSheet(s, u) {
+  const o = own(s, u);
+  return `<div class="dim"></div><div class="bx-sheet">
+    <div class="sheet-grab"></div>
+    <div class="bx-head"><div class="t">${s.name}</div><div class="s">${s.sub}</div>
+      <div class="m">${o ? '<span class="mk-pill">已拥有</span>' : ''}<span>${s.stampIds.length} 枚 · 买断，永久用</span>${s.ltd ? `<span class="mk-pill">${COPY.mkNotInPass}</span>` : ''}</div></div>
+    <div class="bx-body"><div class="bx-grid">${s.stampIds.map(id => `<div class="bx-g">${face(id, 54)}<i>${nm(id)}</i>
+      ${id === 'tomato' && !o ? '<span class="tag">本周免费</span>' : ''}</div>`).join('')}</div></div>
+    <div class="bx-foot">${o ? `<div class="mk-row" style="margin:0"><span class="bx-tap">都在今日页的托盘里</span><button class="mk-btn">去盖一枚</button></div>`
+      : `<button class="cta">打开这一盒 ￥${s.price}</button>
+         ${!s.ltd && !u.pass ? '<div class="alt">或者 <b>打开印章通行证 ￥38</b>，现在和以后的系列都包含</div>' : ''}
+         <div class="fine">${COPY.payRefundNote.replace('{terms}', '<a>《服务协议》</a>')}</div>`}</div>
+  </div>`;
+}
+// 「全部系列」：所有系列 + 限量，都是小方块
+function allSheet(u) {
+  return `<div class="dim"></div><div class="bx-sheet" style="max-height:90%">
+    <div class="sheet-grab"></div>
+    <div class="bx-head"><div class="t">全部系列</div><div class="s">点一盒，看里面的章</div></div>
+    <div class="bx-body">
+      <div class="sub2">${COPY.mkSeries}<span class="mk-pill">${OLD.length + 1} 盒</span></div>
+      <div class="tiles">${[travel, ...OLD].map(tile(u)).join('')}</div>
+      <div class="sub2">${COPY.mkLimited}<span class="mk-pill">${COPY.mkNotInPass}</span></div>
+      <div class="tiles">${LTD.map(tile(u)).join('')}</div>
+    </div>
+  </div>`;
+}
+
+const noPass = { pass: false, boxes: new Set(['f4']) };         // 示意：单独买过「家务」
+const withPass = { pass: true, boxes: new Set() };
+document.getElementById('s1').innerHTML = marketPage(noPass);
+document.getElementById('s2').innerHTML = boxSheet(market, noPass);
+document.getElementById('s3').innerHTML = allSheet(noPass);
+document.getElementById('s4').innerHTML = marketPage(withPass);
+document.body.dataset.ready = '1';
+</script>

@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stampday · Terms of Service</title>
+<!-- 服务协议（9-10 新建）。跟 ../privacy/ 是一对，版式共用一份 CSS。
+     起因：9-08~9-10 国内网页版把「印章通行证」挂着卖，而内容包里一个收费系列盒都没有，
+     有人真付了 ¥38 —— 收了钱没有对价，而当时我们**一份用户协议都没有**，纠纷起来手里没有任何书面约定。
+
+     🔴 这页的每一句同样必须与代码事实一致（文案不能说代码没做的事）。逐条对应：
+       · 商品边界（第 4.2 条）↔ catalog.js normSeries 的 free/pass 两个字段 + i18n mkPassDesc/mkPassDesc2/mkBoxNote
+         —— 通行证含 free:false 且 pass!==false 的盒；不含印泥盒、pass:false 的联名/限量、基础章与隐藏章。
+       · 高级印泥（第 4.2 条）↔ data.js INKS 里 free:true 的三款不限量，其余靠 premiuminks 解锁，
+         未购买时每天试用 TRIAL_DIPS 次（main.js:37，现在 = 2）。改了次数回来改这页。
+       · 本周免费章（第 4.2 条）↔ pay.js claim()：领过的永久算数，窗口过了也不收回。
+       · 交付与幂等（第 4.4 条）↔ pay.js settleOrder：验签 + 反查到账才发权益，trade_no UNIQUE。
+       · 恢复购买 / 删号丢权益（第 4.6 条）↔ sync.refreshEntitlements + account.js 删号不删 entitlements。
+       · 停止运营仍可离线用（第 5 条）↔ 本地优先：核心功能不需要网络（net.js 每个失败都返回 null 不抛）。
+     🔴 未写进本页的自我约束不要口头承诺；要加，先改代码再改这页。
+     ⚠️ 上架节奏（第 4.3 条）是**明确不承诺**的 —— 别在别处写成"每月上新"之类可执行的承诺。 -->
+<style>
+  body{margin:0;background:#F6F2EA;color:#252421;
+    font:15px/1.9 -apple-system,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans",sans-serif;
+    padding:40px 22px 80px}
+  main{max-width:640px;margin:0 auto}
+  h1{font-size:24px;margin:0 0 4px}
+  .date{color:#8C8880;font-size:13px;margin-bottom:28px}
+  h2{font-size:17px;margin:34px 0 8px;border-bottom:1px solid #E3DCCF;padding-bottom:6px}
+  h3{font-size:15px;margin:20px 0 4px}
+  p,li{color:#4A463E}
+  ul{padding-left:20px}
+  .langs{margin-bottom:24px;font-size:13.5px}
+  .langs a{color:#C94B3C;text-decoration:none;margin-right:14px}
+  main a{color:#C94B3C}
+  section.lang{border-top:3px double #E3DCCF;margin-top:56px;padding-top:8px}
+  section.lang:first-of-type{border-top:none;margin-top:0}
+  .muted{color:#8C8880;font-size:13.5px}
+  .note{background:#EFE9DC;border-left:3px solid #C94B3C;padding:10px 14px;margin:14px 0}
+  .note p{margin:0}
+</style>
+</head>
+<body>
+<main>
+<nav class="langs"><a href="#en">English</a><a href="#ja">日本語</a><a href="#zh">中文</a>
+<a href="../privacy/">Privacy Policy · プライバシー · 隐私政策 →</a></nav>
+
+<!-- ============================ EN ============================ -->
+<section class="lang" id="en">
+<h1>Stampday — Terms of Service</h1>
+<div class="date">Effective: September 10, 2026</div>
+
+<p>These Terms are the agreement between you and <b>Beijing Tianyi Baobao Digital Technology Co., Ltd.</b>
+(“we”, “us”) for the Stampday app (戳了么 in China) and its website. By installing or using Stampday you
+agree to them. If you do not agree, please do not use the app. How we handle data is covered separately in
+our <a href="../privacy/#en">Privacy Policy</a>, which forms part of these Terms.</p>
+
+<h2>1. What Stampday is</h2>
+<p>Stampday is a journal you keep by stamping small things onto a page. It is local-first: your journal lives
+on your device, and the core of the app — stamping, writing the day’s line, looking back — works with no
+account and no network.</p>
+<p><b>Recording is never behind a paywall.</b> We do not limit how many stamps you may place, how many days
+you may keep, or whether you can read your own journal back. Paid content adds stamps and inks; it never
+takes away the ability to record.</p>
+
+<h2>2. Your account</h2>
+<ul>
+<li>An account is optional and exists only to sync your journal between your own devices and to hold your
+purchases. You can sign in with Apple or Google.</li>
+<li>You are responsible for keeping access to the sign-in method you used. If you lose access to that Apple
+or Google account, we have no other way to identify you as the owner of the data or the purchases.</li>
+<li>You may delete your account at any time from <b>Me → Account &amp; Sync</b>.
+<b>Deleting your account makes your purchases unrecoverable</b> — signing in again creates a brand-new
+account and previously purchased content will not come back to it.</li>
+<li>We may suspend an account that is being used to attack the service, to obtain paid content without
+paying for it, or otherwise in breach of section 8.</li>
+</ul>
+
+<h2>3. Purchases — how they work</h2>
+<p>In the international edition, all purchases are made through the <b>App Store</b> or <b>Google Play</b>.
+Apple or Google is the seller of record for those transactions; we never see your payment details.</p>
+<p>Everything we sell is a <b>one-time purchase, permanent, with no subscription and no auto-renewal</b>.
+We do not sell loot boxes, gacha, or any randomised item.</p>
+
+<h3>3.1 What each item includes</h3>
+<ul>
+<li><b>Stamp Pass</b> — every <i>series</i> box of stamps that is available when you buy, plus every series
+box we release afterwards. It does <b>not</b> include: the Premium Ink Set, brand-collaboration boxes,
+limited-edition boxes, or the basic and hidden stamps that are unlocked by stamping (those you have to run
+into yourself). Boxes excluded from the Pass are marked as such in the shop.</li>
+<li><b>Premium Ink Set</b> — every premium ink available now and every one we add later. It includes
+<b>no</b> stamps. Three inks are free and unlimited without any purchase; the premium inks can be tried a
+small number of times each day before you buy the set.</li>
+<li><b>A single stamp box</b> — the stamps in that box only.</li>
+<li>Inks and stamps never include one another. If you buy a box on its own and later buy the Pass, we do not
+refund the difference.</li>
+<li>A stamp offered free for a limited window and claimed by you stays yours permanently, even after the
+window closes.</li>
+</ul>
+
+<h3>3.2 About content “released later”</h3>
+<div class="note"><p>The Stamp Pass covers series boxes we release in the future, but we make <b>no promise
+about the number, subject, timing or frequency</b> of future releases. Please decide whether the Pass is
+worth it based on <b>what you can already see at the time you buy</b>. “There will be more later” is our
+intention, not a commitment you can hold us to.</p></div>
+
+<h3>3.3 Delivery</h3>
+<p>Paid content is digital content. It is delivered the moment the payment succeeds and the entitlement is
+recorded on your account or device — there is nothing to ship and no waiting period.</p>
+
+<h3>3.4 Prices</h3>
+<p>Prices may change. A change never affects anything you have already bought: we do not charge you more
+later, and we do not refund the difference if a price goes down.</p>
+
+<h3>3.5 Your purchases</h3>
+<p>What you buy is tied to your account, is for your own personal use, and may not be transferred, rented,
+sold, or shared with anyone else. Use <b>Restore purchases</b> in the shop to get your content back on a new
+device or after reinstalling — you need to be signed in with the same account.</p>
+
+<h3>3.6 Refunds</h3>
+<ul>
+<li>Refunds for App Store and Google Play purchases are handled by <b>Apple or Google</b> under their own
+policies. We cannot grant or refuse one on their behalf; please use their official channels.</li>
+<li>Where you have a statutory right of withdrawal (for example as a consumer in the EU or the UK), note that
+paid content is digital content supplied immediately: by completing the purchase you ask for it to be supplied
+straight away and accept that the right of withdrawal is lost once supply has begun.</li>
+<li>If you were charged twice, or paid successfully but the content never arrived and <b>Restore purchases</b>
+does not bring it back, write to <b>service@tybbtech.com</b> with your order details and we will sort it out.</li>
+<li>Nothing here limits consumer rights that the law of your country of residence gives you and does not
+allow us to exclude.</li>
+</ul>
+
+<h3>3.7 Minors</h3>
+<p>If you are under the age of majority where you live, read these Terms together with a parent or guardian and
+make purchases only with their consent. If a purchase was made by a child without a guardian’s consent, contact
+Apple or Google (they process the payment), and write to us as well — we will help where we can.</p>
+
+<h2>4. If we ever shut Stampday down</h2>
+<ul>
+<li>We will announce it in the app and on the website <b>at least 30 days in advance</b>.</li>
+<li>From that announcement we stop selling all paid content.</li>
+<li>Because Stampday is local-first, your journal stays on your device and the stamps, inks and Pass content
+you bought <b>keep working offline on devices where the app is already installed</b>, subject to your device
+and operating system. Features that need our servers — account sync, share links, restore purchases — stop.</li>
+<li>If at that point you bought the Stamp Pass less than 30 days earlier, write to us within 30 days of the
+announcement and we will refund it.</li>
+</ul>
+
+<h2>5. Your journal and what you share</h2>
+<ul>
+<li>Your journal is yours. We claim no ownership of what you record.</li>
+<li>When you share a day as a link, that day’s data is uploaded to our server, becomes readable by anyone who
+has the link, and is deleted 7 days later. You are responsible for what you put in a shared day — don’t share
+anything you would mind a stranger reading.</li>
+<li>We may remove shared content that is unlawful or that infringes someone’s rights.</li>
+</ul>
+
+<h2>6. Our content</h2>
+<p>The stamp artwork, inks, interface, text and the app itself are ours (or our licensors’) and are protected
+by copyright and other laws. Buying paid content gives you a personal right to use it inside Stampday — it does
+not transfer any ownership, and does not let you extract, redistribute or resell the artwork. Third-party
+open-source components are listed in the app under Licenses.</p>
+
+<h2>7. What you agree not to do</h2>
+<ul>
+<li>Attack, overload or probe the service, or interfere with other people’s use of it.</li>
+<li>Reverse-engineer or modify the app, or use any bug, exploit or forged request to <b>obtain paid content
+without paying for it</b>, or to grant it to others. If content was obtained this way we may remove it.</li>
+<li>Use the share feature to distribute unlawful, abusive or infringing content.</li>
+<li>Automate account creation, or resell accounts or entitlements.</li>
+</ul>
+
+<h2>8. No warranty, and limits on liability</h2>
+<ul>
+<li>Stampday is provided as it is. We do our best to keep it working, but we do not guarantee that it will be
+uninterrupted or error-free.</li>
+<li><b>Your journal lives on your device.</b> If you delete the app, lose the device, or erase its data without
+sync turned on, the journal is gone and we cannot restore it. Please keep your own backups of anything you would
+be sad to lose.</li>
+<li>To the extent the law allows, our total liability to you for any claim relating to Stampday is limited to
+the amount you paid us for it in the 12 months before the claim.</li>
+<li>Nothing here excludes liability that cannot lawfully be excluded — including for death or personal injury
+caused by negligence, or for fraud.</li>
+</ul>
+
+<h2>9. Changes to these Terms</h2>
+<p>We may update these Terms. The current version always lives at this address with its effective date at the
+top. If a change materially reduces your rights, we will announce it in the app at least 7 days before it takes
+effect. Continuing to use Stampday after that means you accept the new version; if you do not, you may stop
+using it and delete your account.</p>
+
+<h2>10. Governing law</h2>
+<p>These Terms are governed by the laws of the People’s Republic of China (for this purpose excluding Hong Kong,
+Macau and Taiwan), and disputes will be heard by the courts with jurisdiction at our registered address. This
+does not deprive you of the protection of mandatory rules of the law of the country where you live.</p>
+
+<h2>11. Contact</h2>
+<p><b>service@tybbtech.com</b></p>
+<p class="muted">Operator: Beijing Tianyi Baobao Digital Technology Co., Ltd.</p>
+</section>
+
+<!-- ============================ JA ============================ -->
+<section class="lang" id="ja">
+<h1>スタンプデイ — 利用規約</h1>
+<div class="date">発効日：2026年9月10日</div>
+
+<p>本規約は、スタンプデイ（Stampday／中国名「戳了么」）およびそのウェブサイトについて、お客様と
+<b>北京天怡宝宝数字科技有限公司</b>（以下「当社」）との間の契約です。本アプリをインストールまたは
+ご利用いただくことで、本規約に同意したものとみなします。データの取り扱いについては
+<a href="../privacy/#ja">プライバシーポリシー</a>に定め、これは本規約の一部を構成します。</p>
+
+<h2>1. スタンプデイについて</h2>
+<p>スタンプデイは、日々の小さなことを「はんこ」で紙に押して残す手帳アプリです。ローカルファースト設計で、
+記録は端末の中にあり、中核の機能（はんこを押す・その日のひとことを書く・見返す）はアカウントもネットワークも
+なしで動きます。</p>
+<p><b>記録する機能に課金の壁は設けません。</b>押せるはんこの数、残せる日数、自分の記録を読み返せるかどうかに
+制限をかけることはありません。有料コンテンツははんこと印泥を増やすものであり、記録する力を取り上げるもの
+ではありません。</p>
+
+<h2>2. アカウント</h2>
+<ul>
+<li>アカウントは任意です。ご自身の端末間で記録を同期すること、および購入内容を保持することのみを目的とします。
+Apple または Google でログインできます。</li>
+<li>ログインに使った手段へのアクセスはお客様ご自身で管理してください。その Apple / Google アカウントを
+失うと、当社にはお客様がデータや購入の持ち主であることを確認する手段が他にありません。</li>
+<li><b>わたし → アカウントと同期</b>からいつでもアカウントを削除できます。
+<b>アカウントを削除すると購入済みのコンテンツは復元できなくなります</b>——再度ログインしても新しい
+アカウントが作られ、以前購入したコンテンツはそこには戻りません。</li>
+<li>サービスへの攻撃、対価を支払わずに有料コンテンツを取得する行為、その他第7条に反する用途に使われている
+アカウントは、利用を停止することがあります。</li>
+</ul>
+
+<h2>3. 有料コンテンツ</h2>
+<p>国際版でのお支払いはすべて <b>App Store</b> または <b>Google Play</b> を通じて行われます。これらの取引の
+販売者は Apple または Google であり、お客様の支払い情報が当社に渡ることはありません。</p>
+<p>当社が販売するものはすべて<b>一度きりの買い切り・無期限</b>で、<b>サブスクリプションも自動更新も
+ありません</b>。ガチャ・ランダム抽選の類は一切扱いません。</p>
+
+<h3>3.1 各商品に含まれるもの</h3>
+<ul>
+<li><b>はんこパス（印章通行証）</b> — ご購入時点で公開されている<i>シリーズ</i>のはんこボックス全部と、
+その後に追加されるシリーズボックス全部。<b>含まれないもの</b>：プレミアム印泥セット、ブランドコラボ、
+数量限定ボックス、および押して解放する基本のはんこ・隠しはんこ（これらはご自分で出会ってください）。
+パスの対象外のボックスには、ショップ上でその旨を表示します。</li>
+<li><b>プレミアム印泥セット</b> — 現在および今後追加されるプレミアム印泥のすべて。はんこは<b>含みません</b>。
+無料の印泥が3色あり、購入しなくても無制限に使えます。プレミアム印泥は購入前でも毎日数回お試しいただけます。</li>
+<li><b>単体のはんこボックス</b> — そのボックスに入っているはんこのみ。</li>
+<li>印泥とはんこが互いを含むことはありません。単体でボックスを購入した後にパスを購入した場合、差額の返金は
+行いません。</li>
+<li>期間限定で無料配布されたはんこを受け取った場合、その期間が終わった後も永続的にお客様のものです。</li>
+</ul>
+
+<h3>3.2 「今後追加されるもの」について</h3>
+<div class="note"><p>はんこパスは今後追加されるシリーズボックスを含みますが、今後の追加について
+<b>数・題材・時期・頻度のいずれも約束するものではありません</b>。パスに払う価値があるかどうかは、
+<b>購入時点で実際に見えている内容</b>でご判断ください。「これから増える」は当社の意向であって、
+履行を求められる約束ではありません。</p></div>
+
+<h3>3.3 引き渡し</h3>
+<p>有料コンテンツはデジタルコンテンツです。決済が成立し、権利がアカウントまたは端末に記録された時点で
+引き渡しが完了します。発送も待ち時間もありません。</p>
+
+<h3>3.4 価格</h3>
+<p>価格は変更されることがあります。変更は購入済みのものに影響しません。後から追加請求することも、
+値下げ時に差額を返金することもありません。</p>
+
+<h3>3.5 購入したものの取り扱い</h3>
+<p>購入内容はアカウントに紐づき、お客様ご本人の私的利用に限られます。譲渡・貸与・転売・共有はできません。
+機種変更や再インストール後は、同じアカウントでログインしたうえでショップの<b>購入を復元</b>をお使いください。</p>
+
+<h3>3.6 返金</h3>
+<ul>
+<li>App Store および Google Play での購入の返金は、<b>Apple または Google</b> が各社の方針に基づいて
+取り扱います。当社が代わりに可否を決めることはできません。各社の公式窓口をご利用ください。</li>
+<li>有料コンテンツは購入と同時に提供されるデジタルコンテンツです。法定のクーリング・オフや撤回権が
+適用される地域では、購入手続の完了をもって直ちの提供を求めたものとみなされ、提供開始後は撤回権が
+失われる点にご留意ください。</li>
+<li>二重に課金された場合、または決済は成立したのにコンテンツが届かず<b>購入を復元</b>でも戻らない場合は、
+<b>service@tybbtech.com</b> まで注文情報を添えてご連絡ください。当社で対応します。</li>
+<li>本条は、お客様の居住国の法令が与える、当社が排除できない消費者としての権利を制限するものではありません。</li>
+</ul>
+
+<h3>3.7 未成年の方</h3>
+<p>未成年の方は、保護者と一緒に本規約をお読みのうえ、保護者の同意を得てからご購入ください。保護者の同意なく
+お子様が購入してしまった場合は、決済を扱う Apple または Google にご連絡いただくとともに、当社にもご一報
+ください。できる範囲で協力します。</p>
+
+<h2>4. サービスを終了する場合</h2>
+<ul>
+<li>終了する場合は、<b>少なくとも30日前</b>にアプリ内および公式サイトで告知します。</li>
+<li>告知の時点で、すべての有料コンテンツの販売を停止します。</li>
+<li>ローカルファースト設計のため、記録は端末に残り、購入済みのはんこ・印泥・パスの内容は、
+<b>すでにアプリがインストールされている端末ではオフラインで引き続きご利用いただけます</b>
+（お客様の端末・OS環境に依存します）。アカウント同期、シェアリンク、購入の復元など、当社のサーバーを
+必要とする機能は停止します。</li>
+<li>終了の告知時点で、はんこパスのご購入から30日未満だった場合は、告知から30日以内にご連絡ください。
+返金します。</li>
+</ul>
+
+<h2>5. お客様の記録とシェア</h2>
+<ul>
+<li>記録はお客様のものです。当社が所有権を主張することはありません。</li>
+<li>一日をリンクでシェアすると、その日のデータはサーバーに送られ、リンクを知る人が閲覧できる状態になり、
+7日後に削除されます。シェアした内容についてはお客様が責任を負います。見知らぬ人に読まれて困るものは
+シェアしないでください。</li>
+<li>違法な内容、または他者の権利を侵害する内容は、シェアから削除することがあります。</li>
+</ul>
+
+<h2>6. 当社のコンテンツ</h2>
+<p>はんこの図案、印泥、インターフェース、文章、アプリ本体は当社（またはライセンサー）に帰属し、著作権法
+その他の法令で保護されています。有料コンテンツの購入は、スタンプデイの中でそれを利用する個人的な権利を
+得るものであり、権利の譲渡ではありません。図案の抽出・再配布・転売はできません。第三者のオープンソース
+コンポーネントはアプリ内のライセンス表示に記載しています。</p>
+
+<h2>7. 禁止事項</h2>
+<ul>
+<li>サービスへの攻撃、過負荷、探索行為、他の利用者の利用の妨害。</li>
+<li>アプリのリバースエンジニアリングや改変、また不具合・脆弱性・偽装リクエストを利用して
+<b>対価を支払わずに有料コンテンツを取得する行為</b>、あるいはそれを他人に付与する行為。
+この方法で取得されたコンテンツは削除することがあります。</li>
+<li>シェア機能を使って違法・悪質・権利侵害の内容を配布すること。</li>
+<li>アカウント作成の自動化、アカウントや権利の転売。</li>
+</ul>
+
+<h2>8. 免責と責任の制限</h2>
+<ul>
+<li>スタンプデイは現状のまま提供されます。稼働の維持には努めますが、中断や不具合がないことを保証する
+ものではありません。</li>
+<li><b>記録は端末の中にあります。</b>同期をオフにしたままアプリを削除した、端末を紛失した、データを消した
+——といった場合、記録は失われ、当社に復元する手段はありません。失って困るものはご自身でバックアップを
+お取りください。</li>
+<li>法令が認める範囲において、スタンプデイに関する当社の賠償責任の総額は、請求前12か月間にお客様が当社に
+支払った金額を上限とします。</li>
+<li>法令上排除できない責任（故意・重過失による場合を含む）を排除するものではありません。</li>
+</ul>
+
+<h2>9. 本規約の変更</h2>
+<p>本規約は変更されることがあります。最新版は常にこのアドレスにあり、冒頭に発効日を記載します。
+お客様の権利を実質的に狭める変更を行う場合は、発効の少なくとも7日前にアプリ内で告知します。
+その後もご利用を続けた場合は新しい版に同意したものとみなします。同意されない場合は、ご利用を中止し、
+アカウントを削除してください。</p>
+
+<h2>10. 準拠法</h2>
+<p>本規約は中華人民共和国法（本条においては香港・マカオ・台湾を除く）に準拠し、紛争は当社の登記住所地を
+管轄する裁判所を管轄裁判所とします。ただし、お客様の居住国の法令のうち強行法規による保護を奪うもの
+ではありません。</p>
+
+<h2>11. お問い合わせ</h2>
+<p><b>service@tybbtech.com</b></p>
+<p class="muted">運営：北京天怡宝宝数字科技有限公司</p>
+</section>
+
+<!-- ============================ ZH ============================ -->
+<section class="lang" id="zh">
+<h1>戳了么 — 服务协议</h1>
+<div class="date">生效日期：2026 年 9 月 10 日</div>
+
+<p>本协议是你与<b>北京天怡宝宝数字科技有限公司</b>（以下称"我们"）之间，关于"戳了么"App
+（国际版名称 Stampday）及其网站的协议。你安装或使用戳了么，即表示同意本协议。
+关于我们如何处理数据，见<a href="../privacy/#zh">隐私政策</a>，它是本协议的一部分。</p>
+
+<h2>一、戳了么是什么</h2>
+<p>戳了么是一本用"生活印章"记录每天小事的手账。它是本地优先的：你的记录保存在你自己的设备上，
+核心功能——盖章、写下这天的一句话、回头翻看——不需要账号、不需要联网。</p>
+<p><b>记录能力永远不设付费门槛。</b>我们不限制你每天能盖多少章、能留多少天、能不能翻看自己的记录。
+付费内容只增加印章和印泥，绝不拿走记录的能力。</p>
+
+<h2>二、你的账号</h2>
+<ul>
+<li>账号是可选的，只用来在你自己的多台设备之间同步记录、以及承载你买过的内容。
+你可以用 Apple、Google 或手机号登录。</li>
+<li>请自行保管你所使用的登录方式。如果你失去了那个 Apple / Google 账号或手机号，
+我们没有别的办法确认你是这些数据和购买内容的主人。</li>
+<li>你可以随时在<b>我的 → 账号与同步</b>里删除账号。
+<b>删除账号会让已购买的内容无法恢复</b>——删号后再次登录拿到的是一个全新账号，
+之前买过的内容不会回到这个新账号上。</li>
+<li>如果一个账号被用于攻击服务、在不付费的情况下获取付费内容，或有第七条所列的其他违规用途，
+我们可能暂停该账号。</li>
+</ul>
+
+<h2>三、付费内容</h2>
+<p>付款通道取决于你使用的版本：通过 App Store 或 Google Play 购买时，由 Apple 或 Google 处理；
+中国版的安卓官网直装包与网页版通过<b>支付宝</b>付款。无论哪条通道，我们都不接触你的银行卡号与支付密码。</p>
+<p>我们出售的全部内容都是<b>一次性买断、永久有效</b>，<b>没有订阅、没有自动续费</b>，
+也不设任何抽取、开箱等随机机制。</p>
+
+<h3>3.1 每样东西包含什么</h3>
+<ul>
+<li><b>印章通行证</b>——包含你购买时已上架的全部<i>系列</i>印章盒，以及此后我们上架的全部系列盒。
+<b>不包含</b>：高级印泥盒、品牌联名款、限量款，以及需要靠盖章解锁的基础章与隐藏章（那些要你自己遇到）。
+不在通行证范围内的盒子，会在集市里标明。</li>
+<li><b>高级印泥盒</b>——包含现有以及此后我们上架的全部高级印泥，<b>不含</b>任何印章。
+另有三款免费印泥，不购买也可以无限使用；高级印泥在购买前每天可以试用少量次数。</li>
+<li><b>单独购买的某个印章盒</b>——只包含该盒内的印章。</li>
+<li>印泥与印章永不互相包含。已经单独购买过某个盒子之后再购买通行证的，<b>不退差价</b>。</li>
+<li>限时免费开放并被你领取的印章，在免费窗口结束后仍然永久属于你。</li>
+</ul>
+
+<h3>3.2 关于"以后上架的内容"</h3>
+<div class="note"><p>印章通行证包含此后上架的系列盒，但我们<b>不对未来内容的数量、题材、上架时间或频率
+作出任何承诺</b>。请以你<b>购买当时已经能看到的内容</b>来判断这次购买是否值得——"以后会有更多"
+是我们的意愿，不是可以要求我们履行的承诺。</p></div>
+
+<h3>3.3 交付</h3>
+<p>付费内容属于数字化商品。付款成功、权益记入你的账号或本设备的那一刻，即视为交付完成，
+没有发货环节，也没有等待期。</p>
+
+<h3>3.4 价格</h3>
+<p>价格可能调整。调整不影响你已经买到的东西：不会事后向你补收，降价时也不退差价。</p>
+
+<h3>3.5 已购内容的归属</h3>
+<p>你买到的内容记在你的账号上，仅供你本人使用，<b>不得转让、出租、出售或与他人共享</b>。
+换设备或重装后，请用同一个账号登录，在集市里点<b>恢复购买</b>取回。</p>
+
+<h3>3.6 退款</h3>
+<ul>
+<li>通过 <b>App Store 或 Google Play</b> 购买的，退款由 Apple 或 Google 依其各自政策受理与处理，
+我们无权代为决定，请通过它们的官方渠道申请。</li>
+<li>通过<b>支付宝</b>直接向我们购买的：付费内容属于数字化商品，付款成功即完成交付。
+根据《中华人民共和国消费者权益保护法》第二十五条，在线下载或者消费者拆封的数字化商品
+不适用七日无理由退货，因此已完成交付的付费内容<b>不提供无理由退款</b>。</li>
+<li>下列情形不受上述限制，请联系 <b>service@tybbtech.com</b>（请附订单号，我们在 7 个工作日内答复）：
+<b>①</b> 重复扣款；<b>②</b> 付款成功但权益未到账，且用"恢复购买"也取不回来；
+<b>③</b> 因我们的原因导致你已购买的内容长期无法使用；<b>④</b> 法律法规规定我们应当退款的其他情形。</li>
+<li>本条不排除、不限制法律法规赋予你的、我们不得排除的消费者权利。</li>
+</ul>
+
+<h3>3.7 未成年人</h3>
+<p>不满十八周岁的用户，请在监护人陪同下阅读本协议，并在取得监护人同意后再进行付费。
+如果发生未成年人未经监护人同意的付费，请联系我们（通过 Apple / Google 购买的还需联系相应平台），
+我们会在核实后配合处理。</p>
+
+<h2>四、如果我们停止运营</h2>
+<ul>
+<li>如果我们决定停止戳了么的运营，将<b>至少提前 30 日</b>在 App 内和官网公告。</li>
+<li>自公告之日起，我们停止销售全部付费内容。</li>
+<li>因为戳了么是本地优先的：你的记录留在你自己的设备上，你已购买的印章、印泥与通行证内容，
+在停止运营后<b>仍可在已安装该 App 的设备上离线继续使用</b>（受你的设备与操作系统环境限制）。
+依赖服务器的功能——账号同步、分享链接、恢复购买——将停止。</li>
+<li>如果停止运营公告发出时，你购买印章通行证不满 30 日，可在公告后 30 日内联系我们，我们予以退款。</li>
+</ul>
+
+<h2>五、你的记录与你分享的内容</h2>
+<ul>
+<li>你的记录归你所有，我们不主张任何所有权。</li>
+<li>当你把某一天用链接分享出去时，那一天的数据会上传到我们的服务器，拿到链接的人都能看到，
+并在 7 天后删除。分享内容由你自己负责——不想被陌生人读到的东西，请不要放进分享出去的那一天。</li>
+<li>对于违法或侵害他人权利的分享内容，我们可能予以删除。</li>
+</ul>
+
+<h2>六、我们的内容</h2>
+<p>印章图形、印泥、界面、文案以及 App 本身，其著作权及其他权利归我们（或我们的许可方）所有，
+受法律保护。购买付费内容，取得的是在戳了么内使用它们的个人权利，<b>不发生任何权利转让</b>，
+也不允许你提取、再分发或转售这些素材。App 内"许可"一栏列出了所使用的第三方开源组件。</p>
+
+<h2>七、你同意不做的事</h2>
+<ul>
+<li>攻击服务、使其过载、进行探测，或干扰他人正常使用。</li>
+<li>对 App 进行逆向工程或修改，或利用漏洞、缺陷、伪造请求等方式
+<b>在不付费的情况下获取付费内容</b>，或为他人开通付费内容。以此方式取得的内容，我们可以收回。</li>
+<li>利用分享功能传播违法、恶意或侵权的内容。</li>
+<li>用程序批量注册账号，或转售账号与已购权益。</li>
+</ul>
+
+<h2>八、免责与责任限制</h2>
+<ul>
+<li>戳了么按其现状提供。我们会尽力维持服务可用，但不保证运行绝不中断、绝无差错。</li>
+<li><b>你的记录在你自己的设备上。</b>如果你在未开启同步的情况下卸载了 App、丢失了设备或清除了数据，
+记录就没有了，我们无法为你恢复。重要的内容请自行留存备份。</li>
+<li>在法律允许的范围内，我们就戳了么对你承担的赔偿责任总额，以你在主张发生前 12 个月内
+就本服务向我们实际支付的金额为限。</li>
+<li>本条不排除依法不能排除的责任。</li>
+</ul>
+
+<h2>九、协议的变更</h2>
+<p>我们可能更新本协议。最新版本始终在本页，页首标明生效日期。如果某次修改实质性减少了你的权利，
+我们会至少提前 7 日在 App 内公告。公告后你继续使用戳了么，视为接受新版本；如不接受，
+你可以停止使用并删除账号。</p>
+
+<h2>十、适用法律与争议解决</h2>
+<p>本协议适用中华人民共和国法律（就本条而言不包括香港、澳门、台湾地区）。因本协议产生的争议，
+双方应先友好协商解决；协商不成的，任何一方可向我们住所地有管辖权的人民法院提起诉讼。</p>
+
+<h2>十一、联系我们</h2>
+<p><b>service@tybbtech.com</b></p>
+<p class="muted">运营主体：北京天怡宝宝数字科技有限公司<br>
+App 备案号：京ICP备2022025009号-3A</p>
+</section>
+
+</main>
+</body>
+</html>

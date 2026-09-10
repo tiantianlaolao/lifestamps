@@ -10,6 +10,13 @@
      nginx 有访问日志且 14 天轮转（两台都是 logrotate daily+rotate 14，改保留期要回来改这页）/ 无广告无追踪。
      🔴 9-04 补：删号后仍留 shares（7 天自动删）和 unlocks（挂匿名安装号不挂账号），这两条已写进页面，
         server.js 的 sweep 逻辑变了要回来对齐。
+     🔴 9-10 补（上一版第 4 节说"购买由 Apple/Google 处理、我们不接触支付信息"，与代码不符，已改）：
+        · 国内线还有**支付宝直连**一条（pay.js），orders 表存订单号/商品/金额/状态/trade_no/notify 原文（raw
+          里含支付宝给的脱敏 buyer_logon_id）——第 4 节已如实写。改 orders 存什么，回来改这页。
+        · account.js 的删号只删 users/sessions/sync_items/installs，**orders 和 entitlements 不删**，
+          且删号后同一 Apple 号再登录会拿到新 uid → 已购权益成孤儿找不回。第 3 节已写进"留下什么"+⚠️警告。
+          哪天改成删号一并处理权益，回来改这页。
+        · 付费商品的范围/交付/退款/停运兜底写在 ../terms/（服务协议），第 4 节末尾链过去。
      改任何数据行为前，回来把这页对齐。 -->
 <style>
   body{margin:0;background:#F6F2EA;color:#252421;
@@ -23,6 +30,7 @@
   ul{padding-left:20px}
   .langs{margin-bottom:24px;font-size:13.5px}
   .langs a{color:#C94B3C;text-decoration:none;margin-right:14px}
+  main a{color:#C94B3C}
   section.lang{border-top:3px double #E3DCCF;margin-top:56px;padding-top:8px}
   section.lang:first-of-type{border-top:none;margin-top:0}
   .muted{color:#8C8880;font-size:13.5px}
@@ -30,11 +38,12 @@
 </head>
 <body>
 <main>
-<nav class="langs"><a href="#en">English</a><a href="#ja">日本語</a><a href="#zh">中文</a></nav>
+<nav class="langs"><a href="#en">English</a><a href="#ja">日本語</a><a href="#zh">中文</a>
+<a href="../terms/">Terms of Service · 利用規約 · 服务协议 →</a></nav>
 
 <section class="lang" id="en">
 <h1>Stampday — Privacy Policy</h1>
-<div class="date">Effective: September 4, 2026</div>
+<div class="date">Effective: September 10, 2026</div>
 
 <p>Stampday (戳了么) is a life-stamping journal. It is built local-first: your stamps, notes and
 settings live on your device. This policy explains the few cases where data leaves it.</p>
@@ -73,14 +82,33 @@ you wish. If you can no longer open the app, email <b>service@tybbtech.com</b> f
 with and we will delete the account within 7 days.
 <br><b>What is deleted, and what remains:</b> deleting your account removes your account record, your
 sign-in sessions and every piece of journal data you have synced — none of it is archived or held for a
-grace period. Two things are not attached to your account and therefore stay: a day you shared as a link,
-which is deleted automatically 7 days after you shared it, and the anonymous wax-seal records, which are
-keyed to a random install identifier rather than to your account. Standard server access logs (see
-section 6) are deleted after 14 days.</li>
+grace period. The following remain: a day you shared as a link, which is deleted automatically 7 days
+after you shared it; the anonymous wax-seal records, which are keyed to a random install identifier
+rather than to your account; and <b>your purchase records (orders and entitlements)</b>, which we keep as
+business and accounting records — see section 4.  Standard server access logs (see section 6) are
+deleted after 14 days.
+<br>⚠️ <b>Deleting your account makes your purchases unrecoverable.</b> Signing in again afterwards with the
+same Apple / Google account or phone number creates a brand-new account, and content you purchased before
+will <b>not</b> come back to it. If you want to keep what you have bought, do not delete your account.</li>
 </ul>
 
-<h2>4. Purchases</h2>
-<p>In-app purchases are processed by Apple (App Store) or Google (Google Play). We never see your payment details.</p>
+<h2>4. Purchases &amp; payment</h2>
+<p>Which payment channel is used depends on the edition you have:</p>
+<ul>
+<li><b>Purchases through the App Store or Google Play</b> are processed by Apple or Google. We never see
+your payment details.</li>
+<li><b>Purchases through Alipay</b> (the China edition’s direct-download Android build and web version)
+are completed inside Alipay. In that case we store the order itself: the order number we generate, the
+item, the amount, the payment status, the Alipay transaction number, and the raw callback or query
+response from Alipay — kept for reconciliation and to guarantee that one transaction can never grant an
+entitlement twice. That raw response may contain a masked buyer identifier supplied by Alipay.
+<b>We never see or store your card number, Alipay password or payment PIN</b> — those stay with Alipay.</li>
+<li>What you have purchased (orders and entitlements) is linked to your account so you can restore
+purchases on a new device. We keep transaction records as business and accounting records, so they are
+<b>not</b> removed when you delete your account (see section 3).</li>
+</ul>
+<p class="muted">For what each paid item includes, when it is delivered and how refunds work, see the
+<a href="../terms/#en">Terms of Service</a>.</p>
 
 <h2>5. What we don’t do</h2>
 <ul>
@@ -103,7 +131,7 @@ data, and are not used to identify users.</p>
 
 <section class="lang" id="ja">
 <h1>スタンプデイ — プライバシーポリシー</h1>
-<div class="date">発効日：2026年9月4日</div>
+<div class="date">発効日：2026年9月10日</div>
 
 <p>スタンプデイ（Stampday）は、生活を「はんこ」で記録するアプリです。ローカルファースト設計で、
 記録・ひとこと・設定は端末の中にあります。データが端末の外に出るのは、以下の場合だけです。</p>
@@ -138,13 +166,31 @@ data, and are not used to identify users.</p>
 端末内の記録はそのまま残ります（消したい場合は別途「記録をぜんぶ消す」を）。アプリを開けない場合は、
 ログインに使ったメールアドレスから <b>service@tybbtech.com</b> へご連絡ください。7日以内に削除します。
 <br><b>削除されるもの・残るもの：</b>アカウント削除により、アカウント情報・ログインセッション・同期済みの
-記録はすべて消えます（保管期間やアーカイブはありません）。アカウントに紐づかないため残るものが二つあります：
-リンクでシェアした一日（シェアから7日後に自動削除されます）と、匿名の封蝋の記録（アカウントではなく
-ランダムなインストール識別子に紐づいています）。標準的なアクセスログ（第6節）は14日後に削除されます。</li>
+記録はすべて消えます（保管期間やアーカイブはありません）。次のものは残ります：リンクでシェアした一日
+（シェアから7日後に自動削除されます）、匿名の封蝋の記録（アカウントではなくランダムなインストール識別子に
+紐づいています）、および<b>購入記録（注文および購入済み権利）</b>——取引記録は事業上・会計上の証憑として
+保管する必要があるためです（第4節参照）。標準的なアクセスログ（第6節）は14日後に削除されます。
+<br>⚠️ <b>アカウントを削除すると、購入済みのコンテンツは復元できなくなります。</b>削除後に同じ Apple /
+Google アカウントや同じ電話番号でログインしても、作成されるのは新しいアカウントであり、以前購入した
+コンテンツはそこには<b>戻りません</b>。購入済みのものを保持したい場合は、アカウントを削除しないでください。</li>
 </ul>
 
-<h2>4. 購入</h2>
-<p>アプリ内課金は Apple（App Store）または Google（Google Play）が処理します。支払い情報が当社に渡ることはありません。</p>
+<h2>4. 購入と決済</h2>
+<p>どの決済経路を使うかは、ご利用の版によって異なります。</p>
+<ul>
+<li><b>App Store または Google Play での購入</b>は Apple または Google が処理します。支払い情報が当社に
+渡ることはありません。</li>
+<li><b>Alipay（支付宝）での購入</b>（中国版の公式サイト直接配布 Android 版・ウェブ版）は Alipay 内で
+完了します。この場合、当社は注文そのものを保存します：当社が発行する注文番号、商品、金額、決済ステータス、
+Alipay が返す取引番号、および Alipay からのコールバック／照会レスポンスの原文（照合用、および同一取引で
+権利が二重に付与されないようにするため。この原文には Alipay が提供するマスク済みの購入者識別子が
+含まれる場合があります）。<b>カード番号・Alipay のパスワード・決済暗証番号を当社が受け取ることも保存する
+こともありません</b>——これらは常に Alipay 側で処理されます。</li>
+<li>購入内容（注文および購入済み権利）はアカウントに紐づき、機種変更や再インストール後の購入復元に
+使われます。取引記録は事業上・会計上の証憑として保管するため、アカウントを削除しても<b>削除されません</b>
+（第3節参照）。</li>
+</ul>
+<p class="muted">各有料商品に含まれる範囲・引き渡しの時点・返金の扱いは<a href="../terms/#ja">利用規約</a>をご覧ください。</p>
 
 <h2>5. しないこと</h2>
 <ul>
@@ -165,7 +211,7 @@ data, and are not used to identify users.</p>
 
 <section class="lang" id="zh">
 <h1>戳了么 — 隐私政策</h1>
-<div class="date">生效日期：2026 年 9 月 4 日</div>
+<div class="date">生效日期：2026 年 9 月 10 日</div>
 
 <p>戳了么（Stampday）是一款用「生活印章」记录每天小事的手账 App。它是本地优先的：
 你的记录、话语和设置都在你的设备上。数据只在以下几种情况离开设备。</p>
@@ -198,12 +244,25 @@ data, and are not used to identify users.</p>
 账号和服务器上已同步的记录会立即、永久删除。这台设备上的本子不受影响（想清掉请另用「清空所有记录」）。
 如果 App 已经打不开，请用登录时的邮箱或手机号联系 <b>service@tybbtech.com</b>，我们会在 7 天内删除。
 <br><b>删除什么、留下什么：</b>删除账号会清掉账号本身、登录会话，以及你同步上来的全部记录，没有归档、
-没有保留期。有两样东西不挂在账号上，因此会留着：你用链接分享出去的那一天（分享后 7 天自动删除），
-以及匿名的封蜡记录（它挂在一个随机的安装标识上，不是挂在账号上）。标准访问日志（见第 6 节）14 天后删除。</li>
+没有保留期。以下几样会留着：你用链接分享出去的那一天（分享后 7 天自动删除）、匿名的封蜡记录
+（它挂在一个随机的安装标识上，不是挂在账号上），以及<b>你的购买记录（订单与已购权益）</b>——
+交易记录我们需要作为经营与财务凭证保留，详见第 4 节。标准访问日志（见第 6 节）14 天后删除。
+<br>⚠️ <b>删除账号会让已购买的内容无法恢复。</b>删号后即使用同一个 Apple / Google 账号或同一个手机号
+再次登录，拿到的也是一个全新的账号，之前买过的内容<b>不会</b>回到这个新账号上。想保留已购内容，请不要删除账号。</li>
 </ul>
 
-<h2>4. 购买</h2>
-<p>App 内购买由 Apple（App Store）或 Google（Google Play）处理，我们不接触你的任何支付信息。</p>
+<h2>4. 购买与支付</h2>
+<p>付款走哪条通道，取决于你用的是哪个版本：</p>
+<ul>
+<li><b>通过 App Store 或 Google Play 购买时</b>，交易由 Apple 或 Google 处理，我们不接触你的任何支付信息。</li>
+<li><b>通过支付宝购买时</b>（中国版的安卓官网直装包 / 网页版），付款在支付宝内完成。这种情况下我们会保存这笔订单：
+我们生成的订单号、商品、金额、支付状态、支付宝返回的交易号，以及支付宝回调或查询响应的原文
+（用于对账，并确保同一笔交易不会重复发放权益；该原文中可能包含支付宝提供的、已脱敏的买家标识）。
+<b>我们不接触也不保存你的银行卡号、支付宝账号密码或支付密码</b>——这些始终只在支付宝处理。</li>
+<li>你买过什么（订单与已购权益）会与你的账号绑定，用于你换设备或重装后恢复购买。
+交易记录我们需要作为经营与财务凭证保留，<b>删除账号时不会一并删除</b>（见第 3 节）。</li>
+</ul>
+<p class="muted">付费内容的范围、交付与退款规则，见<a href="../terms/#zh">服务协议</a>。</p>
 
 <h2>5. 我们不做的</h2>
 <ul>

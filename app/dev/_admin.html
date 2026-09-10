@@ -26,6 +26,34 @@
  .b.r{background:var(--red)}
  .note{color:var(--faint);font-size:12px;line-height:1.7;margin-top:6px}
  .err{color:var(--red)}
+ .v{display:inline}
+ .cmp{display:none}  /* 手机上的紧凑明细（数字用 / 分隔），桌面藏 */
+ /* 手机（9-10）：总览表 4 列保留，平台明细换到数字下一行；每日表每天折成一块，用 data-l 当行内标签 */
+ @media (max-width:640px){
+  body{padding:14px 12px 40px}
+  h1{font-size:15px;margin-bottom:10px;gap:6px 10px}
+  .bar{gap:8px}
+  #key{flex:1 1 150px;width:auto!important;min-width:0}
+  input,select,button{font-size:16px;padding:8px 10px}  /* 16px 起 iOS 聚焦不缩放 */
+  .msg{flex-basis:100%}
+  .box{padding:10px;border-radius:10px;margin-bottom:10px}
+  th,td{padding:5px 4px;white-space:normal;vertical-align:top}
+  th{font-size:11.5px}
+  th .sm,td .sm{display:block;line-height:1.35;white-space:normal}
+  .full{display:none}.cmp{display:inline}
+  table:not(.daily) th:not(:first-child),table:not(.daily) td:not(:first-child){width:1%}  /* 总览表数字列按内容收窄，指标列不换行 */
+  tr.sec td{white-space:normal;letter-spacing:.03em;line-height:1.4}
+  tr.big td{font-size:16px}
+  .b{height:7px}
+  table.daily tr.hd{display:none}
+  table.daily tr{display:block;border-bottom:1px solid var(--line);padding:6px 0}
+  table.daily tr:last-child{border-bottom:0}
+  table.daily td{display:flex;justify-content:space-between;align-items:baseline;gap:10px;border:0;padding:2px 0;text-align:right}
+  table.daily td.day{font-weight:600;color:var(--sub);font-size:12px;letter-spacing:.06em;justify-content:flex-start}
+  table.daily td[data-l]::before{content:attr(data-l);color:var(--faint);font-size:12px;flex:none;text-align:left}
+  table.daily td .v{display:block;min-width:0}
+  table.daily td .v .sm{display:inline;margin-left:4px}
+ }
 </style>
 <div class="wrap">
 <h1>戳了么 · 后台 <small id="gen"></small></h1>
@@ -75,7 +103,8 @@
       return `<tr class="${cls}"><td>${label}</td><td>${fmt(a)}</td><td>${us ? fmt(b) : '<span class="sm">—</span>'}</td><td>${fmt(us ? sum(a, b) : a)}</td></tr>`;
     };
     const sec = t => `<tr class="sec"><td colspan="4">${t}</td></tr>`;
-    const plat = d => d ? `${n(d.all)} <span class="sm">iOS ${d.ios} · 安卓 ${d.android} · 网页 ${d.web}${d.other ? ' · 其他 ' + d.other : ''}</span>` : '<span class="sm">—</span>';
+    const detail = d => `<span class="sm"><span class="full">iOS ${d.ios} · 安卓 ${d.android} · 网页 ${d.web}${d.other ? ' · 其他 ' + d.other : ''}</span><span class="cmp">${d.ios}/${d.android}/${d.web}${d.other ? '/' + d.other : ''}</span></span>`;
+    const plat = d => d ? `${n(d.all)} ${detail(d)}` : '<span class="sm">—</span>';
     const platRow = (label, path) => {
       const a = g(cn, path), b = us ? g(us, path) : null;
       const s = us && a && b ? { all: a.all + b.all, ios: a.ios + b.ios, android: a.android + b.android, web: a.web + b.web, other: (a.other || 0) + (b.other || 0) } : a;
@@ -95,7 +124,7 @@
       ${row('近 1 天', 'active.uid1d')}
       ${row('近 7 天', 'active.uid7d')}
       ${row('近 30 天', 'active.uid30d')}
-      ${sec('启动过的设备（估算：nginx 日志里拉内容包的 ip+UA 去重，含未登录）')}
+      ${sec('启动过的设备（估算：nginx 日志里拉内容包的 ip+UA 去重，含未登录）<span class="cmp">明细 = iOS/安卓/网页/其他</span>')}
       ${platRow('近 1 天', 'devices.d1')}
       ${platRow('近 7 天', 'devices.d7')}
       ${platRow('近 30 天', 'devices.d30')}
@@ -125,14 +154,15 @@
     const usDev = us ? Object.fromEntries((us.devices.daily || []).map(d => [d.day, d])) : {};
     const maxDev = Math.max(1, ...days.map(d => (cnDev[d] ? cnDev[d].all : 0) + (usDev[d] ? usDev[d].all : 0)));
     const bar = (v, max, cls) => `<span class="b ${cls}" style="width:${Math.round(60 * v / max)}px"></span>`;
-    h += `<div class="box"><div class="ttl">每日 · 新注册 / 启动设备（估）</div><table>
-      <tr><th>日期</th><th>中国版 新注册</th><th>中国版 设备</th><th>海外版 新注册</th><th>海外版 设备</th></tr>
+    h += `<div class="box"><div class="ttl">每日 · 新注册 / 启动设备（估）<span class="cmp"> · 设备明细 = iOS/安卓/网页</span></div><table class="daily">
+      <tr class="hd"><th>日期</th><th>中国版 新注册</th><th>中国版 设备</th>${us ? '<th>海外版 新注册</th><th>海外版 设备</th>' : ''}</tr>
       ${days.slice().reverse().map(day => {
         const a = cn.users.daily.find(x => x.day === day) || {}, ad = cnDev[day] || {};
         const b = usNew[day] || {}, bd = usDev[day] || {};
         const nr = d => d.total ? `${d.total} <span class="sm">${['phone', 'apple', 'google'].filter(k => d[k]).map(k => PROV[k].replace(' 登录', '') + ' ' + d[k]).join(' · ')}</span>` : '<span class="sm">0</span>';
-        const dv = d => d.all != null ? `${bar(d.all, maxDev, '')}${d.all} <span class="sm">iOS ${d.ios} · 安卓 ${d.android} · 网页 ${d.web}</span>` : '<span class="sm">—</span>';
-        return `<tr><td>${day}</td><td>${nr(a)}</td><td>${dv(ad)}</td><td>${us ? nr(b) : '<span class="sm">—</span>'}</td><td>${us ? dv(bd) : '<span class="sm">—</span>'}</td></tr>`;
+        const dv = d => d.all != null ? `${bar(d.all, maxDev, '')}${d.all} ${detail(d)}` : '<span class="sm">—</span>';
+        const cell = (l, v) => `<td data-l="${l}"><span class="v">${v}</span></td>`;
+        return `<tr><td class="day">${day}</td>${cell('中国版 新注册', nr(a))}${cell('中国版 设备', dv(ad))}${us ? cell('海外版 新注册', nr(b)) + cell('海外版 设备', dv(bd)) : ''}</tr>`;
       }).join('')}
     </table></div>`;
     $('out').innerHTML = h;

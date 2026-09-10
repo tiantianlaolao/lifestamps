@@ -3,7 +3,7 @@
 
 密钥不出 D:\\ios密钥备份（Key ID / Issuer ID 从 asc-api-密钥信息.txt 读，.p8 同目录）。
 幂等：已存在的商品不重建，本地化 / 价格 / 可用地区 / 审核截图按需补。
-用法：python asc_iap.py [--dry] [--submit]
+用法：python asc_iap.py [--product pass|box_market] [--dry] [--submit]
   --dry     只列 app 和现有内购，不改任何东西
   --submit  建完顺手提交内购审核（不带 App 版本，单独审）
 """
@@ -14,20 +14,41 @@ from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 
 KEYDIR = r'D:\ios密钥备份'
 BUNDLE = 'com.tybbtech.lifestamps'
-PRODUCT_ID = 'com.tybbtech.lifestamps.pass'
-REF_NAME = '印章通行证'
-BASE_TERRITORY = 'CHN'
-BASE_PRICE = '38'                    # 人民币价位；其它地区让苹果按汇率自动生成
+# 商品表（9-10 起按 --product 选，默认 pass）。短 id 与 native.js 的 IAP_PREFIX + 短 id 一致。
 # ⚠️ ASC 内购描述上限 55 字符（en-US 第一次就撞了）
-LOCALES = {
-    'zh-Hans': {'name': '印章通行证', 'description': '包含现有和以后所有系列章。不含印泥盒、品牌款和限量款。'},
-    'en-US':   {'name': 'Stamp Pass', 'description': 'All series stamps now & future. Not inks/limited eds.'},
-    'ja':      {'name': 'はんこパス', 'description': '今あるシリーズはんこも、これからのも全部。インク台セット、ブランド・限定は含みません。'},
+PRODUCTS = {
+    'pass': dict(
+        ref='印章通行证', price='38',
+        locales={
+            'zh-Hans': {'name': '印章通行证', 'description': '包含现有和以后所有系列章。不含印泥盒、品牌款和限量款。'},
+            'en-US':   {'name': 'Stamp Pass', 'description': 'All series stamps now & future. Not inks/limited eds.'},
+            'ja':      {'name': 'はんこパス', 'description': '今あるシリーズはんこも、これからのも全部。インク台セット、ブランド・限定は含みません。'},
+        },
+        note=('Stamp Pass unlocks all "series" stamp boxes (paid content packs) now and in the future. '
+              'It does NOT unlock basic/hidden stamps (those unlock by stamping) and does NOT include the ink pad set. '
+              'The purchase UI is in the "Album > Market" tab.'),
+        shot='iap_pass_review.png'),
+    'box_market': dict(
+        ref='菜市场（果蔬盒）', price='8',
+        locales={
+            'zh-Hans': {'name': '菜市场', 'description': '14 枚果蔬章：蜜桃、蓝莓、西瓜、番茄、胡萝卜等，买断永久用。'},
+            'en-US':   {'name': 'Farmers Market', 'description': '14 fruit & veggie stamps. Buy once, keep forever.'},
+            'ja':      {'name': '青果市場', 'description': '果物と野菜のはんこ14個。一度買えばずっと使えます。'},
+        },
+        note=('Unlocks the "Farmers Market" box: 14 fruit & vegetable stamps (peach, blueberry, watermelon, tomato, carrot...). '
+              'Purchase UI: Album tab > Market segment > Series > Farmers Market > price button. '
+              'After purchase the 14 stamps appear in the stamp tray on the Today page.'),
+        shot='iap_box_market_review.png'),
 }
-REVIEW_NOTE = ('Stamp Pass unlocks all "series" stamp boxes (paid content packs) now and in the future. '
-               'It does NOT unlock basic/hidden stamps (those unlock by stamping) and does NOT include the ink pad set. '
-               'The purchase UI is in the "Album > Market" tab.')
-SCREENSHOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'iap_pass_review.png')
+_sel = sys.argv[sys.argv.index('--product') + 1] if '--product' in sys.argv else 'pass'
+P = PRODUCTS[_sel]
+PRODUCT_ID = 'com.tybbtech.lifestamps.' + _sel
+REF_NAME = P['ref']
+BASE_TERRITORY = 'CHN'
+BASE_PRICE = P['price']              # 人民币价位；其它地区让苹果按汇率自动生成
+LOCALES = P['locales']
+REVIEW_NOTE = P['note']
+SCREENSHOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), P['shot'])
 DRY = '--dry' in sys.argv
 SUBMIT = '--submit' in sys.argv
 
@@ -81,7 +102,7 @@ for pid, x in have.items():
     a = x['attributes']; print('  iap:', pid, a['inAppPurchaseType'], a['state'], x['id'])
 if DRY: sys.exit(0)
 
-# ---- 3. 建 / 取 通行证 ----
+# ---- 3. 建 / 取 商品 ----
 if PRODUCT_ID in have:
     iap = have[PRODUCT_ID]; IAP_ID = iap['id']; print('已存在，不重建:', IAP_ID, iap['attributes']['state'])
 else:

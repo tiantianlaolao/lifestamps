@@ -3,7 +3,7 @@
 
 密钥不出 D:\\ios密钥备份（Key ID / Issuer ID 从 asc-api-密钥信息.txt 读，.p8 同目录）。
 幂等：已存在的商品不重建，本地化 / 价格 / 可用地区 / 审核截图按需补。
-用法：python asc_iap.py [--product pass|box_market] [--dry] [--inspect] [--submit]
+用法：python asc_iap.py [--product pass|box_market] [--dry] [--inspect] [--reshot] [--submit]
   --dry     只列 app 和现有内购，不改任何东西
   --submit  建完顺手提交内购审核（不带 App 版本，单独审）
 """
@@ -178,8 +178,17 @@ else:
 
 # ---- 7. 审核截图（reserve → upload → commit）----
 st, j = call('GET', f'/v2/inAppPurchases/{IAP_ID}/appStoreReviewScreenshot')
+_shot_ok = False
 if st == 200 and j.get('data'):
-    print('审核截图已有，不动')
+    _ds = (j['data']['attributes'].get('assetDeliveryState') or {}).get('state')
+    if _ds == 'FAILED' or '--reshot' in sys.argv:
+        # 9-10：尺寸不对会被苹果判 IMAGE_INCORRECT_DIMENSIONS → 商品一直 MISSING_METADATA。删掉重传（要 1290x2796 这类标准 iPhone 尺寸）
+        st2, j2 = call('DELETE', f"/v1/inAppPurchaseAppStoreReviewScreenshots/{j['data']['id']}")
+        must(st2, j2, 'delete screenshot'); print('  旧截图', _ds, '已删，重传')
+    else:
+        _shot_ok = True; print('审核截图已有，不动（状态 %s）' % _ds)
+if _shot_ok:
+    pass
 elif os.path.exists(SCREENSHOT):
     data = io.open(SCREENSHOT, 'rb').read()
     st, j = call('POST', '/v1/inAppPurchaseAppStoreReviewScreenshots', {'data': {'type': 'inAppPurchaseAppStoreReviewScreenshots',

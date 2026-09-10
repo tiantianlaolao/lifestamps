@@ -3,7 +3,7 @@
 
 密钥不出 D:\\ios密钥备份（Key ID / Issuer ID 从 asc-api-密钥信息.txt 读，.p8 同目录）。
 幂等：已存在的商品不重建，本地化 / 价格 / 可用地区 / 审核截图按需补。
-用法：python asc_iap.py [--product pass|box_market] [--dry] [--submit]
+用法：python asc_iap.py [--product pass|box_market] [--dry] [--inspect] [--submit]
   --dry     只列 app 和现有内购，不改任何东西
   --submit  建完顺手提交内购审核（不带 App 版本，单独审）
 """
@@ -101,6 +101,24 @@ have = {x['attributes']['productId']: x for x in j['data']}
 for pid, x in have.items():
     a = x['attributes']; print('  iap:', pid, a['inAppPurchaseType'], a['state'], x['id'])
 if DRY: sys.exit(0)
+
+# ---- 2b. --inspect：把商品的各项元数据状态打出来（排 MISSING_METADATA 用）----
+if '--inspect' in sys.argv:
+    for pid, x in have.items():
+        iid = x['id']; print(); print('##', pid, x['attributes']['state'], iid)
+        st, j = call('GET', f'/v2/inAppPurchases/{iid}?include=inAppPurchaseLocalizations,appStoreReviewScreenshot,iapPriceSchedule,inAppPurchaseAvailability')
+        if st >= 300: print('  get失败', st, json.dumps(j, ensure_ascii=False)[:300]); continue
+        print('  attrs:', {k: v for k, v in j['data']['attributes'].items() if k != 'reviewNote'})
+        for inc in j.get('included', []):
+            a = inc.get('attributes', {})
+            if inc['type'] == 'inAppPurchaseLocalizations': print('  loc:', a.get('locale'), a.get('state'), a.get('name'))
+            elif inc['type'] == 'inAppPurchaseAppStoreReviewScreenshots': print('  shot:', a.get('fileName'), a.get('assetDeliveryState'), a.get('uploaded'))
+            elif inc['type'] == 'inAppPurchasePriceSchedules': print('  price schedule:', inc['id'])
+            elif inc['type'] == 'inAppPurchaseAvailabilities': print('  availability:', a)
+        st, j = call('GET', f'/v2/inAppPurchases/{iid}/iapPriceSchedule/manualPrices?include=inAppPurchasePricePoint&limit=5')
+        if st < 300: print('  manual prices:', [(m['attributes'].get('startDate'), [i['attributes'].get('customerPrice') for i in j.get('included', [])]) for m in j['data']])
+        else: print('  manual prices 查询失败', st, json.dumps(j, ensure_ascii=False)[:200])
+    sys.exit(0)
 
 # ---- 3. 建 / 取 商品 ----
 if PRODUCT_ID in have:

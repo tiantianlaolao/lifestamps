@@ -52,8 +52,8 @@ h1{font-family:"LXGW WenKai",serif;font-size:34px;letter-spacing:.14em;font-weig
 
   <h1>戳了么</h1>
   <div class="sub" id="sub">用一枚章，把今天的小事留下来。</div>
-  <a class="cta" id="cta" href="../">先在网页里试试</a>
-  <div class="note" id="note">iPhone 和安卓的 App 正在上架，还没好。</div>
+  <a class="cta" id="cta" href="https://apps.apple.com/app/id6805745519">去 App Store</a>
+  <div class="note" id="note">手机上装 App 更好用。</div>
 
   <div id="wx">
     <div class="arrow">↗</div>
@@ -63,16 +63,16 @@ h1{font-family:"LXGW WenKai",serif;font-size:34px;letter-spacing:.14em;font-weig
 
 <script>
 (function () {
-  // ==== 上架之后只改这一块 ====
-  // 把 ready 改成 true，并填上真实地址；已经发出去的分享卡全部自动生效。
+  // ==== 商店地址（9-10：三端都上架了，网页版不再对外——首页被 nginx 内测门挡住，这页不能再指回 ../）====
   var STORE = {
-    ready: false,                  // iOS 上架后改 true 并填 ios
-    ios: '',                       // 例：https://apps.apple.com/cn/app/id6805745519
-    // 安卓中国版 = 官网直装（9-02）：固定地址，正式线每次发布覆盖；
-    // 有没有发过不靠这里的开关，靠下面探测 dl/android.json（没发过就 404 → 按钮不出现）。
+    ready: true,
+    ios: 'https://apps.apple.com/app/id6805745519',          // 不带国家码：中国区显示「戳了么」，其它区显示 Stampday
+    play: 'https://play.google.com/store/apps/details?id=com.tybbtech.stampday',   // 海外安卓（Play 包 id 是 stampday）
+    // 安卓中国版 = 官网直装（9-02）：固定地址，正式线每次发布覆盖。
     android: '../dl/chuoleme.apk',
   };
-  var WEB = '../';                 // 网页版：上架前所有平台都先来这儿
+  // 这页在哪台机器上：美服域名 → 安卓指 Play；国内 → 直装包
+  var OVERSEAS = /^stampday\./.test(location.hostname);
 
   // 迷你三语：这一页零依赖（不引模块），跟 index.html 模块加载前那段同一做法。
   // 中文值必须与页面静态文案逐字相同 —— zh 用户看到的一个字都不变。
@@ -127,16 +127,13 @@ h1{font-family:"LXGW WenKai",serif;font-size:34px;letter-spacing:.14em;font-weig
   var sub = document.getElementById('sub');
   sub.textContent = T('sub');
 
-  function decide(androidReady) {
-    var iosReady = STORE.ready && !!STORE.ios;
-    var toStore = false;
-    if (isIOS && iosReady) { cta.href = STORE.ios; cta.textContent = T('toStore'); note.textContent = ''; toStore = true; }
-    else if (isAndroid && androidReady) { cta.href = STORE.android; cta.textContent = T('toApk'); note.textContent = ''; toStore = true; }
-    else if (iosReady || androidReady) { cta.href = WEB; cta.textContent = T('openWeb'); note.textContent = T('betterApp'); }
-    else {
-      // ⚠️ 还没上架就别写「下载 App」——那是文案说了代码没做的事。
-      cta.href = WEB; cta.textContent = T('tryWeb'); note.textContent = T('noteSoon');
-    }
+  function decide() {
+    // 9-10 起没有"网页里打开"这条路了：iOS → App Store；安卓 → 海外 Play / 国内直装包；电脑 → App Store 链接 + 提示手机上开
+    var toStore = true;
+    if (isIOS) { cta.href = STORE.ios; cta.textContent = T('toStore'); note.textContent = ''; }
+    else if (isAndroid && OVERSEAS) { cta.href = STORE.play; cta.textContent = T('toApk'); note.textContent = ''; }
+    else if (isAndroid) { cta.href = STORE.android; cta.textContent = T('toApk'); note.textContent = ''; }
+    else { cta.href = STORE.ios; cta.textContent = T('toStore'); note.textContent = T('betterApp'); }
     if (!isMobile) note.textContent = T('betterPhone');
     // 微信内打不开应用商店也下不了安装包，只能引导去浏览器。
     // ⚠️ 指网页版时微信里点得开，所以这层只在**真要跳商店/下载**时才亮。
@@ -146,14 +143,7 @@ h1{font-family:"LXGW WenKai",serif;font-size:34px;letter-spacing:.14em;font-weig
       wx.addEventListener('click', function () { wx.style.display = 'none'; });
     }
   }
-  decide(false);
-  // 安卓正式包发过没有：探一下 dl/android.json（正式线每次发布都写）。没发过 404 → 保持网页版按钮。
-  if (isAndroid && window.fetch) {
-    fetch('../dl/android.json?t=' + Date.now(), { cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) { if (j && j.versionCode) decide(true); })
-      .catch(function () {});
-  }
+  decide();
 })();
 </script>
 </body>

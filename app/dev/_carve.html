@@ -1,0 +1,52 @@
+<!doctype html><meta charset="utf-8"><style>
+body{margin:0;background:#E9E4D8;font:12px/1.5 system-ui;padding:10px;width:1180px}
+h3{margin:10px 0 6px;color:#5A544A}
+.r{display:grid;grid-template-columns:130px 112px 50px 190px 112px 50px 190px;gap:6px;align-items:center;background:#F6F2EA;margin:0 0 6px;padding:6px;border-radius:8px}
+.p{background:#FBF7EE;display:flex;align-items:center;justify-content:center;height:112px;border-radius:6px;position:relative}
+.p img,.p canvas{max-width:124px;max-height:108px}
+.v{font-weight:700}.green{color:#2E7D32}.yellow{color:#B7860B}.red{color:#C62828}.m{color:#6B655C;font-size:11px}.hd{font-weight:700;color:#6B655C}
+</style><div id="out"></div>
+<script type="module">
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+import { imageToStamp } from '../js/trace.js';
+import { prepare, magicWand, refineMask, maskToStamp, thickenBin, judge, sourceHint } from '../js/carve.js';
+document.body.insertAdjacentHTML('afterbegin', `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+const $o = document.getElementById('out'), add = h => $o.insertAdjacentHTML('beforeend', h);
+const load = s => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = s; });
+const def = d => ({ id: 'x', name: 'x', cat: 'meet', ink: 'song', d });
+const J = j => `<div class="v ${j.level}">${{ green: '绿', yellow: '黄', red: '红' }[j.level]} ${j.why}</div><div class="m">${j.tip}</div><div class="m">${j.m ? `原稿 ${j.m.rawParts} 块 · 成品 ${j.m.parts} 块 · 线宽 ${j.m.line} · 墨 ${j.m.cover} · ${j.m.kb}KB` : ''}</div>`;
+const cell = (d, s) => `<div class="p">${stampSVG(def(d), { size: s })}</div>`;
+function crop(img, x0, y0, x1, y1) { const w = img.naturalWidth, h = img.naturalHeight; const c = document.createElement('canvas'); c.width = Math.round((x1-x0)*w); c.height = Math.round((y1-y0)*h); c.getContext('2d').drawImage(img, x0*w, y0*h, c.width, c.height, 0, 0, c.width, c.height); return c; }
+function preview(c, sel, fx, fy) {   // 缩略图 + 选区染色 + 点击点
+  const t = document.createElement('canvas'); const s = Math.min(124 / c.width, 108 / c.height); t.width = Math.round(c.width * s); t.height = Math.round(c.height * s);
+  const ctx = t.getContext('2d'); ctx.drawImage(c, 0, 0, t.width, t.height);
+  if (sel) { const m = document.createElement('canvas'); m.width = sel.w; m.height = sel.h; const mc = m.getContext('2d'), id = mc.createImageData(sel.w, sel.h);
+    for (let i = 0; i < sel.w * sel.h; i++) if (sel.mask[i]) { id.data[i*4] = 255; id.data[i*4+1] = 60; id.data[i*4+2] = 60; id.data[i*4+3] = 110; } mc.putImageData(id, 0, 0); ctx.drawImage(m, 0, 0, t.width, t.height); }
+  if (fx != null) { ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(fx * t.width, fy * t.height, 5, 0, 7); ctx.fill(); ctx.stroke(); }
+  return t.toDataURL();
+}
+// A：整图直接刻（线稿 + 中档加粗），新判定
+add(`<h3>A · 整图直接刻：线稿 + 自动加粗（中），按成品判定</h3><div class="r hd"><div>原图</div><div>成品</div><div>30</div><div>判定</div><div></div><div></div><div>选图提示</div></div>`);
+for (let k = 1; k <= 14; k++) {
+  const f = `_samples/real/p${String(k).padStart(2, '0')}.jpg`, img = await load(f);
+  const raw = imageToStamp(img, {}), r = thickenBin(raw, 2);
+  add(`<div class="r"><div class="p"><img src="${f}"></div>${cell(r.d, 104)}${cell(r.d, 30)}<div>${J(judge(r, raw))}</div><div></div><div></div><div class="m">p${String(k).padStart(2,'0')} ${sourceHint(img) || '—'}</div></div>`);
+}
+// B：裁切 + 点一下主体
+const cases = [[7,'海报里的布',[.12,.24,.88,.72],[.5,.55]],[10,'纽扣电池',[.18,.24,.82,.74],[.5,.42]],[14,'头像：点脸',[.1,.06,.9,.86],[.5,.62]],[14,'头像：点头发',[.1,.06,.9,.86],[.5,.1]],
+  [3,'荷花',[.26,.24,.62,.56],[.5,.6]],[12,'卷尺',[.3,0,.75,1],[.55,.5]],[5,'截图里的房子',[.08,.22,.92,.46],[.5,.62]],[6,'笔记本',[0,0,1,1],[.5,.45]],[4,'池塘（荷叶）',[0,0,1,1],[.3,.35]]];
+add(`<h3>B · 模拟用户：先裁切，再「点一下主体」</h3><div class="r hd"><div>裁切 + 点击 + 选区</div><div>线稿+加粗</div><div>30</div><div>判定</div><div>点选剪影</div><div>30</div><div>判定</div></div>`);
+for (const [k, name, [x0, y0, x1, y1], [fx, fy]] of cases) {
+  const img = await load(`_samples/real/p${String(k).padStart(2, '0')}.jpg`); const c = crop(img, x0, y0, x1, y1);
+  const lraw = imageToStamp(c, {}), line = thickenBin(lraw, 2);
+  const P = prepare(c); const sel = refineMask(magicWand(P, fx, fy)); const sil = maskToStamp(sel);
+  const tol = magicWand(P, fx, fy).tol;
+  add(`<div class="r"><div class="p" title="${name}"><img src="${preview(c, sel, fx, fy)}"></div>${cell(line.d, 104)}${cell(line.d, 30)}<div><div class="m"><b>p${String(k).padStart(2,'0')} ${name}</b></div>${J(judge(line, lraw))}</div>${cell(sil.d, 104)}${cell(sil.d, 30)}<div>${J(judge(sil))}<div class="m">自动容差 ${tol}</div></div></div>`);
+}
+add(`<h3>C · 对照组：手绘线稿（应当保持绿）</h3>`);
+for (const f of ['dog_run.jpg','dog_stand.jpg','pig.jpg','leaf_clean.jpg','leaf_photo.jpg','feather.jpg','leaf_red.png','wukong.jpg']) {
+  const img = await load('_samples/' + f); const raw = imageToStamp(img, {}), r = thickenBin(raw, 2);
+  add(`<div class="r"><div class="p"><img src="_samples/${f}"></div>${cell(r.d, 104)}${cell(r.d, 30)}<div>${J(judge(r, raw))}<div class="m">${f}</div></div><div></div><div></div><div></div></div>`);
+}
+document.title = 'done';
+</script>

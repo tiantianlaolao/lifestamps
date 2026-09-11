@@ -1,0 +1,91 @@
+<!doctype html><meta charset="utf-8"><title>刻章铺 · 程序描线试验</title>
+<!-- 9-11 用户问「能不能程序来描」。非 AI 的素描线条：XDoG（高斯差 + 软阈值，Winnemöller 2012），
+     先做保边平滑压纹理，只在主体里描（自动找主体），出来的二值线条再走 trace + 加粗。dev 页，不进包。 -->
+<style>
+body{margin:0;background:#E9E4D8;font:12px/1.5 system-ui;padding:10px;width:1180px}
+.r{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:8px}
+.c{background:#F6F2EA;border-radius:8px;padding:6px;text-align:center}
+.p{background:#FBF7EE;height:160px;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:6px}
+.p img,.p canvas{max-width:160px;max-height:156px}.m{color:#6B655C;font-size:11.5px;margin-top:4px}
+</style><div id="out"></div>
+<script type="module">
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+import { imageToStamp } from '../js/trace.js';
+import { prepare, autoSubject, thickenBin, judge } from '../js/carve.js';
+document.body.insertAdjacentHTML('afterbegin', `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+const load = s => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = s; });
+const crop = (img, x0, y0, x1, y1) => { const w = img.naturalWidth, h = img.naturalHeight, c = document.createElement('canvas'); c.width = Math.round((x1-x0)*w); c.height = Math.round((y1-y0)*h); c.getContext('2d').drawImage(img, x0*w, y0*h, c.width, c.height, 0, 0, c.width, c.height); return c; };
+const S = (d, size) => stampSVG({ id: 'x', name: 'x', cat: 'meet', ink: 'zhu', d }, { size, ink: 'zhu' });
+
+// 可分离高斯
+function blur(src, w, h, sigma) {
+  const r = Math.max(1, Math.ceil(sigma * 3)), k = []; let s = 0;
+  for (let i = -r; i <= r; i++) { const v = Math.exp(-(i * i) / (2 * sigma * sigma)); k.push(v); s += v; }
+  for (let i = 0; i < k.length; i++) k[i] /= s;
+  const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let a = 0; for (let i = -r; i <= r; i++) { const xx = Math.min(w - 1, Math.max(0, x + i)); a += src[y * w + xx] * k[i + r]; } tmp[y * w + x] = a; }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let a = 0; for (let i = -r; i <= r; i++) { const yy = Math.min(h - 1, Math.max(0, y + i)); a += tmp[yy * w + x] * k[i + r]; } out[y * w + x] = a; }
+  return out;
+}
+// 保边平滑（简化的双边滤波，5×5，跑 2 遍）：压掉花瓣纹理、布纹，边界保留
+function bilateral(g, w, h, sr = 0.1, passes = 2) {
+  let cur = g;
+  for (let p = 0; p < passes; p++) {
+    const o = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const c = cur[y * w + x]; let a = 0, ws = 0;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const xx = Math.min(w - 1, Math.max(0, x + dx)), yy = Math.min(h - 1, Math.max(0, y + dy)), v = cur[yy * w + xx];
+        const wt = Math.exp(-(dx * dx + dy * dy) / 8 - ((v - c) * (v - c)) / (2 * sr * sr)); a += v * wt; ws += wt;
+      }
+      o[y * w + x] = a / ws;
+    }
+    cur = o;
+  }
+  return cur;
+}
+// XDoG：D = Gσ − τ·Gkσ；D ≥ ε 为白，否则 1 + tanh(φ(D−ε))；再 0.5 二值化 → 黑线
+function xdog(g, w, h, sigma, tau = 0.985, eps = -0.005, phi = 60) {
+  const a = blur(g, w, h, sigma), b = blur(g, w, h, sigma * 1.6), out = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) { const D = a[i] - tau * b[i]; const e = D >= eps ? 1 : 1 + Math.tanh(phi * (D - eps)); out[i] = e < 0.5 ? 1 : 0; }
+  return out;
+}
+function toCanvas(bin, w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'), id = x.createImageData(w, h); for (let i = 0; i < w * h; i++) { const v = bin[i] ? 0 : 255; id.data[i*4] = id.data[i*4+1] = id.data[i*4+2] = v; id.data[i*4+3] = 255; } x.putImageData(id, 0, 0); return c; }
+function sketch(src, sigma, sel) {
+  const W = 512, s = Math.min(1, W / Math.max(src.width, src.height)), w = Math.round(src.width * s), h = Math.round(src.height * s);
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h).data, g = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) g[i] = (.299 * d[i*4] + .587 * d[i*4+1] + .114 * d[i*4+2]) / 255;
+  const lines = xdog(bilateral(g, w, h), w, h, sigma);
+  if (sel) { // 只留主体里的线（选区是 prepare 的尺寸，同为 ≤512，按比例取样）
+    for (let y = 0; y < h; y++) for (let xx = 0; xx < w; xx++) { const sx = Math.min(sel.w - 1, Math.round(xx * sel.w / w)), sy = Math.min(sel.h - 1, Math.round(y * sel.h / h));
+      // 选区边缘外扩 2px 保住轮廓线
+      let inside = false; for (let dy = -2; dy <= 2 && !inside; dy++) for (let dx = -2; dx <= 2 && !inside; dx++) { const X = Math.min(sel.w - 1, Math.max(0, sx + dx)), Y = Math.min(sel.h - 1, Math.max(0, sy + dy)); if (sel.mask[Y * sel.w + X]) inside = true; }
+      if (!inside) lines[y * w + xx] = 0; }
+  }
+  return toCanvas(lines, w, h);
+}
+async function run(label, file, box) {
+  const img = await load(file), c = box ? crop(img, ...box) : (() => { const cc = document.createElement('canvas'); cc.width = img.naturalWidth; cc.height = img.naturalHeight; cc.getContext('2d').drawImage(img, 0, 0); return cc; })();
+  const sel = autoSubject(prepare(c));
+  const cells = [`<div class="c"><div class="p"><img src="${c.toDataURL('image/jpeg', .8)}"></div><div class="m"><b>${label}</b><br>自动主体：${sel ? '找到' : '没找到'}</div></div>`];
+  // 现在的「去掉背景」做参照
+  for (const [sigma, name] of [[1.2, '细节多'], [2.0, '细节中'], [3.2, '细节少']]) {
+    const sk = sketch(c, sigma, sel);
+    const raw = imageToStamp(sk, { flatten: false, thr: 128, dropFrame: false, minArea: 16, eps: 1.2 }), out = thickenBin(raw, 1);
+    const j = judge(out, raw);
+    cells.push(`<div class="c"><div class="p">${S(out.d, 130)}${S(out.d, 30)}</div><div class="m"><b>程序描线 · ${name}</b><br>${{ green: '🟢', yellow: '🟡', red: '🔴' }[j.level]} ${j.why} · ${(out.chars / 1024).toFixed(0)}KB</div></div>`);
+  }
+  const raw0 = imageToStamp(sketch(c, 2.0, null), { flatten: false, thr: 128, dropFrame: false, minArea: 16, eps: 1.2 }), out0 = thickenBin(raw0, 1);
+  cells.push(`<div class="c"><div class="p">${S(out0.d, 130)}</div><div class="m"><b>细节中 · 不去背景</b></div></div>`);
+  const sk2 = sketch(c, 2.0, sel);
+  cells.push(`<div class="c"><div class="p"><img src="${sk2.toDataURL()}"></div><div class="m">描出来的线（描成章之前）</div></div>`);
+  document.getElementById('out').insertAdjacentHTML('beforeend', `<div class="r">${cells.join('')}</div>`);
+}
+await run('荷花', '_samples/real/p03.jpg', [.26, .24, .62, .56]);
+await run('卡通头像', '_samples/real/p14.jpg', [.1, .06, .9, .86]);
+await run('海报里的布', '_samples/real/p07.jpg', [.12, .24, .88, .72]);
+await run('纽扣电池', '_samples/real/p10.jpg', [.18, .24, .82, .74]);
+await run('笔记本', '_samples/real/p06.jpg', null);
+document.title = 'done';
+</script>

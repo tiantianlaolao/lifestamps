@@ -1,0 +1,71 @@
+/* 刻章铺（feat/kezhangpu 分支，本地打磨中）。单独一个文件，合回主线时只多一行 <link>。 */
+.kz { padding: 10px 0 30px }
+.kz-card { background: var(--card); border: .5px solid var(--line); border-radius: 12px; padding: 14px }
+.kz-t { font-family: var(--f-title); font-size: 16px; color: var(--ink); letter-spacing: .06em }
+.kz-s { font-family: var(--f-hand); font-size: 13px; color: var(--sub); line-height: 1.7 }
+.kz-xs { font-family: var(--f-hand); font-size: 12px; color: var(--sub); line-height: 1.6 }
+.kz-center { text-align: center; margin-top: 6px }
+.kz-demos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 6px }
+.kz-demo { background: var(--paper); border: none; border-radius: 10px; padding: 6px; display: flex; flex-direction: column; align-items: center; gap: 4px; font-family: var(--f-hand); font-size: 12px; color: var(--sub); cursor: pointer }
+.kz-demo img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 7px }
+.kz-entries { display: flex; flex-direction: column; gap: 8px; margin-top: 14px }
+.kz-btn, .kz-btn2 { display: block; text-align: center; font-family: var(--f-title); font-size: 15px; letter-spacing: .12em; padding: 12px; border-radius: 10px; cursor: pointer; border: none }
+.kz-btn { background: var(--accent); color: var(--btn-face) }
+.kz-btn:disabled { opacity: .4 }
+.kz-btn2 { border: 1px solid var(--line); color: var(--ink); background: var(--card) }
+.kz-btn2.dark { background: transparent; color: #eee; border-color: #555 }
+.kz-quota { text-align: center; margin-top: 8px }
+.kz-quota b { color: var(--accent); font-weight: 400 }
+.kz-sec { display: flex; justify-content: space-between; align-items: baseline; margin-top: 18px; font-family: var(--f-title); font-size: 14px; color: var(--ink) }
+.kz-mine { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px }
+.kz-mine-c { background: var(--card); border: .5px solid var(--line); border-radius: 10px; height: 68px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer }
+.kz-mine-c i { font-style: normal; font-family: var(--f-hand); font-size: 10.5px; color: var(--sub); max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis }
+.kz-empty { margin-top: 8px }
+
+/* ---- 流程浮层 ---- */
+.kz-ov { position: absolute; inset: 0; z-index: 70; display: none; background: var(--paper) }
+.kz-ov.show { display: block }
+.kz-dark, .kz-pane { position: absolute; inset: 0; overflow-y: auto; display: flex; flex-direction: column; padding: calc(14px + var(--safe-area-inset-top, env(safe-area-inset-top))) 16px calc(18px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom))) }
+.kz-dark { background: #16140F; color: #eee; align-items: center }
+.kz-top { width: 100%; display: flex; justify-content: space-between; align-items: center; font-family: var(--f-title); font-size: 15px; letter-spacing: .08em; min-height: 36px }
+.kz-link { background: none; border: none; color: inherit; font-family: var(--f-hand); font-size: 14px; opacity: .85; cursor: pointer; padding: 6px 2px }
+.kz-pane .kz-link { color: var(--sub) }
+.kz-hint { margin-top: 14px; background: rgba(255,255,255,.12); padding: 6px 12px; border-radius: 16px; font-family: var(--f-hand); font-size: 13px }
+.kz-warn { margin-top: 10px; background: #FFF1E6; color: #8A4A22; border-radius: 10px; padding: 8px 10px; font-family: var(--f-hand); font-size: 13px; line-height: 1.6 }
+.kz-cropbox { margin-top: 22px; position: relative; touch-action: none; border: 2px solid #fff; border-radius: 4px; overflow: hidden; flex: none }
+.kz-cropbox canvas { width: 100%; height: 100%; display: block }
+.kz-cropbox::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(90deg, transparent 33%, rgba(255,255,255,.3) 33%, rgba(255,255,255,.3) calc(33% + 1px), transparent calc(33% + 1px), transparent 66%, rgba(255,255,255,.3) 66%, rgba(255,255,255,.3) calc(66% + 1px), transparent calc(66% + 1px)) }
+.kz-zoom { width: 300px; margin-top: 16px }
+.kz-bottom { width: 100%; display: flex; gap: 10px; margin-top: auto; padding-top: 16px }
+.kz-bottom .kz-btn { flex: 2 } .kz-bottom .kz-btn2 { flex: 1 }
+.kz-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 2px }
+.kz-seg button { border: none; background: none; font-family: var(--f-title); font-size: 13px; padding: 4px 12px; border-radius: 7px; color: var(--sub) }
+.kz-seg button.on { background: var(--paper-deep, #EDE6D8); color: var(--ink) }
+.kz-photo { margin-top: 10px; border-radius: 12px; overflow: hidden; background: #000; cursor: crosshair }
+.kz-photo canvas { width: 100%; display: block }
+.kz-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px }
+.kz-grow { flex: 1 }
+.kz-chip { font-family: var(--f-title); font-size: 12.5px; padding: 4px 11px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); color: var(--sub); cursor: pointer }
+.kz-chip.on { background: var(--ink); color: var(--paper); border-color: var(--ink) }
+.kz-result { display: flex; gap: 12px; margin-top: 12px; align-items: stretch }
+.kz-stage { flex: none; width: 200px; height: 200px; background: var(--card); border: .5px solid var(--line); border-radius: 12px; display: flex; align-items: center; justify-content: center }
+.kz-stage.big { width: 100%; height: 250px; margin-top: 12px }
+.kz-side { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0 }
+.kz-tray { display: flex; gap: 6px; background: #C9A67A; border-radius: 8px; padding: 6px 8px; width: max-content }
+.kz-tray span { background: #F4EDE0; border-radius: 5px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center }
+.kz-tray span.me { outline: 2px solid var(--accent) }
+.kz-verdict { border-radius: 10px; padding: 8px 10px; font-family: var(--f-hand); font-size: 12.5px; line-height: 1.6 }
+.kz-verdict b { font-family: var(--f-title); font-weight: 400; letter-spacing: .04em }
+.kz-verdict.g { background: #EAF3E8; color: #2F6B34 } .kz-verdict.y { background: #FBF1D9; color: #8A6512 } .kz-verdict.r { background: #FBE7E3; color: #9C3325 }
+.kz-verdict .kz-link { color: inherit; font-size: 12.5px; padding: 2px 0; text-decoration: underline }
+.kz-ctl { margin-top: 12px }
+.kz-ctl input[type=range] { width: 100%; accent-color: var(--accent) }
+.kz-lab, .kz-lab2 { display: flex; justify-content: space-between; font-family: var(--f-title); font-size: 13px; color: var(--ink); letter-spacing: .06em }
+.kz-lab span { font-family: var(--f-hand); font-size: 11.5px; color: var(--sub) }
+.kz-lab2 { margin: 14px 0 6px; color: var(--sub) }
+.kz-opts { display: flex; gap: 6px; margin-top: 6px }
+.kz-opts button { flex: 1; font-family: var(--f-title); font-size: 13px; padding: 6px 0; border-radius: 8px; border: 1px solid var(--line); color: var(--sub); background: var(--card) }
+.kz-opts button.on { border-color: var(--accent); color: var(--accent) }
+.kz-field { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; background: var(--card); font-family: var(--f-hand); font-size: 15px; color: var(--ink) }
+.kz-cats { display: flex; flex-wrap: wrap; gap: 6px }

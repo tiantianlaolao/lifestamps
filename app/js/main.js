@@ -8,6 +8,7 @@ import { sync } from './sync.js';
 import { iapPrice, iapPrices, iapBuy, iapRestore, isAndroid, initAndroidShell, appBuild, openExternal } from './native.js';
 import { collectGifts, claimTicket, authSmsSend, smsSupported, androidUpdateInfo, IS_OVERSEAS, initRegion, ICP_APP_NO, webBase, payCreate, payOrder, products as fetchProducts } from './net.js';
 import { bootCatalog, refreshCatalog, catalogNotice } from './catalog.js';   // 内容包：import 即合并本地缓存（在首屏之前）
+import { kzSegmentHTML, bindKz } from './kezhang.js';   // 刻章铺（feat/kezhangpu 分支）：import 即把本机自刻章并进章库
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked, isOwned, claimFreeStamps } from './hidden.js';
 import { verdictOf } from './verdict.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
@@ -2027,7 +2028,7 @@ function renderCollection() {
 
   // 印集（9-08 用户拍板）：藏品 = 我的东西（章 + 印泥盒，最底一节）；集市 = 能买的。
   // 藏品里永远没有购买按钮——印泥盒的购买卡搬到集市；今日页印泥弹层里那张卡留着（挑颜色时顺手的入口）。
-  const seg = [['mine', COPY.colSegMine], ['market', COPY.colSegMarket]].map(([k, n]) =>
+  const seg = [['mine', COPY.colSegMine], ['market', COPY.colSegMarket], ['carve', '刻章铺']].map(([k, n]) =>
     `<button class="${drawerSeg === k ? 'sel' : ''}" data-seg="${k}">${n}</button>`).join('');
 
   $('#page-collection').innerHTML = `
@@ -2035,11 +2036,12 @@ function renderCollection() {
       <div class="col-title">${COPY.colDrawer}</div>
       <div class="seg" id="drawer-seg">${seg}</div>
     </div>
-    ${drawerSeg === 'market' ? drawerMarket() : drawerStamps(used, cnt) + drawerInks()}`;
+    ${drawerSeg === 'carve' ? kzSegmentHTML() : drawerSeg === 'market' ? drawerMarket() : drawerStamps(used, cnt) + drawerInks()}`;
 
   document.querySelectorAll('#drawer-seg [data-seg], #page-collection [data-goseg]').forEach(b =>
     b.addEventListener('click', () => { drawerSeg = b.dataset.seg || b.dataset.goseg; renderCollection(); }));
 
+  if (drawerSeg === 'carve') { bindKz($('#page-collection'), renderCollection); return; }
   if (drawerSeg === 'market') {
     bindProCard($('#page-collection'), renderCollection);
     bindBoxOpeners($('#page-collection'));

@@ -250,28 +250,32 @@ export function judge(out, raw = out) {
   return { level: worst.level, why: worst.why, tip: worst.tip, all, m };
 }
 
+// 把 d 里所有 <path d="…"> 的坐标整体缩放平移（层次章的几条 path、各自的 fill-opacity 原样保留）
+export function movePaths(stampD, k, ox, oy) {
+  return stampD.replace(/ d="([^"]*)"/g, (m, pd) => ' d="' + pd.replace(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g,
+    (_, x, y) => `${(x * k + ox).toFixed(1)},${(y * k + oy).toFixed(1)}`) + '"');
+}
+
 /**
- * 装饰（边框 / 环形字 / 日期）→ 新的一条 d。
- * 🔴 章的 d 只能是 M/L/Z + 数字（路径白名单），所以字不能用 SVG <text>：
- *    做法 = 边框、字、章本体（Path2D 画原来的 d）一起画进一张 1024 的画布，再整张走 imageToStamp 描一遍。
- *    本体是从干净的矢量填充重新描的，几乎无损；产物还是「一条 path + evenodd」。
- * @param {string} stampD  原来的 d（<path d="…" fill="CC" fill-rule="evenodd"/>）
+ * 装饰（边框 / 章上的字 / 日期）→ 新的 d。
+ * 🔴 章的 d 只能是 M/L/Z + 数字（路径白名单），所以字不能用 SVG <text>，要画进画布再描成路径。
+ * 9-11 改成「无损」：只把边框和字画进 1024 画布描一遍，章本体的 path 按数值缩放平移进框里，
+ *   不重描——层次章（3 层深浅）不会被压成一层，体积也比整张重描小。
+ *   画布两个角各点 1 像素当钉子，让 imageToStamp 的装框 = 整张画布（单位 = 像素 × 84/1024 + 8），好算本体放哪。
+ * @param {string} stampD  原来的 d（1~3 条 <path … fill="CC" …/>）
  * @param {{frame:'none'|'circle'|'square', text:string}} o
  */
 export async function decorate(stampD, o = {}) {
   const frame = o.frame || 'none', text = String(o.text || '').trim().slice(0, 24);
   if (frame === 'none' && !text) return stampD;
-  const pd = (stampD.match(/ d="([^"]*)"/) || [])[1] || '';
   const FONT = '"LXGW WenKai","Xiaolai","KaiTi",serif';
   try { await document.fonts.load(`64px ${FONT}`); } catch (_) { /* 字体没到位就用回落字体 */ }
   const N = 1024, c = document.createElement('canvas'); c.width = c.height = N;
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, N, N); ctx.fillStyle = '#000';
-  const body = (cx, cy, side) => {           // 章本体放进边长 side 的方框（原 d 在 0..100 里）
-    ctx.save(); ctx.translate(cx - side / 2, cy - side / 2); ctx.scale(side / 100, side / 100);
-    ctx.fill(new Path2D(pd), 'evenodd'); ctx.restore();
-  };
-  const ringW = 34;                           // 外圈线宽：托盘 30px 下 ≈ 2.9 单位，跟库里线宽一个量级
+  ctx.fillRect(0, 0, 1, 1); ctx.fillRect(N - 1, N - 1, 1, 1);          // 钉子
+  let place;                                    // 本体放进的方框：中心 + 边长（画布像素）
+  const ringW = 34;                             // 外圈线宽：托盘 30px 下 ≈ 2.9 单位，跟库里线宽一个量级
   if (frame === 'circle') {
     const C = N / 2, R = 496;
     ctx.beginPath(); ctx.arc(C, C, R, 0, Math.PI * 2); ctx.arc(C, C, R - ringW, 0, Math.PI * 2, true); ctx.fill('evenodd');
@@ -283,12 +287,11 @@ export async function decorate(stampD, o = {}) {
       const chars = [...text], step = Math.min((fs * 1.08) / rt, (Math.PI * 2) / chars.length);
       const start = -Math.PI / 2 - step * (chars.length - 1) / 2;
       chars.forEach((ch, i) => { const a = start + i * step; ctx.save(); ctx.translate(C + Math.cos(a) * rt, C + Math.sin(a) * rt); ctx.rotate(a + Math.PI / 2); ctx.fillText(ch, 0, 0); ctx.restore(); });
-      // 内圈细线把字和本体隔开
-      const r2 = rt - fs / 2 - 14;
+      const r2 = rt - fs / 2 - 14;             // 内圈细线把字和本体隔开
       ctx.beginPath(); ctx.arc(C, C, r2, 0, Math.PI * 2); ctx.arc(C, C, r2 - 12, 0, Math.PI * 2, true); ctx.fill('evenodd');
       rc = r2 - 26;
     }
-    body(C, C, rc * 1.55);                    // 本体装进内圈（不贴边：内容很少顶到方框四角）
+    place = { cx: C, cy: C, side: rc * 1.55 };  // 不贴边：内容很少顶到方框四角
   } else {
     const M = 14, inner = frame === 'square' ? M + ringW + 30 : 40;
     if (frame === 'square') {
@@ -302,10 +305,58 @@ export async function decorate(stampD, o = {}) {
       bottom = N - inner - fs - 30;
     }
     const side = Math.min(N - 2 * inner, bottom - inner);
-    body(N / 2, inner + side / 2, side);
+    place = { cx: N / 2, cy: inner + side / 2, side };
   }
-  const r = imageToStamp(c, { flatten: false, thr: 128, dropFrame: false, minArea: 6, eps: 0.9 });
-  return r.d || stampD;
+  const deco = imageToStamp(c, { flatten: false, thr: 128, dropFrame: false, minArea: 0, eps: 0.9 });
+  // 本体原来在 0..100；放进 place 方框，再换成装饰那张画布的单位（px × 84/N + 8）
+  const u = 84 / N, k = place.side / 100 * u;
+  const body = movePaths(stampD, k, (place.cx - place.side / 2) * u + 8, (place.cy - place.side / 2) * u + 8);
+  return (deco.d || '') + body;
+}
+
+// ---- 层次（9-11 用户：要尽量还原原样，难在照片的颜色层次）----
+// 主体里按亮度三分位切 3 档，累积成 3 层（整个主体 / 中+深 / 最深），各层钉角对齐，
+// 叠印时浅层淡、深层浓（fill-opacity .3 / .55 / 1）。颜色仍然只有一种、跟印泥走，不碰收费规则。
+export const TONE_OPS = ['.3', '.55', '1'];
+function dropSmall(m, w, h, min) {
+  const lab = new Int32Array(w * h), keep = new Uint8Array(w * h); let id = 0;
+  for (let s = 0; s < w * h; s++) {
+    if (!m[s] || lab[s]) continue;
+    id++; const st = [s], px = []; lab[s] = id;
+    while (st.length) { const i = st.pop(); px.push(i); const x = i % w; for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i >= w ? i - w : -1, i < w * (h - 1) ? i + w : -1]) if (j >= 0 && m[j] && !lab[j]) { lab[j] = id; st.push(j); } }
+    if (px.length >= min) for (const i of px) keep[i] = 1;
+  }
+  return keep;
+}
+/**
+ * @param src  裁好的图（canvas）
+ * @param sel  主体选区（prepare 尺寸）
+ * @param o    { minArea, eps } 细节力度
+ * @returns {{ d:string, raw:object, out:object }}  raw/out = 最底一层（整个主体），给 judge 用
+ */
+export function toneStamp(src, sel, o = {}) {
+  const { w, h, mask } = sel;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d', { willReadFrequently: true }); x.filter = 'blur(1px)'; x.drawImage(src, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h).data, g = new Float32Array(w * h), vals = [];
+  for (let i = 0; i < w * h; i++) { g[i] = (.299 * d[i * 4] + .587 * d[i * 4 + 1] + .114 * d[i * 4 + 2]) / 255; if (mask[i]) vals.push(g[i]); }
+  if (!vals.length) return null;
+  vals.sort((a, b) => a - b);
+  const cut = [vals[Math.floor(vals.length / 3)], vals[Math.floor(vals.length * 2 / 3)]];
+  let x0 = w, y0 = h, x1 = 0, y1 = 0;
+  for (let i = 0; i < w * h; i++) if (mask[i]) { const xx = i % w, yy = (i - xx) / w; if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; if (yy < y0) y0 = yy; if (yy > y1) y1 = yy; }
+  const minA = o.minArea ?? 30, eps = o.eps ?? 1.3, parts = [];
+  let base = null;
+  for (let L = 0; L < 3; L++) {
+    let m = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) if (mask[i] && (L === 0 || g[i] <= cut[2 - L])) m[i] = 1;
+    m = dropSmall(m, w, h, minA);
+    m[y0 * w + x0] = 1; m[y1 * w + x1] = 1;               // 钉子：三层的装框一致
+    const r = imageToStamp(maskCanvas(w, h, m), { flatten: false, thr: 128, dropFrame: false, minArea: 0, eps });
+    if (L === 0) base = r;
+    if (r.d) parts.push(r.d.replace('/>', ` fill-opacity="${TONE_OPS[L]}"/>`));
+  }
+  return { d: parts.join(''), raw: base, out: { ...base, d: parts.join(''), chars: parts.join('').length } };
 }
 
 /**

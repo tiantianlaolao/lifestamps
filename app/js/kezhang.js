@@ -7,7 +7,7 @@
 import { STAMPS, INIT_STAMPS, rebuildStampIndex, stampById } from './data.js';
 import { stampSVG } from './stamp.js';
 import { imageToStamp } from './trace.js';
-import { prepare, magicWand, refineMask, maskToStamp, thickenBin, judge, sourceHint, decorate, autoSubject, looksLikeDrawing } from './carve.js';
+import { prepare, magicWand, refineMask, maskToStamp, thickenBin, judge, sourceHint, decorate, autoSubject, looksLikeDrawing, toneStamp } from './carve.js';
 import { toast, thump } from './ui.js';
 
 // ---- 自刻章的存放（M1：localStorage；一枚 ≤ 30KB，几十枚没问题；M4 换 IndexedDB + 账号同步）----
@@ -19,7 +19,8 @@ export const carved = loadAll();
 
 // 🔴 路径白名单：只允许 M/L/Z + 数字（跟服务端将来的校验同一条）。
 //    stamp.js 是按字符串拼 SVG 的，这里放行任何别的东西都等于让人往页面里塞代码。
-const SAFE_D = /^<path d="[MLZ0-9.,\s-]*" fill="CC" fill-rule="evenodd"\/>$/;
+// 9-11 起允许「层次章」：1~4 条 path（装饰 1 条 + 层次 3 条），每条可带固定档位的 fill-opacity，别的一律不放
+const SAFE_D = /^(<path d="[MLZ0-9.,\s-]*" fill="CC" fill-rule="evenodd"( fill-opacity="(\.3|\.55|1)")?\/>){1,4}$/;
 export const isCarved = id => typeof id === 'string' && id.startsWith('my_');
 
 // 开机就把自刻章并进章库：托盘 / 本子 / 分享卡都按普通章画，不用各处特判
@@ -206,11 +207,13 @@ function clampCrop() {
 }
 
 // ---- ② 挑一个样子（9-11 用户：「线稿 / 点一下主体」不好懂，点选看着专业、普通人不懂 → 改成挑结果，不挑方法）----
-// 裁好就自动出三个候选：线条 / 去掉背景（自动找主体）/ 剪影，按判定推荐一个；
+// 裁好就自动出三个候选：线条 / 层次（自动找主体，3 层深浅）/ 剪影，推荐一个；
 // 「点一下」只剩补救：主体没找对才用。控件只留 细节 + 粗细，深浅 / 范围 收进「更多调整」。
 // 细节 1..3 = 去噪/简化力度；粗细 0..3 = 原样/细/中/粗；深浅 = 阈值相对自动值的偏移
 const DETAIL = { 1: { minArea: 40, eps: 2.0 }, 2: { minArea: 12, eps: 1.2 }, 3: { minArea: 4, eps: 0.7 } };
-const CANDS = [['line', '线条'], ['bg', '去掉背景'], ['sil', '剪影']];
+// 9-11：「去掉背景」（线条版）换成「层次」——用户要尽量像原图，层次（3 层深浅）最接近
+const CANDS = [['line', '线条'], ['tone', '层次'], ['sil', '剪影']];
+const TONE_DETAIL = { 1: { minArea: 80, eps: 2.0 }, 2: { minArea: 30, eps: 1.3 }, 3: { minArea: 12, eps: 0.9 } };
 function traceLine(src) {
   const base = imageToStamp(src, { ...DETAIL[F.detail] });
   const raw = F.thr ? imageToStamp(src, { ...DETAIL[F.detail], thr: Math.min(250, Math.max(5, base.thr + F.thr)) }) : base;
@@ -232,37 +235,24 @@ function selection() {
   }
   return refineMask({ w, h, mask: m });
 }
-// 去掉背景：选区外涂白，按亮度走线稿管线（荷花、头像 9-11 实测比纯剪影好认得多）
-function traceBg(sel) {
-  const { w, h } = sel;
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(F.src, 0, 0, w, h);
-  const px = x.getImageData(0, 0, w, h);
-  for (let i = 0; i < w * h; i++) if (!sel.mask[i]) px.data[i * 4] = px.data[i * 4 + 1] = px.data[i * 4 + 2] = 255;
-  x.putImageData(px, 0, 0);
-  const raw = imageToStamp(c, { ...DETAIL[F.detail] });
-  return { raw, out: thickenBin(raw, Math.max(1, F.weight - 1)) };
-}
 function computeAll() {
   const c = { line: traceLine(F.src) }, sel = selection();
   c.sel = sel;
-  if (sel) { c.bg = traceBg(sel); const r = maskToStamp(sel); c.sil = { raw: r, out: r }; }
+  if (sel) { c.tone = toneStamp(F.src, sel, TONE_DETAIL[F.detail]); const r = maskToStamp(sel); c.sil = { raw: r, out: r }; }
   return c;
 }
-// 推荐 = 「线条」和「去掉背景」里判定更好的那个；平手时画偏线条、照片偏去背景。剪影永远不自动推荐（一坨也会被判成看得清）
-const RANK = { green: 3, yellow: 2, red: 1 };
+// 推荐：像画（低饱和）→ 线条；照片且找到了主体 → 层次；照片没找到主体 → 线条（判定会提示裁近一点）。
+// 剪影永远不自动推荐（池塘那种一坨也会被判成看得清）
 function recommend(c) {
-  const a = RANK[judge(c.line.out, c.line.raw).level], b = c.bg ? RANK[judge(c.bg.out, c.bg.raw).level] : 0;
-  if (b > a) return 'bg';
-  if (a > b) return 'line';
   if (F.drawing === undefined) F.drawing = looksLikeDrawing(F.src);
-  return !F.drawing && c.bg ? 'bg' : 'line';
+  if (F.drawing) return 'line';
+  return c.tone ? 'tone' : 'line';
 }
 
 let busy = 0;
 function renderAdjust(ov) {
   const lvl = { green: 'g', yellow: 'y', red: 'r' };
-  const usesSel = F.pick === 'bg' || F.pick === 'sil';
+  const usesSel = F.pick === 'tone' || F.pick === 'sil';
   ov.innerHTML = `<div class="kz-pane">
     <div class="kz-top"><button class="kz-link" data-act="back">‹ 重新裁</button><span>挑一个样子</span><button class="kz-link" data-act="close">取消</button></div>
     <div class="kz-result">
@@ -275,7 +265,7 @@ function renderAdjust(ov) {
       <div class="kz-row"><button class="kz-chip ${F.erase ? '' : 'on'}" data-erase="0">加一块</button><button class="kz-chip ${F.erase ? 'on' : ''}" data-erase="1">去掉一块</button><button class="kz-chip" data-act="undo">撤销</button><span class="kz-grow"></span><button class="kz-chip" data-act="fixdone">好了</button></div>`
       : `<button class="kz-link kz-fixlink" data-act="fix" id="kz-fixlink">主体没选对？在照片上点一下你要刻的东西 ›</button>`) : ''}
     <div class="kz-ctl"><div class="kz-lab">细节<span>少 · 多</span></div><input type="range" min="1" max="3" step="1" value="${F.detail}" data-k="detail"></div>
-    ${F.pick !== 'sil' ? `<div class="kz-ctl"><div class="kz-lab">粗细</div><div class="kz-opts">${['原样', '细', '中', '粗'].map((n, i) => `<button data-weight="${i}" class="${F.weight === i ? 'on' : ''}">${n}</button>`).join('')}</div></div>` : ''}
+    ${F.pick === 'line' ? `<div class="kz-ctl"><div class="kz-lab">粗细</div><div class="kz-opts">${['原样', '细', '中', '粗'].map((n, i) => `<button data-weight="${i}" class="${F.weight === i ? 'on' : ''}">${n}</button>`).join('')}</div></div>` : ''}
     <button class="kz-link kz-more" data-act="more">${F.more ? '收起 ‹' : '更多调整 ›'}</button>
     ${F.more ? `<div class="kz-morebox">
       ${F.pick === 'line' ? `<div class="kz-ctl"><div class="kz-lab">深浅<span>浅一点 · 深一点</span></div><input type="range" min="-60" max="60" step="2" value="${F.thr}" data-k="thr"></div>` : ''}
@@ -308,7 +298,7 @@ function renderAdjust(ov) {
       stage.innerHTML = S(r.out.d, 188, F.ink);
       tray.innerHTML = ['milktea', 'coffee'].map(id => stampById[id] ? `<span>${stampSVG(stampById[id], { size: 26 })}</span>` : '').join('') + `<span class="me">${S(r.out.d, 26, F.ink)}</span>`;
       v.className = 'kz-verdict ' + lvl[j.level];
-      v.innerHTML = `<b>${j.why}</b>${j.tip ? `<br>${j.tip.replace('改用「点一下主体」', '换成「去掉背景」试试')}` : ''}${j.level === 'red' ? `<br><button class="kz-link" data-act="force">还是想刻这个 ›</button>` : ''}`;
+      v.innerHTML = `<b>${j.why}</b>${j.tip ? `<br>${j.tip.replace('改用「点一下主体」', '换成「层次」试试')}` : ''}${j.level === 'red' ? `<br><button class="kz-link" data-act="force">还是想刻这个 ›</button>` : ''}`;
       ov.querySelector('#kz-next').disabled = !r.out.d || j.level === 'red' && !F.forced;
       const fb = v.querySelector('[data-act="force"]'); if (fb) fb.onclick = () => { F.forced = true; ov.querySelector('#kz-next').disabled = false; toast('好，照这个刻'); };
     }, 30);

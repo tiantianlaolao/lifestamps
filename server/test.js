@@ -227,6 +227,32 @@ function client() {
   const s3 = await carol.req('POST', `/api/share/${oneCode}/gift`, { seal: 'g_lamp' });
   ok(s3.status === 200 && s3.body.total === 2, '换一个浏览器能再送一次（已知且故意的上限）');
 
+  console.log('\n== 再分享同一天：换画面、短码不变、赠礼还在（9-11）==');
+  {
+    const AR = '9'.repeat(32);
+    const r1 = await j('POST', '/api/share', { ...day, day: '2026-09-11', author: AR });
+    const rc = r1.body.code;
+    await client().req('POST', `/api/share/${rc}/gift`, { seal: 'g_candy' });
+    const later = { ...day, day: '2026-09-11', author: AR, code: rc, note: '后来改了',
+      stamps: [{ id: 'coffee', ink: 'mo', x: 10, y: 10 }] };
+    const r2 = await j('POST', '/api/share', later);
+    ok(r2.status === 200 && r2.body.code === rc && r2.body.updated === true, '原作者再分享 → 同一个短码');
+    ok(r2.body.expires === r1.body.expires, '有效期不因再分享而顺延');
+    ok(r2.body.qr && r2.body.qr.n === r1.body.qr.n && r2.body.qr.path === r1.body.qr.path, '二维码跟原来一样');
+    const gb = await j('GET', '/api/share/' + rc);
+    ok(gb.body.stamps.length === 1 && gb.body.stamps[0].id === 'coffee' && gb.body.note === '后来改了',
+       '朋友打开看到的是再分享那一刻的画面');
+    ok(gb.body.total === 1 && gb.body.gifts.g_candy === 1, '已经收到的赠礼一枚不少');
+    const evil = await j('POST', '/api/share', { ...later, author: '8'.repeat(32),
+      stamps: [{ id: 'emo', ink: 'zhu', x: 1, y: 1 }] });
+    ok(evil.status === 200 && evil.body.code !== rc && !evil.body.updated, '别人的安装号改不了这条，只会新建');
+    const other = await j('POST', '/api/share', { ...later, day: '2026-09-10' });
+    ok(other.body.code !== rc, '拿这个码去传另一天 → 新建，不串天');
+    const noAuth = await j('POST', '/api/share', { ...later, author: undefined });
+    ok(noAuth.body.code !== rc, '不带安装号 → 新建');
+    ok((await j('GET', '/api/share/' + rc)).body.stamps[0].id === 'coffee', '上面三次都没动到原来那条');
+  }
+
   console.log('\n== 令牌口径：按作者发，跨作者仍不可关联（8-29 路 B）==');
   // ⚠️ 8-29 上午这里守的是「一个短码一串」，下午改成「一个作者一串」之后
   //    那两条会假红。口径变了断言就得跟着变 —— 但**放松的边界要重新钉死**：

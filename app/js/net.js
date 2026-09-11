@@ -143,9 +143,14 @@ export function codeForDay(day) {
 }
 
 // A：把一天发出去，换一个链接
+// 🔴 9-11：朋友看到的 = **最近一次分享那一刻**的纸。
+//    原来这一天建过码就直接返回、不再上传，朋友永远看第一次打开分享弹层时的画面
+//    （用户实测：卡上 6 枚，朋友那边还是早上擦掉前的 12 枚）。
+//    现在每次分享都比一下内容：变了就带着旧码重传，服务端原地换画面，短码 / 赠礼不动。
+//    ⛔ 不在盖章时自动同步 —— 用户 9-11 定：后来改了，要再分享一次朋友才看得到。
+//    没网 / 服务端失败：有旧码就先用旧的（跟原来一样），没有才 null。
 export async function createShare(day, records, verdict, note) {
   const exist = codeForDay(day);
-  if (exist) return exist;
 
   // 🔴 位置和 seed 都必须走跟 App 里同一套算法（posOf / seedOf），
   //    否则朋友看到的纸跟 A 自己看到的不是同一张 —— 章会挪位、纹理会变。
@@ -157,19 +162,33 @@ export async function createShare(day, records, verdict, note) {
       rot: r.rot, sc: r.sc, op: r.op, seed: seedOf(r), ts: r.ts,
     };
   });
+  const content = { day, stamps, verdict: verdict || '', note: note || '' };
+  const sig = JSON.stringify(content);
+  if (exist && exist.sig === sig) return exist;       // 没变，不用再传
+
   const { data } = await call('share', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    // author = 匿名安装号。服务端拿它算封蜡的解锁名额（见 store.installId 那段注释）。
+    // author = 匿名安装号。服务端拿它算封蜡的解锁名额（见 store.installId 那段注释），
+    // 也拿它认"这个码是不是你的"—— 只有原作者带着旧码来才会原地换画面。
     body: JSON.stringify({
-      day, stamps, verdict: verdict || '', note: note || '',
-      author: store.ensureInstallId(),
+      ...content, author: store.ensureInstallId(),
+      ...(exist ? { code: exist.code } : {}),
     }),
   });
-  if (!data || !data.code) return null;
+  if (!data || !data.code) return exist || null;
+
+  if (exist && data.code === exist.code) {
+    exist.sig = sig;
+    if (data.qr) exist.qr = data.qr;
+    store.persist();
+    return exist;
+  }
 
   // qr 一起存下来：卡片右下角那张二维码要指向这一天，而卡是本地画的。
   // ⚠️ 存在本地是有意的 —— 没网时旧的那些天照样画得出带码的卡。
-  const rec = { code: data.code, day, expires: data.expires, seen: {}, qr: data.qr || null };
+  // ⚠️ 服务端没认旧码（8-29 前的老分享没带安装号）会发新码：新的排最前，codeForDay 取到它；
+  //    旧的那条留着，上面已经收到的赠礼照样能回收。
+  const rec = { code: data.code, day, expires: data.expires, seen: {}, qr: data.qr || null, sig };
   store.shares = [rec, ...(store.shares || [])].slice(0, 60);   // 只留最近 60 条，够用了
   store.persist();
   return rec;

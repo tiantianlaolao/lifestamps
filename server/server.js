@@ -102,6 +102,7 @@ const q = {
   insertShare: db.prepare(
     'INSERT INTO shares (code, day, payload, created, expires, author) VALUES (?, ?, ?, ?, ?, ?)'),
   getShare: db.prepare('SELECT * FROM shares WHERE code = ?'),
+  updateShare: db.prepare('UPDATE shares SET payload = ? WHERE code = ?'),
   countCode: db.prepare('SELECT 1 AS x FROM shares WHERE code = ?'),
   insertGift: db.prepare(
     'INSERT INTO gifts (code, seal, created, visitor) VALUES (?, ?, ?, ?)'),
@@ -426,6 +427,28 @@ async function route(req, res, pathname) {
     const author = /^[0-9a-f]{16,64}$/.test(String(b.author || '')) ? b.author : null;
 
     const now = Date.now();
+
+    // 🔴 9-11：再分享同一天 = 换成这一刻的画面，短码不变。
+    //    原来只有新建：App 同一天复用短码（赠礼不能分散到两个码上），
+    //    于是朋友看到的永远是**第一次**打开分享弹层那一刻的纸 —— 之后擦掉的章还挂在上面，
+    //    跟 A 卡片上现画的对不上（用户实测：卡上 6 枚，朋友那边 12 枚）。
+    //    只换 payload：短码、有效期、已收到的赠礼一律不动。
+    //    ⚠️ 只认原作者（安装号对得上）+ 同一天 + 没过期；任何一条不满足就照旧新建，
+    //       不告诉外面"这个码存在但不是你的"。没带 author 的老分享改不了，也走新建。
+    const want = String(b.code || '').toLowerCase();
+    if (author && /^[a-z0-9]{1,12}$/.test(want)) {
+      const row = q.getShare.get(want);
+      if (row && Number(row.expires) >= now && row.day === b.day && row.author === author) {
+        q.updateShare.run(payload, want);
+        const qrU = qr(SHORT_BASE + want);
+        return send(res, 200, {
+          code: want, expires: Number(row.expires), updated: true,
+          url: SHORT_BASE + want,
+          qr: { n: qrU.n, path: qrU.path },
+        });
+      }
+    }
+
     const code = newCode();
     q.insertShare.run(code, b.day, payload, now, now + TTL_MS, author);
     // 顺手把二维码算好一起回去：短码是动态的，卡片上那张写死的路径没法用了。

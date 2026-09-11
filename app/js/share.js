@@ -486,7 +486,7 @@ function bindLinkBtn(dk) {
   if (!btn || !box) return;
 
   const already = codeForDay(dk);
-  if (already) showLink(shareURL(already.code), false);
+  if (already && store.recordsOf(dk).length) showLink(shareURL(already.code), false);
 
   btn.onclick = async () => {
     if (!requireLegal(() => btn.click())) return;      // 9-10：分享会把这一天传上服务器，先同意协议
@@ -536,18 +536,21 @@ export async function openShareDay(dk) {
 
   // 🔴 先把这一天的分享建出来，再画卡 —— 卡上的二维码要指向它。
   //    没网 / 建不出来就 rec = null，卡照样出，只是二维码回落成下载中转页。
-  //    ⚠️ 已经建过的那天会直接复用（codeForDay），不会每次开弹层都新建一条。
+  //    ⚠️ 已经建过的那天复用同一个短码（codeForDay），不会每次开弹层都新建一条；
+  //    🔴 9-11 起每次开弹层（= 再分享）都要过一遍 createShare：内容变了会原地换成这一刻的画面，
+  //       否则朋友看到的还是第一次分享时的纸（擦掉的章也还在）。没变不联网。
   let rec = codeForDay(dk);
 
   async function draw() {
     ov.innerHTML = `<div class="gen">${COPY.genBusy}</div>`;
     ov.classList.add('show');
     // 9-10：没同意协议就不上传 —— 卡照样画，二维码回落成下载中转页（跟没网同一条路）
-    if (!rec && legalOk()) {
+    if (legalOk() && store.recordsOf(dk).length) {
       try { rec = await createShare(dk, store.recordsOf(dk), verdictOf(store.recordsOf(dk)),
-        store.dayNoteOf(dk) || ''); } catch (_) { rec = null; }
+        store.dayNoteOf(dk) || '') || rec; } catch (_) { /* 留着原来那个 rec */ }
     }
-    const svg = buildDayCard(dk, weather, rec && rec.qr);
+    // 这一天章全擦光了：旧分享上还挂着擦掉前的纸（服务端不收空的一天），卡上别再指向它
+    const svg = buildDayCard(dk, weather, store.recordsOf(dk).length && rec ? rec.qr : null);
     const dataUrl = await rasterize(svg, 1080, 1440, 1.5);
     const wRow = ['sun','cloud','rain','storm','snow','night'].map(w =>
       `<button class="wbtn ${weather === w ? 'sel' : ''}" data-w="${w}">${weatherSVG(w, 26, weather === w ? '#C94B3C' : '#8C8880')}</button>`).join('');

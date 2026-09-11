@@ -1,0 +1,287 @@
+<!doctype html><meta charset="utf-8"><title>刻章铺 · 设计稿 v1</title>
+<!-- 9-11 设计稿 v1（dev/ 不部署不进包）。用户拍板：
+     · 名字「刻章铺」；免费刻 3 枚 → ¥18 买断；点「刻好了」才扣次数
+     · 登录跟原购买规则一致、不强制：iOS/Play 不登录也能刻（只存本机，提示登录可换机找回）；国内安卓支付宝要登录才能买
+     · 红色判定也能刻，但要多点一次「仍然刻」
+     · 分享链接页不显示自刻章图案，只放占位「一枚自刻章」；用户自己保存的分享图正常显示
+     画面里的章是 carve.js 原型对样图的真实输出（dev/_samples，未进 git）。 -->
+<link rel="stylesheet" href="../css/app.css">
+<style>
+  html, body { height: auto !important; overflow: auto !important; position: static !important; }
+  body { margin: 0; background: #E6DFD3; }
+  .board { display: flex; flex-wrap: wrap; gap: 30px 26px; padding: 22px 26px 40px; width: 1400px; }
+  .col { width: 430px }
+  .cap { font: 600 13px system-ui; color: #5A544A; margin: 0 0 8px 6px; letter-spacing: .04em }
+  .cap small { display: block; font-weight: 400; color: #8C8577; margin-top: 3px; line-height: 1.55 }
+  .scr { width: 430px; height: 932px; overflow: hidden; position: relative; border-radius: 30px; background: var(--paper);
+         box-shadow: 0 10px 30px rgba(60, 50, 35, .18); font-family: var(--f-title) }
+  .scr.dark { background: #1E1C19 }
+  .pad { padding: 18px 16px 30px }
+  .h1 { font-family: var(--f-title); font-size: 26px; color: var(--ink); letter-spacing: .1em; margin: 34px 0 12px 2px }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 2px }
+  .seg span { font-size: 13px; padding: 4px 14px; border-radius: 7px; color: var(--sub) }
+  .seg span.on { background: var(--paper-deep, #EDE6D8); color: var(--ink) }
+  .new { font-family: var(--f-num); font-size: 9px; color: var(--btn-face); background: var(--accent); border-radius: 4px; padding: 0 4px; margin-left: 3px; vertical-align: 2px }
+  .card { background: var(--card); border: .5px solid var(--line); border-radius: 12px; padding: 14px }
+  .t { font-size: 16px; color: var(--ink); letter-spacing: .06em }
+  .s { font-family: var(--f-hand); font-size: 13px; color: var(--sub); line-height: 1.7 }
+  .xs { font-family: var(--f-hand); font-size: 11.5px; color: var(--sub); line-height: 1.6 }
+  .btn { display: block; text-align: center; font-size: 15px; letter-spacing: .12em; padding: 12px; border-radius: 10px; background: var(--accent); color: var(--btn-face) }
+  .btn2 { display: block; text-align: center; font-size: 14px; letter-spacing: .08em; padding: 11px; border-radius: 10px; border: 1px solid var(--line); color: var(--ink); background: var(--card) }
+  .row { display: flex; gap: 8px; align-items: center }
+  .pairs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px }
+  .pair { background: var(--paper); border-radius: 10px; padding: 6px; display: flex; align-items: center; justify-content: space-between }
+  .pair img { width: 52px; height: 52px; object-fit: cover; border-radius: 6px }
+  .arr { color: var(--faint); font-size: 12px }
+  .bad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px }
+  .bad div { position: relative; text-align: center }
+  .bad img { width: 100%; height: 58px; object-fit: cover; border-radius: 8px; filter: saturate(.7) }
+  .bad i { position: absolute; top: 3px; right: 5px; font-style: normal; color: #fff; background: #B3452F; border-radius: 50%; width: 16px; height: 16px; font-size: 11px; line-height: 16px }
+  .bad span { font-family: var(--f-hand); font-size: 11px; color: var(--sub) }
+  .mine { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px }
+  .mine .c { background: var(--card); border: .5px solid var(--line); border-radius: 10px; height: 66px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: var(--f-hand); font-size: 10.5px; color: var(--sub) }
+  .note { position: absolute; background: #FFF6C9; border: 1px solid #E8D680; color: #6B5A1E; font: 11.5px/1.5 system-ui; padding: 5px 8px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,.1); max-width: 190px; z-index: 9 }
+  .hint { background: rgba(0,0,0,.55); color: #fff; font: 13px/1.5 var(--f-hand); padding: 7px 12px; border-radius: 16px; text-align: center }
+  .warn { background: #FFF1E6; color: #8A4A22; border: 1px solid #F0C9A8; font: 12.5px/1.6 var(--f-hand); padding: 8px 10px; border-radius: 10px }
+  .verdict { display: flex; gap: 8px; align-items: flex-start; border-radius: 10px; padding: 9px 11px; font-family: var(--f-hand); font-size: 13px; line-height: 1.6 }
+  .verdict b { font-family: var(--f-title); font-weight: 400; letter-spacing: .06em }
+  .v-g { background: #EAF3E8; color: #2F6B34 } .v-y { background: #FBF1D9; color: #8A6512 } .v-r { background: #FBE7E3; color: #9C3325 }
+  .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 7px; flex: none }
+  .ctl { margin-top: 12px }
+  .ctl .lab { display: flex; justify-content: space-between; font-size: 13px; color: var(--ink); letter-spacing: .06em }
+  .ctl .lab span { font-family: var(--f-hand); font-size: 11.5px; color: var(--sub) }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; margin: 10px 2px 0; position: relative }
+  .bar b { position: absolute; top: -7px; width: 18px; height: 18px; border-radius: 50%; background: var(--card); border: 1px solid var(--sub); box-shadow: 0 1px 3px rgba(0,0,0,.15) }
+  .opts { display: flex; gap: 6px; margin-top: 8px }
+  .opts span { flex: 1; text-align: center; font-size: 13px; padding: 6px 0; border-radius: 8px; border: 1px solid var(--line); color: var(--sub); background: var(--card) }
+  .opts span.on { border-color: var(--accent); color: var(--accent) }
+  .stage { background: var(--paper); border-radius: 12px; display: flex; align-items: center; justify-content: center; position: relative }
+  .tray { display: flex; gap: 10px; align-items: center; background: #C9A67A; border-radius: 8px; padding: 6px 10px }
+  .tray span { background: #F4EDE0; border-radius: 5px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center }
+  .tray span.me { outline: 2px solid var(--accent) }
+  .crop { position: absolute; border: 2px solid #fff; box-shadow: 0 0 0 999px rgba(0,0,0,.5) }
+  .crop::before, .crop::after { content: ''; position: absolute; left: 33.3%; right: 33.3%; top: 0; bottom: 0; border-left: 1px solid rgba(255,255,255,.4); border-right: 1px solid rgba(255,255,255,.4) }
+  .crop i { position: absolute; width: 18px; height: 18px; border: 3px solid #fff }
+  .psheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--paper); border-radius: 22px 22px 0 0; padding: 10px 18px 26px; box-shadow: 0 -6px 24px rgba(40,32,22,.16) }
+  .grab { width: 34px; height: 4px; background: var(--line); border-radius: 2px; margin: 0 auto 12px }
+  .dim { position: absolute; inset: 0; background: rgba(40,32,22,.38) }
+  .kf { display: flex; flex-direction: column; align-items: center; gap: 6px; background: var(--paper); border-radius: 12px; padding: 12px; flex: 1 }
+  .kf .n { font-family: var(--f-num); font-size: 11px; color: var(--sub) }
+  .block { width: 110px; height: 110px; border-radius: 14px; background: linear-gradient(160deg, #D8B88E, #B38A5A); display: flex; align-items: center; justify-content: center; box-shadow: inset 0 -6px 0 rgba(0,0,0,.12) }
+  .block .face { width: 86px; height: 86px; border-radius: 10px; background: #E9D2B0; display: flex; align-items: center; justify-content: center }
+  .toast { background: rgba(37,36,33,.86); color: #fff; font-family: var(--f-hand); font-size: 13px; padding: 8px 14px; border-radius: 18px }
+  .chip { display: inline-block; font-size: 12px; padding: 3px 10px; border-radius: 12px; border: 1px solid var(--line); color: var(--sub); margin: 0 4px 6px 0 }
+  .chip.on { background: var(--ink); color: var(--paper); border-color: var(--ink) }
+  .field { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--card); font-family: var(--f-hand); font-size: 14px; color: var(--ink) }
+  .lbl { font-size: 12.5px; color: var(--sub); letter-spacing: .08em; margin: 12px 0 6px }
+</style>
+<svg width="0" height="0" style="position:absolute" id="defs"></svg>
+<div class="board" id="board"><div class="cap">正在用原型生成画面里的章……</div></div>
+<script type="module">
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+import { stampById } from '../js/data.js';
+import { imageToStamp } from '../js/trace.js';
+import { prepare, magicWand, refineMask, maskToStamp, thickenBin, judge } from '../js/carve.js';
+document.getElementById('defs').innerHTML = defsMarkup();
+const load = s => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = s; });
+const crop = (img, x0, y0, x1, y1) => { const w = img.naturalWidth, h = img.naturalHeight, c = document.createElement('canvas'); c.width = Math.round((x1-x0)*w); c.height = Math.round((y1-y0)*h); c.getContext('2d').drawImage(img, x0*w, y0*h, c.width, c.height, 0, 0, c.width, c.height); return c; };
+const S = (d, size, ink = 'zhu') => stampSVG({ id: 'x', name: 'x', cat: 'meet', ink, d }, { size, ink });
+const L = id => stampSVG(stampById[id], { size: 26 });
+
+// ---- 用原型算出真实的章 ----
+const dogImg = await load('_samples/dog_stand.jpg'), pigImg = await load('_samples/pig.jpg'), leafImg = await load('_samples/leaf_photo.jpg');
+const dogRaw = imageToStamp(dogImg, {}), dog = thickenBin(dogRaw, 2), dogThin = dogRaw;
+const pig = thickenBin(imageToStamp(pigImg, {}), 2), leaf = thickenBin(imageToStamp(leafImg, {}), 2);
+const lotusImg = await load('_samples/real/p03.jpg'), lotusC = crop(lotusImg, .26, .24, .62, .56);
+const lotusSel = refineMask(magicWand(prepare(lotusC), .5, .6)), lotus = maskToStamp(lotusSel);
+const curtainImg = await load('_samples/real/p07.jpg'), curtainC = crop(curtainImg, .12, .24, .88, .72);
+const curtain = maskToStamp(refineMask(magicWand(prepare(curtainC), .5, .55)));
+const faceImg = await load('_samples/real/p14.jpg'), faceC = crop(faceImg, .1, .06, .9, .86);
+const faceRaw = imageToStamp(faceC, {}), face = thickenBin(faceRaw, 2);
+const pondImg = await load('_samples/real/p04.jpg'); const pondRaw = imageToStamp(pondImg, {}), pond = thickenBin(pondRaw, 2);
+const jPond = judge(pond, pondRaw), jDog = judge(dog, dogRaw);
+
+// 点选叠层预览（照片 + 红色半透明选区 + 点击点）
+function overlay(c, sel, fx, fy, W, H) {
+  const t = document.createElement('canvas'); t.width = W; t.height = H; const ctx = t.getContext('2d');
+  const s = Math.max(W / c.width, H / c.height), dw = c.width * s, dh = c.height * s, ox = (W - dw) / 2, oy = (H - dh) / 2;
+  ctx.drawImage(c, ox, oy, dw, dh);
+  const m = document.createElement('canvas'); m.width = sel.w; m.height = sel.h; const mc = m.getContext('2d'), id = mc.createImageData(sel.w, sel.h);
+  // 选区外压暗、选区边缘描一圈白：比在主体上染色更好认（粉色荷花上染红几乎看不出来）
+  for (let i = 0; i < sel.w * sel.h; i++) {
+    const x = i % sel.w, edge = sel.mask[i] && (x === 0 || !sel.mask[i-1] || !sel.mask[i+1] || !sel.mask[i-sel.w] || !sel.mask[i+sel.w]);
+    if (edge) { id.data[i*4] = id.data[i*4+1] = id.data[i*4+2] = 255; id.data[i*4+3] = 255; }
+    else if (!sel.mask[i]) { id.data[i*4+3] = 150; }
+  }
+  mc.putImageData(id, 0, 0); ctx.drawImage(m, ox, oy, dw, dh);
+  ctx.fillStyle = '#fff'; ctx.strokeStyle = '#222'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(ox + fx * dw, oy + fy * dh, 9, 0, 7); ctx.fill(); ctx.stroke();
+  return t.toDataURL('image/jpeg', .85);
+}
+const lotusOv = overlay(lotusC, lotusSel, .5, .6, 398, 330);
+
+// 带边框 + 环形字的成品（装饰页 / 刻章动效用）
+function decorated(d, size, ring, ink = 'zhu') {
+  const col = { zhu: '#C0463A', mo: '#2B2A28' }[ink] || '#C0463A';
+  return `<div style="position:relative;width:${size}px;height:${size}px">
+    <svg viewBox="0 0 100 100" width="${size}" height="${size}" style="position:absolute;inset:0">
+      <defs><path id="rp${size}" d="M50,50 m-38,0 a38,38 0 1,1 76,0 a38,38 0 1,1 -76,0"/></defs>
+      <circle cx="50" cy="50" r="47" fill="none" stroke="${col}" stroke-width="3.2"/>
+      <circle cx="50" cy="50" r="31" fill="none" stroke="${col}" stroke-width="1.2" opacity=".8"/>
+      <text font-size="8.6" fill="${col}" font-family="LXGW WenKai, serif" letter-spacing="1.6"><textPath href="#rp${size}" startOffset="3%">${ring}</textPath></text>
+    </svg>
+    <div style="position:absolute;left:22%;top:22%;width:56%;height:56%;display:flex;align-items:center;justify-content:center">${S(d, Math.round(size * .56), ink)}</div></div>`;
+}
+
+const col = (cap, sub, body, cls = '') => `<div class="col"><div class="cap">${cap}<small>${sub}</small></div><div class="scr ${cls}">${body}</div></div>`;
+const head = on => `<div class="h1">印集</div><div class="seg"><span${on === 0 ? ' class="on"' : ''}>藏品</span><span${on === 1 ? ' class="on"' : ''}>集市</span><span${on === 2 ? ' class="on"' : ''}>刻章铺<i class="new">NEW</i></span></div>`;
+const tabbar = `<div style="position:absolute;left:0;right:0;bottom:0;height:62px;border-top:1px solid var(--line);background:var(--paper);display:flex;justify-content:space-around;align-items:center;font-size:11px;color:var(--sub)"><span>今日</span><span>本子</span><span style="color:var(--ink)">印集</span><span>我的</span></div>`;
+
+const html = [];
+
+// ① 刻章铺首页
+html.push(col('① 刻章铺（印集第三个分段）', '第一次进来：先看「照片→章」的样子和反例；三个入口按成功率排；下面是我刻的章。未登录的 iOS / Play 用户看到底部那行登录提示。',
+`<div class="pad">${head(2)}
+  <div class="card" style="margin-top:14px">
+    <div class="t">自己刻一枚章</div>
+    <div class="s">一个主体、背景干净、光线亮，最容易刻好看</div>
+    <div class="pairs">
+      <div class="pair"><img src="_samples/dog_stand.jpg"><span class="arr">→</span>${S(dog.d, 50)}</div>
+      <div class="pair"><img src="_samples/pig.jpg"><span class="arr">→</span>${S(pig.d, 50, 'mo')}</div>
+      <div class="pair"><img src="${lotusC.toDataURL('image/jpeg', .7)}"><span class="arr">→</span>${S(lotus.d, 50)}</div>
+    </div>
+    <div class="xs" style="margin-top:10px">这几种不太行：</div>
+    <div class="bad">
+      <div><img src="_samples/real/p04.jpg"><i>✕</i><span>背景太杂</span></div>
+      <div><img src="_samples/real/p01.jpg" style="object-position:top"><i>✕</i><span>整张截图</span></div>
+      <div><img src="_samples/real/p11.jpg"><i>✕</i><span>东西太多</span></div>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+    <span class="btn">画一张，拍下来</span>
+    <div class="row"><span class="btn2" style="flex:1">从相册选</span><span class="btn2" style="flex:1">用示范图试试</span></div>
+  </div>
+  <div class="xs" style="text-align:center;margin-top:8px">还能免费刻 <b style="color:var(--accent);font-weight:400">3</b> 枚 · 之后 ¥18 一次买断，想刻多少刻多少</div>
+  <div class="row" style="justify-content:space-between;margin-top:18px"><span class="t" style="font-size:14px">我刻的章 · 2</span><span class="xs">点一枚可以改名、换分类、删除</span></div>
+  <div class="mine"><div class="c">${S(dog.d, 36)}小狗</div><div class="c">${S(leaf.d, 36, 'mo')}叶子</div><div class="c" style="border-style:dashed;color:var(--faint)">＋</div></div>
+  <div class="xs" style="margin-top:14px;padding:8px 10px;background:var(--card);border-radius:8px;border:.5px solid var(--line)">没登录时，刻的章只存在这台手机上。<b style="color:var(--accent);font-weight:400">登录</b>后换手机也能找回 ›</div>
+</div>${tabbar}
+<div class="note" style="top:120px;right:10px">分段加在集市后面；第一次上线带 NEW</div>
+<div class="note" style="top:600px;left:10px">主入口是「画一张拍下来」：纸笔线稿成功率最高</div>`));
+
+// ② 裁切
+html.push(col('② 裁切（每张图都要过）', '方框固定，双指缩放拖动照片；手机截图（细长比例）一进来就提示先裁。',
+`<div style="position:absolute;inset:0;background:#111"></div>
+ <img src="_samples/real/p07.jpg" style="position:absolute;left:-40px;top:120px;width:510px">
+ <div class="crop" style="left:45px;top:285px;width:340px;height:340px"><i style="left:-3px;top:-3px;border-right:0;border-bottom:0"></i><i style="right:-3px;top:-3px;border-left:0;border-bottom:0"></i><i style="left:-3px;bottom:-3px;border-right:0;border-top:0"></i><i style="right:-3px;bottom:-3px;border-left:0;border-top:0"></i></div>
+ <div style="position:absolute;left:0;right:0;top:54px;text-align:center"><span class="hint">双指缩放，让想刻的东西填满方框</span></div>
+ <div style="position:absolute;left:16px;right:16px;top:98px"><div class="warn" style="background:rgba(255,241,230,.95)">这像是一张截图，先把想刻的那一块裁出来（只在截图时出现）</div></div>
+ <div style="position:absolute;left:16px;right:16px;bottom:34px;display:flex;gap:10px"><span class="btn2" style="flex:1;background:transparent;color:#eee;border-color:#555">重选</span><span class="btn" style="flex:2">下一步</span></div>`, 'dark'));
+
+// ③ 调整：线稿
+html.push(col('③ 调整 · 线稿（纸笔画、线稿图默认）', '大图 + 放在托盘里的样子并排；判定只报明确的毛病；三个控件：深浅、细节、粗细（默认「中」= 库里的线宽，自动避免把排线糊死）。',
+`<div class="pad" style="padding-top:44px">
+  <div class="row" style="justify-content:space-between"><span class="xs">‹ 重新裁</span><div class="seg"><span class="on">线稿</span><span>点一下主体</span></div><span class="xs" style="opacity:0">x</span></div>
+  <div class="stage" style="height:300px;margin-top:14px">${S(dog.d, 250)}</div>
+  <div class="row" style="justify-content:space-between;margin-top:10px"><span class="xs">放进托盘里是这样：</span><div class="tray"><span>${L('milktea')}</span><span class="me">${S(dog.d, 26)}</span><span>${L('coffee')}</span><span>${L('cat') || L('takeout')}</span></div></div>
+  <div class="verdict v-g" style="margin-top:12px"><span class="dot" style="background:#2F6B34"></span><div><b>托盘里看得清</b></div></div>
+  <div class="ctl"><div class="lab">深浅<span>浅一点 · 深一点</span></div><div class="bar"><b style="left:48%"></b></div></div>
+  <div class="ctl"><div class="lab">细节<span>少 · 多</span></div><div class="bar"><b style="left:40%"></b></div></div>
+  <div class="ctl"><div class="lab">粗细</div><div class="opts"><span>原样</span><span>细</span><span class="on">中</span><span>粗</span></div></div>
+  <span class="btn" style="margin-top:18px">下一步</span>
+</div>
+<div class="note" style="top:44px;right:8px">托盘 30px 才是真实使用尺寸</div>`));
+
+// ④ 调整：点一下主体
+html.push(col('④ 调整 · 点一下主体（照片默认）', '点一下要刻的东西，亮着的就是选中的（外面压暗）；没选全再点一下加进来，「范围」调选区大小。出来的是实心剪影章。',
+`<div class="pad" style="padding-top:44px">
+  <div class="row" style="justify-content:space-between"><span class="xs">‹ 重新裁</span><div class="seg"><span>线稿</span><span class="on">点一下主体</span></div><span class="xs" style="opacity:0">x</span></div>
+  <div style="margin-top:14px;border-radius:12px;overflow:hidden;height:330px"><img src="${lotusOv}" style="width:100%;height:100%;display:block"></div>
+  <div class="xs" style="text-align:center;margin-top:6px">点一下你想刻的东西 · 没选全就再点一下 · 点错了按撤销</div>
+  <div class="ctl"><div class="lab">范围<span>小一点 · 大一点</span></div><div class="bar"><b style="left:30%"></b></div></div>
+  <div class="row" style="margin-top:14px;gap:12px"><div class="stage" style="width:120px;height:120px">${S(lotus.d, 104)}</div>
+    <div style="flex:1"><div class="xs">托盘里：</div><div class="tray" style="margin-top:4px"><span>${L('milktea')}</span><span class="me">${S(lotus.d, 26)}</span><span>${L('coffee')}</span></div>
+    <div class="verdict v-g" style="margin-top:8px;padding:6px 9px"><span class="dot" style="background:#2F6B34"></span><b>托盘里看得清</b></div></div></div>
+  <div class="row" style="margin-top:16px"><span class="btn2" style="flex:1">撤销</span><span class="btn" style="flex:2">下一步</span></div>
+</div>`));
+
+// ⑤ 红色判定
+html.push(col('⑤ 红色判定时', '给原因 + 两个马上能点的办法；还是想刻就点「仍然刻」（多一步确认，不禁止）。',
+`<div class="pad" style="padding-top:44px">
+  <div class="row" style="justify-content:space-between"><span class="xs">‹ 重新裁</span><div class="seg"><span class="on">线稿</span><span>点一下主体</span></div><span class="xs" style="opacity:0">x</span></div>
+  <div class="stage" style="height:300px;margin-top:14px">${S(pond.d, 250)}</div>
+  <div class="row" style="justify-content:space-between;margin-top:10px"><span class="xs">放进托盘里是这样：</span><div class="tray"><span>${L('milktea')}</span><span class="me">${S(pond.d, 26)}</span><span>${L('coffee')}</span></div></div>
+  <div class="verdict v-r" style="margin-top:12px"><span class="dot" style="background:#9C3325"></span><div><b>${jPond.why}</b><br>${jPond.tip}</div></div>
+  <div class="row" style="margin-top:10px"><span class="btn2" style="flex:1;font-size:13px">裁近一点</span><span class="btn2" style="flex:1;font-size:13px">换成点一下主体</span></div>
+  <div class="ctl"><div class="lab">深浅<span>浅一点 · 深一点</span></div><div class="bar"><b style="left:48%"></b></div></div>
+  <div class="ctl"><div class="lab">细节<span>少 · 多</span></div><div class="bar"><b style="left:40%"></b></div></div>
+  <div style="text-align:center;margin-top:20px" class="xs">还是想刻这个？ <span style="color:var(--accent)">仍然刻 ›</span></div>
+</div>`));
+
+// ⑥ 装饰 + 刻好了
+html.push(col('⑥ 装饰', '边框、环形字、日期都是可选的，能把不够完美的轮廓「救」成设计感；起名字、选分类（放进托盘哪一格）、默认印泥。',
+`<div class="pad" style="padding-top:44px">
+  <div class="row" style="justify-content:space-between"><span class="xs">‹ 返回调整</span><span class="t" style="font-size:14px">装饰一下</span><span class="xs" style="opacity:0">x</span></div>
+  <div class="stage" style="height:250px;margin-top:14px">${decorated(dog.d, 210, '小狗 · 2026.09.11 · 刻章铺 ·')}</div>
+  <div class="lbl">边框</div><div class="opts"><span>无</span><span class="on">圆</span><span>方</span><span>椭圆</span></div>
+  <div class="lbl">环形字（可空）</div><div class="field">小狗 · 2026.09.11 · 刻章铺</div>
+  <div class="row" style="justify-content:space-between;margin-top:10px"><span class="xs">带上今天的日期</span><span style="width:38px;height:22px;border-radius:11px;background:var(--accent);position:relative"><i style="position:absolute;right:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff"></i></span></div>
+  <div class="lbl">名字</div><div class="field">小狗</div>
+  <div class="lbl">放在托盘哪一格</div><div><span class="chip">吃喝</span><span class="chip">日常</span><span class="chip">娱乐</span><span class="chip">学习</span><span class="chip">摆烂</span><span class="chip">情绪</span><span class="chip on">遇见</span></div>
+  <span class="btn" style="margin-top:12px">刻好了</span>
+  <div class="xs" style="text-align:center;margin-top:6px">用掉 1 次免费（还剩 2 次）· 刻好前随便改，不扣次数</div>
+</div>`));
+
+// ⑦ 刻章动效
+html.push(col('⑦ 刻章动效 → 盖第一下', '「动效才是产品」：刻刀沿线走一遍（带沙沙声）→ 橡皮章翻过来 → 自动跳到今日页盖第一下，章进托盘。约 2.5 秒，可点跳过。',
+`<div class="pad" style="padding-top:50px">
+  <div class="t" style="text-align:center;letter-spacing:.2em">正在刻…</div>
+  <div style="display:flex;gap:8px;margin-top:18px">
+    <div class="kf"><div class="block"><div class="face" style="opacity:.9"><div style="clip-path:inset(0 0 55% 0)">${S(dog.d, 70, 'mo')}</div></div></div><span class="n">1 · 刻刀沿线走</span></div>
+    <div class="kf"><div class="block"><div class="face">${S(dog.d, 70, 'mo')}</div></div><span class="n">2 · 刻好，吹一口</span></div>
+    <div class="kf"><div class="block" style="transform:rotate(180deg) scale(.92)"><div class="face" style="background:#C0463A">${S(dog.d, 70, 'mo')}</div></div><span class="n">3 · 翻过来蘸泥</span></div>
+  </div>
+  <div class="stage" style="height:330px;margin-top:22px;background:#FBF7EE;border:1px solid var(--line);flex-direction:column;gap:10px">
+    <div class="xs">9月11日 · 星期五</div>
+    <div style="display:flex;gap:26px;align-items:center">${L('milktea')}<div style="transform:rotate(-4deg)">${decorated(dog.d, 96, '小狗 · 2026.09.11 · 刻章铺 ·')}</div>${L('coffee')}</div>
+    <div class="xs">啪 —— 第一下盖在今天</div>
+  </div>
+  <div style="text-align:center;margin-top:16px"><span class="toast">已放进托盘 · 「遇见」那一格</span></div>
+  <div class="xs" style="text-align:center;margin-top:12px;text-decoration:underline">跳过动画</div>
+</div>`));
+
+// ⑧ 买断
+html.push(col('⑧ 3 次用完 · 买断', '只有点「刻好了」时才弹。iOS / Play 走各自内购（不登录也能买）；国内安卓走支付宝，要先登录（同原规则），并带不退款小字。',
+`<div class="pad">${head(2)}<div class="card" style="margin-top:14px;height:260px"></div></div>${tabbar}
+ <div class="dim"></div>
+ <div class="psheet"><div class="grab"></div>
+  <div class="t" style="text-align:center;font-size:18px;letter-spacing:.14em">刻章铺 · 一次买断</div>
+  <div style="display:flex;justify-content:center;gap:10px;margin:16px 0 8px">${S(dog.d, 54)}${S(leaf.d, 54, 'mo')}${S(lotus.d, 54)}</div>
+  <div class="s" style="text-align:center">3 次免费已经用完了。<br>买断之后想刻多少刻多少。</div>
+  <div class="xs" style="text-align:center;margin-top:6px">不含印泥盒和系列章</div>
+  <span class="btn" style="margin-top:16px">¥18 买断刻章铺</span>
+  <div class="row" style="justify-content:center;gap:22px;margin-top:10px"><span class="xs">恢复购买</span><span class="xs">先不买，保存草稿</span></div>
+  <div class="xs" style="text-align:center;margin-top:10px;color:var(--faint)">数字商品，付款即交付，不支持无理由退款。详见<span style="color:var(--accent)">《服务协议》</span>（仅支付宝通道显示）</div>
+ </div>`));
+
+// ⑨ 刻好的章出现在哪
+html.push(col('⑨ 刻好的章在别处', '藏品多一折「我刻的」；今日托盘按分类放进去；分享：自己保存的分享图正常显示，分享链接页只放占位「一枚自刻章」。',
+`<div class="pad">${head(0)}
+  <div style="margin-top:12px"><span class="chip on">全部</span><span class="chip">我刻的</span><span class="chip">吃喝</span><span class="chip">日常</span><span class="chip">遇见</span><span class="chip">字</span></div>
+  <div class="row" style="justify-content:space-between;margin-top:10px"><span class="t" style="font-size:14px">我刻的 · 3</span><span class="xs">去刻章铺 ›</span></div>
+  <div class="mine"><div class="c">${S(dog.d, 36)}小狗</div><div class="c">${S(leaf.d, 36, 'mo')}叶子</div><div class="c">${S(lotus.d, 36)}荷花</div></div>
+  <div class="t" style="font-size:14px;margin-top:14px">我盖过的 · 18</div>
+  <div class="xs">（原有的「我盖过的 / 字形章 / 还没遇到的 / 隐藏章 / 封蜡 / 印泥盒」各折不动，排在后面）</div>
+  <div style="margin-top:26px;border-top:1px dashed var(--line);padding-top:14px">
+    <div class="t" style="font-size:14px">朋友打开分享链接时</div>
+    <div class="stage" style="height:190px;margin-top:8px;background:#FBF7EE;border:1px solid var(--line);gap:24px">
+      ${L('milktea')}
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:50px;height:50px;border-radius:50%;border:2px dashed #B9B2A4;display:flex;align-items:center;justify-content:center;font-size:20px;color:#B9B2A4">✎</div><span class="xs">一枚自刻章</span></div>
+      ${L('coffee')}
+    </div>
+    <div class="xs" style="margin-top:6px">图案不上公开页面：不用做内容审核，也不怕有人刻了别人的东西用我们的链接传播。</div>
+  </div>
+</div>${tabbar}`));
+
+document.getElementById('board').innerHTML = html.join('');
+document.title = 'done';
+</script>

@@ -421,7 +421,7 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
 
 /* ---------- 印集 · 集市（9-08）：卡片用纸色和现有 pro-card 同一套材质 ---------- */
 .fold-b .box-paper{margin-top:4px}
-.mk-links{display:flex; justify-content:flex-end; gap:18px; padding:6px 4px 0}
+.mk-links{display:flex; justify-content:center; gap:18px; padding:6px 4px 0}
 .mk-links .pro-plain{border:none; background:none; cursor:pointer; font-family:var(--f-title); font-size:11.5px; color:var(--sub); letter-spacing:.1em; padding:6px 4px}
 .mk .bs-t{margin-top:16px}
 .mk-card{margin:8px 0 0; padding:12px 14px; border-radius:10px; background:var(--card); border:.5px solid var(--line)}
@@ -2064,10 +2064,12 @@ main::-webkit-scrollbar,.pick-grid::-webkit-scrollbar,.day-list::-webkit-scrollb
   max-width:26em; text-align:left}
 #ov-legal p.lg-upd{color:var(--ink); text-align:center}
 #ov-legal a,.acc-agree a,.mk-refund a,.pro-refund a{color:var(--accent); text-decoration:none}
+/* 9-11：窄屏 / 安卓大字号下这行会折，《服务协议》不许被拆成两截 */
+.mk-refund a,.pro-refund a,.bx-fine a{white-space:nowrap}
 .acc-agree{display:flex; gap:8px; align-items:flex-start; margin-top:10px; font-size:12px; line-height:1.7;
   color:var(--sub); text-align:left; cursor:pointer}
 .acc-agree input{flex:none; margin:3px 0 0; width:15px; height:15px; accent-color:var(--accent)}
-.mk-refund{font-size:11px; line-height:1.7; color:var(--faint); text-align:right; padding:4px 4px 0}
+.mk-refund{font-size:11px; line-height:1.7; color:var(--faint); text-align:center; letter-spacing:.02em; padding:2px 12px 0}
 .pro-refund{font-size:11px; line-height:1.7; color:var(--faint); text-align:center; margin-top:8px}
 .me-legal{display:flex; justify-content:center; gap:22px; margin-top:26px; font-size:11.5px; letter-spacing:.1em}
 .me-legal a{color:var(--sub); text-decoration:none}

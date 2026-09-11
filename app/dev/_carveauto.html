@@ -1,0 +1,75 @@
+<!doctype html><meta charset="utf-8"><title>刻章铺 · 自动出候选</title>
+<!-- 9-11 用户反馈：「线稿」和「点一下主体」不好懂，点选看着专业、普通人不懂、专业的又嫌业余。
+     验证「挑结果不挑方法」：裁好后自动判断 画/照片、自动找主体（不点），出 3 个候选 + 推荐。dev 页，不进包。 -->
+<style>
+body{margin:0;background:#E9E4D8;font:12px/1.5 system-ui;padding:10px;width:1180px}
+.r{display:grid;grid-template-columns:170px repeat(3,1fr) 200px;gap:8px;margin-bottom:8px;align-items:stretch}
+.c{background:#F6F2EA;border-radius:8px;padding:6px;text-align:center;position:relative}
+.c.rec{outline:3px solid #C94B3C}
+.c.rec::after{content:'推荐';position:absolute;top:6px;right:6px;background:#C94B3C;color:#fff;font-size:11px;padding:0 6px;border-radius:4px}
+.p{background:#FBF7EE;height:150px;display:flex;align-items:center;justify-content:center;gap:10px;border-radius:6px}
+.p img{max-width:150px;max-height:146px}.m{color:#6B655C;font-size:11.5px;margin-top:4px;text-align:left}
+</style><div id="out"></div>
+<script type="module">
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+import { imageToStamp } from '../js/trace.js';
+import { prepare, magicWand, refineMask, maskToStamp, thickenBin, judge } from '../js/carve.js';
+document.body.insertAdjacentHTML('afterbegin', `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+const load = s => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = s; });
+const crop = (img, x0, y0, x1, y1) => { const w = img.naturalWidth, h = img.naturalHeight, c = document.createElement('canvas'); c.width = Math.round((x1-x0)*w); c.height = Math.round((y1-y0)*h); c.getContext('2d').drawImage(img, x0*w, y0*h, c.width, c.height, 0, 0, c.width, c.height); return c; };
+const S = (d, size) => stampSVG({ id: 'x', name: 'x', cat: 'meet', ink: 'zhu', d }, { size, ink: 'zhu' });
+
+// 画还是照片：看平均饱和度 + 亮度是不是两极（白纸黑线）
+function kindOf(src) {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, 128, 128);
+  const d = x.getImageData(0, 0, 128, 128).data; let sat = 0, ext = 0, n = 128 * 128;
+  for (let i = 0; i < n; i++) { const r = d[i*4], g = d[i*4+1], b = d[i*4+2], mx = Math.max(r, g, b), mn = Math.min(r, g, b); sat += mx ? (mx - mn) / mx : 0; const L = (r + g + b) / 3; if (L < 90 || L > 175) ext++; }
+  sat /= n; ext /= n;
+  return { kind: sat < 0.12 ? 'drawing' : 'photo', sat: +sat.toFixed(2), ext: +ext.toFixed(2) };   // 只看饱和度：灰纸上拍的画也是低饱和
+}
+// 自动找主体：中心 + 周围 4 个点各灌一次，挑「面积 8%~70%、不贴边」里最大的那块
+function autoSubject(P) {
+  const { w, h } = P, N = w * h; let best = null;
+  for (const [fx, fy] of [[.5, .5], [.5, .38], [.5, .62], [.38, .5], [.62, .5]]) {
+    const s = refineMask(magicWand(P, fx, fy)); let a = 0; for (let i = 0; i < N; i++) a += s.mask[i];
+    const f = a / N; if (f < 0.08 || f > 0.7) continue;
+    if (!best || a > best.a) best = { s, a, f, fx, fy };
+  }
+  return best;
+}
+function lineOfSelection(src, sel) {
+  const { w, h } = sel, c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, w, h);
+  const px = x.getImageData(0, 0, w, h); for (let i = 0; i < w*h; i++) if (!sel.mask[i]) px.data[i*4] = px.data[i*4+1] = px.data[i*4+2] = 255; x.putImageData(px, 0, 0);
+  const raw = imageToStamp(c, {}); return { raw, out: thickenBin(raw, 1) };
+}
+const J = (r) => { const j = judge(r.out, r.raw); return `${{ green: '🟢', yellow: '🟡', red: '🔴' }[j.level]} ${j.why}`; };
+async function run(label, file, box) {
+  const img = await load(file), c = box ? crop(img, ...box) : img;
+  const k = kindOf(c);
+  const lraw = imageToStamp(c, {}), line = { raw: lraw, out: thickenBin(lraw, 2) };
+  const P = prepare(c), sub = autoSubject(P);
+  const bgLine = sub ? lineOfSelection(c, sub.s) : null;
+  const sil = sub ? (() => { const r = maskToStamp(sub.s); return { raw: r, out: r }; })() : null;
+  // 推荐：画 → 线条；照片且找到了主体 → 去背景线条；照片没找到主体 → 线条（再提示去裁近一点）
+  // 推荐 = 判定最好的那个（绿>黄>红），只在「线条」和「去掉背景」里挑；平手时照片偏去背景、画偏线条。剪影永远不自动推荐（池塘那种一坨也会被判成看得清）
+  const rank = r => r ? { green: 3, yellow: 2, red: 1 }[judge(r.out, r.raw).level] : 0;
+  const a0 = rank(line), a1 = rank(bgLine);
+  const rec = a1 > a0 ? 1 : a0 > a1 ? 0 : (k.kind === 'photo' && bgLine ? 1 : 0);
+  const cand = [['线条', line], ['去掉背景', bgLine], ['剪影', sil]];
+  const thumb = c instanceof HTMLImageElement ? c.src : c.toDataURL('image/jpeg', .8);
+  document.getElementById('out').insertAdjacentHTML('beforeend', `<div class="r">
+    <div class="c"><div class="p"><img src="${thumb}"></div><div class="m"><b>${label}</b></div></div>
+    ${cand.map(([n, r], i) => `<div class="c ${i === rec ? 'rec' : ''}"><div class="p">${r ? S(r.out.d, 124) + S(r.out.d, 30) : '<span class="m">没找到主体</span>'}</div><div class="m"><b>${n}</b> ${r ? J(r) : ''}</div></div>`).join('')}
+    <div class="c"><div class="m">判断：<b>${k.kind === 'drawing' ? '画' : '照片'}</b>（饱和 ${k.sat} · 黑白两极 ${k.ext}）<br>自动主体：${sub ? `占 ${Math.round(sub.f * 100)}%，种子 (${sub.fx},${sub.fy})` : '没找到'}</div></div></div>`);
+}
+await run('手绘小狗', '_samples/dog_stand.jpg');
+await run('手绘小猪', '_samples/pig.jpg');
+await run('排线叶子', '_samples/leaf_clean.jpg');
+await run('荷花', '_samples/real/p03.jpg', [.26, .24, .62, .56]);
+await run('卡通头像', '_samples/real/p14.jpg', [.1, .06, .9, .86]);
+await run('海报里的布', '_samples/real/p07.jpg', [.12, .24, .88, .72]);
+await run('纽扣电池', '_samples/real/p10.jpg', [.18, .24, .82, .74]);
+await run('笔记本（没裁）', '_samples/real/p06.jpg');
+await run('池塘（没裁）', '_samples/real/p04.jpg');
+document.title = 'done';
+</script>

@@ -27,6 +27,8 @@
 .kz-ov.show { display: block }
 .kz-dark, .kz-pane { position: absolute; inset: 0; overflow-y: auto; display: flex; flex-direction: column; padding: calc(14px + var(--safe-area-inset-top, env(safe-area-inset-top))) 16px calc(18px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom))) }
 .kz-dark { background: #16140F; color: #eee; align-items: center }
+/* 🔴 放不下就整页往下滚，别把里面的块挤扁（9-11 手机上照片框被压到 10px 高，只露一条） */
+.kz-dark > *, .kz-pane > * { flex-shrink: 0 }
 .kz-top { width: 100%; display: flex; justify-content: space-between; align-items: center; font-family: var(--f-title); font-size: 15px; letter-spacing: .08em; min-height: 36px }
 .kz-link { background: none; border: none; color: inherit; font-family: var(--f-hand); font-size: 14px; opacity: .85; cursor: pointer; padding: 6px 2px }
 .kz-pane .kz-link { color: var(--sub) }

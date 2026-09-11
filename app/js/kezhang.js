@@ -4,7 +4,7 @@
 // M1 范围：以上整条链 + 本机保存。装饰 / 刻章动效 / 买断 / 同步 / 分享占位 = 后续里程碑。
 // 照片只在这台手机上处理（canvas），不上传。产物跟官方章同一种 d（M/L/Z 路径，禁 base64）。
 // ============================================================
-import { STAMPS, INIT_STAMPS, CATEGORIES, rebuildStampIndex, stampById } from './data.js';
+import { STAMPS, INIT_STAMPS, rebuildStampIndex, stampById } from './data.js';
 import { stampSVG } from './stamp.js';
 import { imageToStamp } from './trace.js';
 import { prepare, magicWand, refineMask, maskToStamp, thickenBin, judge, sourceHint } from './carve.js';
@@ -25,7 +25,8 @@ export const isCarved = id => typeof id === 'string' && id.startsWith('my_');
 // 开机就把自刻章并进章库：托盘 / 本子 / 分享卡都按普通章画，不用各处特判
 function register(s) {
   if (!SAFE_D.test(s.d)) return false;
-  const def = { id: s.id, name: s.name, cat: s.cat, ink: s.ink || 'zhu', d: s.d, carved: true };
+  // 自刻章一律归「我刻的」（cat='mine'，不在 CATEGORIES 里）：不混进吃喝 / 遇见，也就不会被拿去刷「某类累计 N 次」的解锁
+  const def = { id: s.id, name: s.name, cat: 'mine', ink: s.ink || 'zhu', d: s.d, carved: true };
   const i = STAMPS.findIndex(x => x.id === s.id);
   if (i >= 0) STAMPS[i] = def; else STAMPS.push(def);
   if (!INIT_STAMPS.includes(s.id)) INIT_STAMPS.push(s.id);   // 刻好就在托盘里，不走解锁
@@ -81,16 +82,16 @@ function shrink(img) {
   return c;
 }
 
-export function bindKz(root, rerender) {
+export function bindKz(root, rerender, onSaved) {
   root.querySelectorAll('[data-kzfile]').forEach(inp => inp.addEventListener('change', e => {
     const f = e.target.files && e.target.files[0];
     e.target.value = '';
     if (!f) return;
     const bad = checkFile(f);
     if (bad) { toast(bad, 2400); return; }
-    openFlow(URL.createObjectURL(f), rerender);
+    openFlow(URL.createObjectURL(f), rerender, onSaved);
   }));
-  root.querySelectorAll('[data-demo]').forEach(b => b.addEventListener('click', () => openFlow(b.dataset.demo, rerender)));
+  root.querySelectorAll('[data-demo]').forEach(b => b.addEventListener('click', () => openFlow(b.dataset.demo, rerender, onSaved)));
   // 入库后跟普通章一样：不能删、不能改名（9-11 用户拍板）。点一下只报它的来历。
   root.querySelectorAll('[data-kzid]').forEach(b => b.addEventListener('click', () => {
     const s = carved.find(x => x.id === b.dataset.kzid);
@@ -103,13 +104,13 @@ export function bindKz(root, rerender) {
 // ============================================================
 let F = null;   // 当前这一次刻章的全部状态
 
-function openFlow(src, done) {
+function openFlow(src, done, onSaved) {
   const im = new Image();
   im.onload = () => {
     if (im.naturalWidth * im.naturalHeight > MAX_PIXELS) { toast('这张图太大了，换一张，或者先截个图再用', 2400); return; }
     const img = shrink(im);
     if (src.startsWith('blob:')) URL.revokeObjectURL(src);
-    F = { img, done, hint: sourceHint(img), step: 'crop',
+    F = { img, done, onSaved, hint: sourceHint(img), step: 'crop',
       // 裁切：方框边长 = 图短边 * zoom^-1，中心 (cx, cy) 用 0..1
       crop: { cx: .5, cy: .5, zoom: 1 },
       mode: 'line', thr: 0, detail: 2, weight: 2,
@@ -349,18 +350,16 @@ function drawPhoto(ov, sel) {
 
 // ---- ③ 起名 + 放哪一格 + 刻好了（M2 在这一步前面插装饰和动效）----
 function renderFinish(ov) {
-  const cats = CATEGORIES.map(c => `<button class="kz-chip ${F.cat === c.id ? 'on' : ''}" data-cat="${c.id}">${esc(c.name)}</button>`).join('');
   ov.innerHTML = `<div class="kz-pane">
     <div class="kz-top"><button class="kz-link" data-act="back">‹ 返回调整</button><span>起个名字</span><button class="kz-link" data-act="close">取消</button></div>
     <div class="kz-stage big">${S(F.result.out.d, 220, F.ink)}</div>
     <div class="kz-lab2">名字</div><input class="kz-field" id="kz-name" maxlength="8" placeholder="比如：小狗" value="${esc(F.name)}">
-    <div class="kz-lab2">放在托盘哪一格</div><div class="kz-cats">${cats}</div>
+    <div class="kz-xs">放进托盘后在「我刻的」那一格</div>
     <div class="kz-lab2">默认印泥</div><div class="kz-row">${['zhu', 'mo', 'song', 'tao'].map(k => `<button class="kz-chip ${F.ink === k ? 'on' : ''}" data-ink="${k}">${{ zhu: '朱砂', mo: '墨', song: '松绿', tao: '桃' }[k]}</button>`).join('')}</div>
     <div class="kz-bottom"><button class="kz-btn" data-act="trial">刻好了，试盖一下</button></div>
     <div class="kz-xs kz-center">试盖不扣次数 · 满意放进托盘时才算用掉 1 次</div>
   </div>`;
   ov.querySelector('#kz-name').oninput = e => { F.name = e.target.value; };
-  ov.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => { F.cat = b.dataset.cat; ov.querySelectorAll('[data-cat]').forEach(x => x.classList.toggle('on', x === b)); });
   ov.querySelectorAll('[data-ink]').forEach(b => b.onclick = () => { F.ink = b.dataset.ink; renderFinish(ov); });
   bindActs(ov, { back: () => { F.step = 'adjust'; render(); }, close, trial: () => { F.step = 'trial'; F.trials = []; render(); } });
 }
@@ -404,12 +403,13 @@ function renderTrial(ov) {
 
 function save() {
   const name = (F.name || '').trim() || '我的章';
-  const s = { id: 'my_' + Date.now().toString(36), name: name.slice(0, 8), cat: F.cat, ink: F.ink, d: F.result.out.d, ts: Date.now(), style: F.mode === 'line' ? 'line' : F.style };
+  const s = { id: 'my_' + Date.now().toString(36), name: name.slice(0, 8), cat: 'mine', ink: F.ink, d: F.result.out.d, ts: Date.now(), style: F.mode === 'line' ? 'line' : F.style };
   if (!register(s)) { toast('这枚章的数据不对，没存上'); return; }
   carved.push(s); rebuildStampIndex();
   if (!saveAll(carved)) { toast('手机存储满了，没存上'); carved.pop(); return; }
-  const done = F.done; close();
-  toast(`刻好了，「${s.name}」已经放进托盘`);
+  const done = F.done, onSaved = F.onSaved; close();
+  if (onSaved) onSaved(s);   // main.js：托盘切到「我刻的」，新章一眼就看得到（收起态的托盘只摆得下前几枚）
+  toast(`刻好了，「${s.name}」在托盘「我刻的」那一格`);
   if (done) done();
 }
 

@@ -8,7 +8,7 @@ import { sync } from './sync.js';
 import { iapPrice, iapPrices, iapBuy, iapRestore, isAndroid, initAndroidShell, appBuild, openExternal } from './native.js';
 import { collectGifts, claimTicket, authSmsSend, smsSupported, androidUpdateInfo, IS_OVERSEAS, initRegion, ICP_APP_NO, webBase, payCreate, payOrder, products as fetchProducts } from './net.js';
 import { bootCatalog, refreshCatalog, catalogNotice } from './catalog.js';   // 内容包：import 即合并本地缓存（在首屏之前）
-import { kzSegmentHTML, bindKz } from './kezhang.js';   // 刻章铺（feat/kezhangpu 分支）：import 即把本机自刻章并进章库
+import { kzSegmentHTML, bindKz, carved } from './kezhang.js';   // 刻章铺（feat/kezhangpu 分支）：import 即把本机自刻章并进章库
 import { checkHidden, dailySecret, checkUnlocks, isUnlocked, isOwned, claimFreeStamps } from './hidden.js';
 import { verdictOf } from './verdict.js';
 import { toast, openSheet, closeSheets, onLongPress, haptic, thump } from './ui.js';
@@ -86,6 +86,8 @@ let eraser = false;              // 橡皮擦模式
 let holdGesture = null;          // 拿着章按在纸上不放的那个手势（出影子、滑动对位、松手盖）
 let pendingPose = null;          // 影子出现时就掷好的姿态 —— 影子长什么样，盖下去就是什么样
 let deckCat = 'all';
+// 刻章铺（分支）：有自刻章时，托盘 / 藏品的分类栏多一格「我刻的」，跟其他分类并排（9-11 用户拍板）
+const catsUI = () => carved.length ? [{ id: 'mine', name: '我刻的' }, ...CATEGORIES] : CATEGORIES;
 let deckOpen = false;             // 托盘展开态（收起态只有一行常用章）
 let undoRec = null;              // {id, at} 刚盖下的那一枚，10 秒内可以撤
 let undoTimer = null;
@@ -927,7 +929,7 @@ function renderDeck() {
   const cats = `<button data-cat="all" class="${deckCat === 'all' ? 'sel' : ''}">${COPY.catAll}</button>`
     + `<button data-cat="glyph" class="glyph-chip ${deckCat === 'glyph' ? 'sel' : ''}">${COPY.catGlyph}</button>`
     + (secretGot.length ? `<button data-cat="secret" class="${deckCat === 'secret' ? 'sel' : ''}">${COPY.catSecret}</button>` : '')
-    + CATEGORIES.map(c => `<button data-cat="${c.id}" class="${deckCat === c.id ? 'sel' : ''}">${nameOf('cat', c.id, c.name)}</button>`).join('');
+    + catsUI().map(c => `<button data-cat="${c.id}" class="${deckCat === c.id ? 'sel' : ''}">${nameOf('cat', c.id, c.name)}</button>`).join('');
 
   // 印泥铁盒：盒里那坨墨的直径 = 这盒还剩多少（12px 空 → 26px 满），全 App 不写次数
   const tin = (inner, cls, extra = '') => `<div class="dk-ink ${cls}" ${extra}><span class="can">${inner}</span></div>`;
@@ -2041,7 +2043,7 @@ function renderCollection() {
   document.querySelectorAll('#drawer-seg [data-seg], #page-collection [data-goseg]').forEach(b =>
     b.addEventListener('click', () => { drawerSeg = b.dataset.seg || b.dataset.goseg; renderCollection(); }));
 
-  if (drawerSeg === 'carve') { bindKz($('#page-collection'), renderCollection); return; }
+  if (drawerSeg === 'carve') { bindKz($('#page-collection'), renderCollection, () => { deckCat = 'mine'; }); return; }
   if (drawerSeg === 'market') {
     bindProCard($('#page-collection'), renderCollection);
     bindBoxOpeners($('#page-collection'));
@@ -2130,7 +2132,7 @@ function drawerStamps(used, cnt) {
   // 用户直接问了"为什么不在上方"（8-27）。两边不一致就是不一致，没有别的理由。
   const cats = `<button data-dcat="all" class="${drawerCat === 'all' ? 'sel' : ''}">${COPY.catAll}</button>`
     + `<button data-dcat="glyph" class="glyph-chip ${drawerCat === 'glyph' ? 'sel' : ''}">${COPY.catGlyph}</button>`
-    + CATEGORIES.map(c => `<button data-dcat="${c.id}" class="${drawerCat === c.id ? 'sel' : ''}">${nameOf('cat', c.id, c.name)}</button>`).join('');
+    + catsUI().map(c => `<button data-dcat="${c.id}" class="${drawerCat === c.id ? 'sel' : ''}">${nameOf('cat', c.id, c.name)}</button>`).join('');
 
   // 🔴 8-27 用户：「我盖过的」默认只露**最常盖的 6 枚**，其余折起来。
   //    章一多这一段就长得没边，而绝大多数时候你只想看看常用的那几枚。
@@ -2140,7 +2142,7 @@ function drawerStamps(used, cnt) {
   const mineRest = mine.filter(s2 => !mineTop.includes(s2));
   // 展开之后：分类是"全部"时按类分段，选了某类就直接铺开
   const gridOf = list => drawerCat === 'all'
-    ? CATEGORIES.map(c => {
+    ? catsUI().map(c => {
       const l = list.filter(s2 => s2.cat === c.id);
       if (!l.length) return '';
       return `<div class="box-sect"><div class="bs-t">${nameOf('cat', c.id, c.name)}</div>

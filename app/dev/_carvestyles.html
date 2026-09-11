@@ -1,0 +1,64 @@
+<!doctype html><meta charset="utf-8"><style>
+body{margin:0;background:#E9E4D8;font:12px/1.5 system-ui;padding:10px;width:1180px}
+.r{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:10px}
+.c{background:#F6F2EA;border-radius:8px;padding:6px;text-align:center}
+.p{background:#FBF7EE;height:170px;display:flex;align-items:center;justify-content:center;gap:10px;border-radius:6px}
+.p img{max-width:160px;max-height:160px}.m{color:#6B655C;font-size:11.5px;margin-top:4px}
+</style><div id="out"></div>
+<script type="module">
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+import { imageToStamp } from '../js/trace.js';
+import { prepare, magicWand, refineMask, maskToStamp, thickenBin, judge } from '../js/carve.js';
+document.body.insertAdjacentHTML('afterbegin', `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+const load = s => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = s; });
+const crop = (img, x0, y0, x1, y1) => { const w = img.naturalWidth, h = img.naturalHeight, c = document.createElement('canvas'); c.width = Math.round((x1-x0)*w); c.height = Math.round((y1-y0)*h); c.getContext('2d').drawImage(img, x0*w, y0*h, c.width, c.height, 0, 0, c.width, c.height); return c; };
+const S = (d, size) => stampSVG({ id: 'x', name: 'x', cat: 'meet', ink: 'zhu', d }, { size, ink: 'zhu' });
+const cell = (title, d, note, img) => `<div class="c"><div class="p">${img ? `<img src="${img}">` : `${S(d, 150)}${S(d, 30)}`}</div><div class="m"><b>${title}</b><br>${note || ''}</div></div>`;
+const maskC = (w, h, on) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'), id = x.createImageData(w, h); for (let i = 0; i < w*h; i++) { const v = on(i) ? 0 : 255; id.data[i*4] = id.data[i*4+1] = id.data[i*4+2] = v; id.data[i*4+3] = 255; } x.putImageData(id, 0, 0); return c; };
+function dil(m, w, h, r) { const o = new Uint8Array(w*h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (m[y*w+x]) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const X = x+dx, Y = y+dy; if (X>=0&&Y>=0&&X<w&&Y<h) o[Y*w+X] = 1; } return o; }
+
+async function run(label, file, box, taps) {
+  const img = await load(file), c = crop(img, ...box);
+  const P = prepare(c), { w, h } = P;
+  // 多点点选：每点一下把选区并进来
+  let mask = new Uint8Array(w*h);
+  for (const [fx, fy] of taps) { const s = magicWand(P, fx, fy); for (let i = 0; i < w*h; i++) if (s.mask[i]) mask[i] = 1; }
+  const sel = refineMask({ w, h, mask });
+  // 同尺寸的彩色图 + 灰度
+  const sc = document.createElement('canvas'); sc.width = w; sc.height = h; const sx = sc.getContext('2d', { willReadFrequently: true }); sx.drawImage(c, 0, 0, w, h);
+  const px = sx.getImageData(0, 0, w, h);
+  const gray = new Float32Array(w*h); for (let i = 0; i < w*h; i++) gray[i] = .299*px.data[i*4] + .587*px.data[i*4+1] + .114*px.data[i*4+2];
+  // 预览：选区外压暗
+  const pv = document.createElement('canvas'); pv.width = w; pv.height = h; const pc = pv.getContext('2d'); const pd = pc.createImageData(w, h);
+  for (let i = 0; i < w*h; i++) { const k = sel.mask[i] ? 1 : .35; for (let j = 0; j < 3; j++) pd.data[i*4+j] = px.data[i*4+j]*k; pd.data[i*4+3] = 255; } pc.putImageData(pd, 0, 0);
+  // ① 纯剪影（设计稿里那个）
+  const sil = maskToStamp(sel);
+  // ② 去背景后描线稿：选区外涂白，选区内按亮度走原来的线稿管线
+  for (let i = 0; i < w*h; i++) if (!sel.mask[i]) { px.data[i*4] = px.data[i*4+1] = px.data[i*4+2] = 255; }
+  sx.putImageData(px, 0, 0);
+  const lineRaw = imageToStamp(sc, {}), line = thickenBin(lineRaw, 1);
+  // ③ 剪影里刻内线：选区内做 Sobel 边缘，取最强的 12% 当刻线，从实心剪影里挖掉
+  const mag = new Float32Array(w*h), vals = [];
+  for (let y = 1; y < h-1; y++) for (let x = 1; x < w-1; x++) { const i = y*w+x; if (!sel.mask[i]) continue;
+    const gx = -gray[i-w-1] - 2*gray[i-1] - gray[i+w-1] + gray[i-w+1] + 2*gray[i+1] + gray[i+w+1];
+    const gy = -gray[i-w-1] - 2*gray[i-w] - gray[i-w+1] + gray[i+w-1] + 2*gray[i+w] + gray[i+w+1];
+    mag[i] = Math.hypot(gx, gy); vals.push(mag[i]); }
+  vals.sort((a, b) => a - b); const t = vals[Math.floor(vals.length * .88)] || 1e9;
+  // 边缘只挖内部：离选区边界 3px 以内的不挖，免得把轮廓挖破
+  const inner = new Uint8Array(w*h); const outer = dil(sel.mask.map(v => v ? 0 : 1), w, h, 3);
+  for (let i = 0; i < w*h; i++) if (sel.mask[i] && !outer[i] && mag[i] > t) inner[i] = 1;
+  const cut = dil(inner, w, h, 1);
+  const carved = imageToStamp(maskC(w, h, i => sel.mask[i] && !cut[i]), { flatten: false, thr: 128, dropFrame: false, minArea: 30 });
+  document.getElementById('out').insertAdjacentHTML('beforeend', `<div class="r">
+    ${cell(label + ' · 裁切 + 点选', null, `点了 ${taps.length} 下`, pv.toDataURL())}
+    ${cell('① 纯剪影（设计稿里的）', sil.d, judge(sil).why)}
+    ${cell('② 去背景后描线稿', line.d, judge(line, lineRaw).why + ` · ${(line.chars/1024).toFixed(0)}KB`)}
+    ${cell('③ 剪影里刻内线', carved.d, judge(carved).why + ` · ${(carved.chars/1024).toFixed(0)}KB`)}
+    <div class="c"><div class="p"><img src="${c.toDataURL('image/jpeg', .8)}"></div><div class="m">原图（裁切后）</div></div></div>`);
+}
+await run('荷花（点 1 下）', '_samples/real/p03.jpg', [.26, .24, .62, .56], [[.5, .6]]);
+await run('荷花（点 3 下补全花瓣）', '_samples/real/p03.jpg', [.26, .24, .62, .56], [[.5, .6], [.35, .45], [.62, .4]]);
+await run('卡通头像（点脸+头发）', '_samples/real/p14.jpg', [.1, .06, .9, .86], [[.5, .62], [.5, .1]]);
+await run('纽扣电池', '_samples/real/p10.jpg', [.18, .24, .82, .74], [[.5, .42]]);
+document.title = 'done';
+</script>

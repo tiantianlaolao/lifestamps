@@ -308,6 +308,33 @@ export async function decorate(stampD, o = {}) {
   return r.d || stampD;
 }
 
+/**
+ * 自动找主体（不用点）：中心 + 四周 4 个点各灌一次，取「面积 8%~70%」里最大的那块。
+ * 9-11 实测：荷花、布、电池都能自己找到；找不到返回 null（界面上再请用户点一下）。
+ */
+export function autoSubject(P) {
+  const { w, h } = P, N = w * h;
+  let best = null;
+  for (const [fx, fy] of [[.5, .5], [.5, .38], [.5, .62], [.38, .5], [.62, .5]]) {
+    const s = refineMask(magicWand(P, fx, fy));
+    let a = 0; for (let i = 0; i < N; i++) a += s.mask[i];
+    const f = a / N;
+    if (f < 0.08 || f > 0.7) continue;
+    if (!best || a > best.a) best = { sel: s, a };
+  }
+  return best ? best.sel : null;
+}
+
+/** 像不像一张画（纸上黑线）：只看饱和度。⛔ 别看「黑白两极」——灰纸上拍的画会被判成照片（9-11） */
+export function looksLikeDrawing(src) {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, 128, 128);
+  const d = x.getImageData(0, 0, 128, 128).data;
+  let sat = 0;
+  for (let i = 0; i < 128 * 128; i++) { const mx = Math.max(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]), mn = Math.min(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]); sat += mx ? (mx - mn) / mx : 0; }
+  return sat / (128 * 128) < 0.12;
+}
+
 /** 选图时的第一眼提示（还没裁）：手机截图的比例一眼就能认出来 */
 export function sourceHint(src) {
   const w = src.naturalWidth || src.width, h = src.naturalHeight || src.height;

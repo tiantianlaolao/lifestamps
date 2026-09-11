@@ -95,3 +95,13 @@
 @keyframes kzKnife { 0% { top: 4% } 100% { top: 96%; opacity: 0 } }
 .kz-block.pa { animation: kzPa .45s cubic-bezier(.2,1.5,.4,1) }
 @keyframes kzPa { 0% { transform: scale(1) } 35% { transform: scale(.9) } 100% { transform: scale(1) } }
+/* 挑一个样子：三个候选小图 */
+.kz-cands { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px }
+.kz-cand { position: relative; background: var(--card); border: 1.5px solid var(--line); border-radius: 12px; padding: 6px 4px 5px; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer }
+.kz-cand.on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(201,75,60,.15) }
+.kz-cand i { font-style: normal; font-family: var(--f-title); font-size: 12.5px; color: var(--ink); letter-spacing: .04em }
+.kz-cand-p { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center }
+.kz-cand.rec::after { content: '推荐'; position: absolute; top: -7px; right: -4px; background: var(--accent); color: var(--btn-face); font-family: var(--f-title); font-size: 10px; padding: 0 6px; border-radius: 6px }
+.kz-fixlink { display: block; margin: 8px auto 0; font-size: 12.5px; text-decoration: underline }
+.kz-more { display: block; margin: 10px auto 0; font-size: 13px }
+.kz-morebox { margin-top: 2px; padding: 4px 10px 10px; background: var(--card); border: .5px solid var(--line); border-radius: 10px }

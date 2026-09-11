@@ -7,7 +7,7 @@
 import { STAMPS, INIT_STAMPS, rebuildStampIndex, stampById } from './data.js';
 import { stampSVG } from './stamp.js';
 import { imageToStamp } from './trace.js';
-import { prepare, magicWand, refineMask, maskToStamp, thickenBin, judge, sourceHint, decorate } from './carve.js';
+import { prepare, magicWand, refineMask, maskToStamp, thickenBin, judge, sourceHint, decorate, autoSubject, looksLikeDrawing } from './carve.js';
 import { toast, thump } from './ui.js';
 
 // ---- 自刻章的存放（M1：localStorage；一枚 ≤ 30KB，几十枚没问题；M4 换 IndexedDB + 账号同步）----
@@ -113,8 +113,8 @@ function openFlow(src, done, onSaved) {
     F = { img, done, onSaved, hint: sourceHint(img), step: 'crop',
       // 裁切：方框边长 = 图短边 * zoom^-1，中心 (cx, cy) 用 0..1
       crop: { cx: .5, cy: .5, zoom: 1 },
-      mode: 'line', thr: 0, detail: 2, weight: 2,
-      taps: [], tolAdj: 0, erase: false, style: 'line',
+      pick: null, rec: null, fixing: false, more: false, thr: 0, detail: 2, weight: 2,
+      taps: [], tolAdj: 0, erase: false,
       name: '', cat: 'mine', ink: 'zhu', frame: 'none', ringText: '', dateOn: false, decoD: null };
     ensureOverlay();
     render();
@@ -205,120 +205,133 @@ function clampCrop() {
   F.crop.cy = (r.y + r.side / 2) / img.height;
 }
 
-// ---- ② 调整 ----
-// 线稿：深浅 = 阈值相对自动值的偏移；细节 1..3 = 去噪/简化力度；粗细 0..3 = 原样/细/中/粗
+// ---- ② 挑一个样子（9-11 用户：「线稿 / 点一下主体」不好懂，点选看着专业、普通人不懂 → 改成挑结果，不挑方法）----
+// 裁好就自动出三个候选：线条 / 去掉背景（自动找主体）/ 剪影，按判定推荐一个；
+// 「点一下」只剩补救：主体没找对才用。控件只留 细节 + 粗细，深浅 / 范围 收进「更多调整」。
+// 细节 1..3 = 去噪/简化力度；粗细 0..3 = 原样/细/中/粗；深浅 = 阈值相对自动值的偏移
 const DETAIL = { 1: { minArea: 40, eps: 2.0 }, 2: { minArea: 12, eps: 1.2 }, 3: { minArea: 4, eps: 0.7 } };
+const CANDS = [['line', '线条'], ['bg', '去掉背景'], ['sil', '剪影']];
 function traceLine(src) {
   const base = imageToStamp(src, { ...DETAIL[F.detail] });
   const raw = F.thr ? imageToStamp(src, { ...DETAIL[F.detail], thr: Math.min(250, Math.max(5, base.thr + F.thr)) }) : base;
   return { raw, out: thickenBin(raw, F.weight) };
 }
-// 点一下主体：选区并起来（减选模式下从选区里扣掉），然后按风格出章
+// 主体：没点过 = 自动找（只找一次）；点过 = 按点的并起来（减选从里面扣掉）
 function selection() {
   if (!F.P) F.P = prepare(F.src);
+  if (!F.taps.length) { if (F.autoSel === undefined) F.autoSel = autoSubject(F.P); return F.autoSel; }
   const { w, h } = F.P;
-  let m = new Uint8Array(w * h);
+  const m = new Uint8Array(w * h);
+  // 第一下是减选时，从自动找到的主体上扣
+  if (F.taps[0].sub && F.autoSel) for (let i = 0; i < w * h; i++) m[i] = F.autoSel.mask[i];
   for (const t of F.taps) {
-    // 自动容差每个点只算一次（要试十来档，最费时）；「范围」滑杆在它上面加减
+    // 自动容差每个点只算一次（要试十来档，最费时）；「范围」在它上面加减
     if (t.auto == null) t.auto = magicWand(F.P, t.x, t.y).tol;
     const s = magicWand(F.P, t.x, t.y, Math.max(4, t.auto + F.tolAdj));
     for (let i = 0; i < w * h; i++) if (s.mask[i]) m[i] = t.sub ? 0 : 1;
   }
   return refineMask({ w, h, mask: m });
 }
-function traceSelection(sel) {
+// 去掉背景：选区外涂白，按亮度走线稿管线（荷花、头像 9-11 实测比纯剪影好认得多）
+function traceBg(sel) {
   const { w, h } = sel;
-  if (F.style === 'sil') { const r = maskToStamp(sel); return { raw: r, out: r }; }
-  // 去背景：选区外涂白，按亮度走线稿管线（荷花、头像 9-11 实测比纯剪影好认得多）
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(F.src, 0, 0, w, h);
   const px = x.getImageData(0, 0, w, h);
   for (let i = 0; i < w * h; i++) if (!sel.mask[i]) px.data[i * 4] = px.data[i * 4 + 1] = px.data[i * 4 + 2] = 255;
   x.putImageData(px, 0, 0);
-  if (F.style === 'line') { const raw = imageToStamp(c, { ...DETAIL[F.detail] }); return { raw, out: thickenBin(raw, Math.max(1, F.weight - 1)) }; }
-  // carve：实心剪影里把最强的边缘挖成白线
-  const gray = new Float32Array(w * h);
-  for (let i = 0; i < w * h; i++) gray[i] = .299 * px.data[i * 4] + .587 * px.data[i * 4 + 1] + .114 * px.data[i * 4 + 2];
-  const mag = new Float32Array(w * h), vals = [];
-  for (let yy = 1; yy < h - 1; yy++) for (let xx = 1; xx < w - 1; xx++) {
-    const i = yy * w + xx; if (!sel.mask[i]) continue;
-    const gx = -gray[i - w - 1] - 2 * gray[i - 1] - gray[i + w - 1] + gray[i - w + 1] + 2 * gray[i + 1] + gray[i + w + 1];
-    const gy = -gray[i - w - 1] - 2 * gray[i - w] - gray[i - w + 1] + gray[i + w - 1] + 2 * gray[i + w] + gray[i + w + 1];
-    mag[i] = Math.hypot(gx, gy); vals.push(mag[i]);
-  }
-  vals.sort((a, b) => a - b);
-  const t = vals[Math.floor(vals.length * (F.detail === 1 ? .93 : F.detail === 3 ? .82 : .88))] || 1e9;
-  const keep = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i++) keep[i] = sel.mask[i] ? 1 : 0;
-  for (let yy = 4; yy < h - 4; yy++) for (let xx = 4; xx < w - 4; xx++) {
-    const i = yy * w + xx; if (!sel.mask[i] || mag[i] <= t) continue;
-    let nearEdge = false;
-    for (let d = -3; d <= 3 && !nearEdge; d++) if (!sel.mask[i + d] || !sel.mask[i + d * w]) nearEdge = true;
-    if (!nearEdge) { keep[i] = 0; keep[i + 1] = 0; keep[i + w] = 0; }
-  }
-  const r = maskToStamp({ w, h, mask: keep });
-  return { raw: r, out: r };
+  const raw = imageToStamp(c, { ...DETAIL[F.detail] });
+  return { raw, out: thickenBin(raw, Math.max(1, F.weight - 1)) };
+}
+function computeAll() {
+  const c = { line: traceLine(F.src) }, sel = selection();
+  c.sel = sel;
+  if (sel) { c.bg = traceBg(sel); const r = maskToStamp(sel); c.sil = { raw: r, out: r }; }
+  return c;
+}
+// 推荐 = 「线条」和「去掉背景」里判定更好的那个；平手时画偏线条、照片偏去背景。剪影永远不自动推荐（一坨也会被判成看得清）
+const RANK = { green: 3, yellow: 2, red: 1 };
+function recommend(c) {
+  const a = RANK[judge(c.line.out, c.line.raw).level], b = c.bg ? RANK[judge(c.bg.out, c.bg.raw).level] : 0;
+  if (b > a) return 'bg';
+  if (a > b) return 'line';
+  if (F.drawing === undefined) F.drawing = looksLikeDrawing(F.src);
+  return !F.drawing && c.bg ? 'bg' : 'line';
 }
 
 let busy = 0;
-function compute(sel) {
-  if (F.mode === 'line') return traceLine(F.src);
-  if (!sel) return null;
-  return traceSelection(sel);
-}
-
 function renderAdjust(ov) {
   const lvl = { green: 'g', yellow: 'y', red: 'r' };
+  const usesSel = F.pick === 'bg' || F.pick === 'sil';
   ov.innerHTML = `<div class="kz-pane">
-    <div class="kz-top"><button class="kz-link" data-act="back">‹ 重新裁</button>
-      <div class="kz-seg"><button data-mode="line" class="${F.mode === 'line' ? 'on' : ''}">线稿</button><button data-mode="sel" class="${F.mode === 'sel' ? 'on' : ''}">点一下主体</button></div>
-      <button class="kz-link" data-act="close">取消</button></div>
-    ${F.mode === 'sel' ? `<div class="kz-photo" id="kz-photo"><canvas id="kz-photoc"></canvas></div>
-      <div class="kz-xs kz-center">${F.erase ? '减选：点一下多选进来的地方，把它去掉' : '点一下你想刻的东西，亮着的就是选中的；没选全就再点一下'}</div>
-      <div class="kz-row"><button class="kz-chip ${F.erase ? '' : 'on'}" data-erase="0">加选</button><button class="kz-chip ${F.erase ? 'on' : ''}" data-erase="1">减选</button><button class="kz-chip" data-act="undo">撤销</button>
-        <span class="kz-grow"></span><span class="kz-xs">风格</span><button class="kz-chip ${F.style === 'line' ? 'on' : ''}" data-style="line">线条</button><button class="kz-chip ${F.style === 'carve' ? 'on' : ''}" data-style="carve">刻线</button><button class="kz-chip ${F.style === 'sil' ? 'on' : ''}" data-style="sil">剪影</button></div>` : ''}
+    <div class="kz-top"><button class="kz-link" data-act="back">‹ 重新裁</button><span>挑一个样子</span><button class="kz-link" data-act="close">取消</button></div>
     <div class="kz-result">
-      <div class="kz-stage" id="kz-stage"></div>
+      <div class="kz-stage" id="kz-stage"><div class="kz-xs">正在刻出几个样子…</div></div>
       <div class="kz-side"><div class="kz-xs">放进托盘里：</div><div class="kz-tray" id="kz-tray"></div><div class="kz-verdict" id="kz-verdict"></div></div>
     </div>
-    ${F.mode === 'line' ? `<div class="kz-ctl"><div class="kz-lab">深浅<span>浅一点 · 深一点</span></div><input type="range" min="-60" max="60" step="2" value="${F.thr}" data-k="thr"></div>` :
-      `<div class="kz-ctl"><div class="kz-lab">范围<span>小一点 · 大一点</span></div><input type="range" min="-16" max="16" step="2" value="${F.tolAdj}" data-k="tolAdj"></div>`}
+    <div class="kz-cands" id="kz-cands">${CANDS.map(([k, n]) => `<button class="kz-cand ${F.pick === k ? 'on' : ''}" data-pick="${k}"><span class="kz-cand-p"></span><i>${n}</i></button>`).join('')}</div>
+    ${usesSel ? (F.fixing ? `<div class="kz-photo" id="kz-photo"><canvas id="kz-photoc"></canvas></div>
+      <div class="kz-xs kz-center">${F.erase ? '点一下多选进来的地方，把它去掉' : '点一下你想刻的东西，亮着的就是选中的'}</div>
+      <div class="kz-row"><button class="kz-chip ${F.erase ? '' : 'on'}" data-erase="0">加一块</button><button class="kz-chip ${F.erase ? 'on' : ''}" data-erase="1">去掉一块</button><button class="kz-chip" data-act="undo">撤销</button><span class="kz-grow"></span><button class="kz-chip" data-act="fixdone">好了</button></div>`
+      : `<button class="kz-link kz-fixlink" data-act="fix" id="kz-fixlink">主体没选对？在照片上点一下你要刻的东西 ›</button>`) : ''}
     <div class="kz-ctl"><div class="kz-lab">细节<span>少 · 多</span></div><input type="range" min="1" max="3" step="1" value="${F.detail}" data-k="detail"></div>
-    ${F.mode === 'line' || F.style === 'line' ? `<div class="kz-ctl"><div class="kz-lab">粗细</div><div class="kz-opts">${['原样', '细', '中', '粗'].map((n, i) => `<button data-weight="${i}" class="${F.weight === i ? 'on' : ''}">${n}</button>`).join('')}</div></div>` : ''}
-    <div class="kz-bottom"><button class="kz-btn" data-act="next" id="kz-next">下一步</button></div>
+    ${F.pick !== 'sil' ? `<div class="kz-ctl"><div class="kz-lab">粗细</div><div class="kz-opts">${['原样', '细', '中', '粗'].map((n, i) => `<button data-weight="${i}" class="${F.weight === i ? 'on' : ''}">${n}</button>`).join('')}</div></div>` : ''}
+    <button class="kz-link kz-more" data-act="more">${F.more ? '收起 ‹' : '更多调整 ›'}</button>
+    ${F.more ? `<div class="kz-morebox">
+      ${F.pick === 'line' ? `<div class="kz-ctl"><div class="kz-lab">深浅<span>浅一点 · 深一点</span></div><input type="range" min="-60" max="60" step="2" value="${F.thr}" data-k="thr"></div>` : ''}
+      ${usesSel && F.taps.length ? `<div class="kz-ctl"><div class="kz-lab">点选的范围<span>小一点 · 大一点</span></div><input type="range" min="-16" max="16" step="2" value="${F.tolAdj}" data-k="tolAdj"></div>` : ''}
+      ${F.pick !== 'line' && !(usesSel && F.taps.length) ? '<div class="kz-xs">这个样子没有更多可调的了</div>' : ''}
+    </div>` : ''}
+    <div class="kz-bottom"><button class="kz-btn" data-act="next" id="kz-next" disabled>下一步</button></div>
   </div>`;
 
   const refresh = () => {
     const my = ++busy;
     setTimeout(() => {
       if (my !== busy || !F) return;
-      const sel = F.mode === 'sel' && F.taps.length ? selection() : null;
-      if (F.mode === 'sel') drawPhoto(ov, sel);
-      const r = compute(sel);
+      const c = computeAll();
+      if (!F.pick) { F.pick = recommend(c); F.rec = F.pick; renderAdjust(ov); return; }   // 第一次：定下推荐再按它画
+      F.cands = c;
+      if (!c[F.pick]) F.pick = 'line';
+      const r = c[F.pick];
       F.result = r;
+      // 候选小图
+      ov.querySelectorAll('[data-pick]').forEach(b => {
+        const cr = c[b.dataset.pick], box = b.querySelector('.kz-cand-p');
+        b.classList.toggle('on', b.dataset.pick === F.pick);
+        b.classList.toggle('rec', b.dataset.pick === F.rec);
+        box.innerHTML = cr ? S(cr.out.d, 54, F.ink) : '<span class="kz-xs">没找到主体</span>';
+      });
+      if (F.pick !== 'line') drawPhoto(ov, c.sel);
       const stage = ov.querySelector('#kz-stage'), tray = ov.querySelector('#kz-tray'), v = ov.querySelector('#kz-verdict');
-      if (!r) { stage.innerHTML = `<div class="kz-xs">先在照片上点一下</div>`; tray.innerHTML = ''; v.innerHTML = ''; ov.querySelector('#kz-next').disabled = true; return; }
       const j = judge(r.out, r.raw); F.judge = j;
       stage.innerHTML = S(r.out.d, 188, F.ink);
       tray.innerHTML = ['milktea', 'coffee'].map(id => stampById[id] ? `<span>${stampSVG(stampById[id], { size: 26 })}</span>` : '').join('') + `<span class="me">${S(r.out.d, 26, F.ink)}</span>`;
       v.className = 'kz-verdict ' + lvl[j.level];
-      v.innerHTML = `<b>${j.why}</b>${j.tip ? `<br>${j.tip}` : ''}${j.level === 'red' ? `<br><button class="kz-link" data-act="force">还是想刻这个 ›</button>` : ''}`;
+      v.innerHTML = `<b>${j.why}</b>${j.tip ? `<br>${j.tip.replace('改用「点一下主体」', '换成「去掉背景」试试')}` : ''}${j.level === 'red' ? `<br><button class="kz-link" data-act="force">还是想刻这个 ›</button>` : ''}`;
       ov.querySelector('#kz-next').disabled = !r.out.d || j.level === 'red' && !F.forced;
       const fb = v.querySelector('[data-act="force"]'); if (fb) fb.onclick = () => { F.forced = true; ov.querySelector('#kz-next').disabled = false; toast('好，照这个刻'); };
     }, 30);
   };
 
-  ov.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { F.mode = b.dataset.mode; F.forced = false; renderAdjust(ov); });
-  ov.querySelectorAll('[data-k]').forEach(inp => inp.oninput = () => { F[inp.dataset.k] = +inp.value; F.forced = false; refresh(); });
+  let t = 0;
+  ov.querySelectorAll('[data-k]').forEach(inp => inp.oninput = () => { F[inp.dataset.k] = +inp.value; F.forced = false; clearTimeout(t); t = setTimeout(refresh, 160); });
   ov.querySelectorAll('[data-weight]').forEach(b => b.onclick = () => { F.weight = +b.dataset.weight; ov.querySelectorAll('[data-weight]').forEach(x => x.classList.toggle('on', x === b)); refresh(); });
-  ov.querySelectorAll('[data-style]').forEach(b => b.onclick = () => { F.style = b.dataset.style; renderAdjust(ov); });
+  ov.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
+    const k = b.dataset.pick;
+    if (k !== 'line' && F.cands && !F.cands[k]) { F.pick = k; F.fixing = true; F.forced = false; renderAdjust(ov); return; }   // 没自动找到主体 → 直接请他点
+    F.pick = k; F.forced = false; renderAdjust(ov);
+  });
   ov.querySelectorAll('[data-erase]').forEach(b => b.onclick = () => { F.erase = b.dataset.erase === '1'; renderAdjust(ov); });
   bindActs(ov, {
-    back: () => { F.step = 'crop'; F.taps = []; render(); }, close,
+    back: () => { F.step = 'crop'; F.taps = []; F.autoSel = undefined; F.P = null; F.pick = null; F.fixing = false; render(); }, close,
     undo: () => { F.taps.pop(); refresh(); },
+    fix: () => { F.fixing = true; renderAdjust(ov); },
+    fixdone: () => { F.fixing = false; renderAdjust(ov); },
+    more: () => { F.more = !F.more; renderAdjust(ov); },
     next: () => { if (F.result && F.result.out.d) { F.step = 'finish'; F.decoD = null; render(); } },
   });
-  if (F.mode === 'sel') {
+  if (usesSel && F.fixing) {
     const photo = ov.querySelector('#kz-photo');
     photo.addEventListener('click', e => {
       const rc = photo.getBoundingClientRect();
@@ -447,7 +460,7 @@ function renderTrial(ov) {
 
 function save() {
   const name = (F.name || '').trim() || '我的章';
-  const s = { id: 'my_' + Date.now().toString(36), name: name.slice(0, 8), cat: 'mine', ink: F.ink, d: finalD(), ts: Date.now(), style: F.mode === 'line' ? 'line' : F.style, frame: F.frame };
+  const s = { id: 'my_' + Date.now().toString(36), name: name.slice(0, 8), cat: 'mine', ink: F.ink, d: finalD(), ts: Date.now(), style: F.pick, frame: F.frame };
   if (!register(s)) { toast('这枚章的数据不对，没存上'); return; }
   carved.push(s); rebuildStampIndex();
   if (!saveAll(carved)) { toast('手机存储满了，没存上'); carved.pop(); return; }

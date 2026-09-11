@@ -385,6 +385,7 @@ export const ZH = {
   frYours: '那你的今天呢？',
   frStartYours: '也开始记你的',
   frOwnPick: '也给自己留一枚',
+  frOwnPickHint: '点一枚，会给你一个 6 位码，到 App「我的」里输入就能收下',
   frOwnAlready: '你已经给自己留过一枚了。',
   frOwnRetry: '没成，再点一下试试',
   frOwnGot: '你给自己留了一枚',

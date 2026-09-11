@@ -397,6 +397,12 @@ function showAfter(mine, justNow) {
   // 送完立刻把其余五枚收走，跟刷新后回来看到的是同一屏
   $('#give').querySelectorAll(`.f-seal:not([data-seal="${mine}"])`).forEach(b => b.remove());
   showOwnPick();
+  // 🔴 9-11 用户反馈「送完没看到码」：码要先在「也给自己留一枚」里再点一枚才出，
+  //    而送完纸居中、这一段只在屏幕最底下露一行标题。刚送完就把它滚上来。
+  if (justNow) setTimeout(() => {
+    const own = $('#own');
+    if (own && !own.classList.contains('f-hide')) own.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 900);
 }
 
 // ---- 「也给自己留一枚」（8-29 用户拍板）---------------------------------
@@ -409,6 +415,7 @@ function showOwnPick() {
   box.classList.remove('f-hide');
   box.innerHTML = `
     <div class="f-sect-t">${esc(t('frOwnPick'))}</div>
+    <div class="f-codehint" style="margin:-4px 0 12px">${esc(t('frOwnPickHint'))}</div>
     <div class="f-seals">${GIFTS.map(g => `
       <button class="f-seal" data-own="${g.id}">
         ${stampSVG({ ...g, kind: 'seal' }, { size: 46 })}

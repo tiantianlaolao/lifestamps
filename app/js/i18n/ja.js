@@ -336,6 +336,7 @@ export const JA = {
   frYours: 'で、あなたのきょうは？',
   frStartYours: 'あなたの分もはじめる',
   frOwnPick: '自分にも一個',
+  frOwnPickHint: 'ひとつ選ぶと6桁のコードが出ます。アプリの「わたし」で入力すると受け取れます',
   frOwnAlready: '自分へのぶんは、もう選んでいます。',
   frOwnRetry: 'できませんでした。もう一度どうぞ',
   frOwnGot: '自分に一個残しました',

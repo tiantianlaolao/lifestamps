@@ -336,6 +336,7 @@ export const EN = {
   frYours: 'And your today?',
   frStartYours: 'Start keeping yours',
   frOwnPick: 'Keep one for yourself too',
+  frOwnPickHint: 'Tap one to get a 6-character code, then enter it under Me in the app',
   frOwnAlready: 'You’ve already kept one for yourself.',
   frOwnRetry: 'Didn’t work — tap once more',
   frOwnGot: 'You kept one for yourself',

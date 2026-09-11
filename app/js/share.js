@@ -15,7 +15,7 @@ const LSA = v => (getLang() === 'en' ? 0 : v);
 // 手写体：zh/ja 用文楷起头，en 用拉丁手写栈（文楷的拉丁字重不对）
 const heroFont = () => (getLang() === 'en' ? HAND : HAND_CN);
 import { isNative, shareImage, shareText, saveToAlbum } from './native.js';
-import { createShare, shareURL, codeForDay } from './net.js';
+import { createShare, shareURL, codeForDay, IS_OVERSEAS } from './net.js';
 import { legalOk, requireLegal } from './legal.js';
 
 // 「保存」和「分享」8-30 拆成两颗键（用户拍板：存图的人不该多走一层分享面板）。
@@ -27,7 +27,7 @@ function bindSaveBtn(btn, dataUrl, filename) {
   btn.onclick = async () => {
     if (isNative()) {
       try {
-        if (await saveToAlbum(dataUrl)) {
+        if (await saveToAlbum(dataUrl, { album: IS_OVERSEAS ? 'Stampday' : '戳了么', fileName: filename })) {
           btn.textContent = COPY.savedAlbum;               // 反馈写在键上，跟「复制好了」同款
           setTimeout(() => { btn.textContent = COPY.saveImg; }, 2200);
           return;

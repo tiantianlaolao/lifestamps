@@ -71,11 +71,24 @@ const GOOGLE_WEB_CLIENT_ID = '660308568715-bnhbfhnm8s7h9r5o65fdoa1pfio4u33p.apps
  * iOS 上只声明 NSPhotoLibraryAddUsageDescription + 不传相册 id
  * → 系统走 **add-only** 轻量授权（只问"允许添加照片吗"，不要整个相册的读权限）。
  * 返回 false = 没有原生桥；抛错（用户拒了权限等）由调用方接住去弹话。
+ * 🔴 安卓（9-11 修）：插件在安卓上**必须**带 albumIdentifier，不带直接 reject「Album identifier required」
+ *    → 安卓点「保存」一直是「没存上」，iOS 不受影响。相册 = getAlbumsPath()（App 自己的
+ *    Android/media/<包名>/，不要存储权限、系统相册能扫到）下建一个 album 名的文件夹。
  */
-export async function saveToAlbum(dataUrl) {
+export async function saveToAlbum(dataUrl, { album = '戳了么', fileName } = {}) {
   const p = P();
   if (!p || !p.Media) return false;
-  await p.Media.savePhoto({ path: dataUrl });
+  if (!isAndroid()) {
+    await p.Media.savePhoto({ path: dataUrl });
+    return true;
+  }
+  const { path } = await p.Media.getAlbumsPath();
+  // 已存在会 reject「Album already exists」——那正是想要的状态，吞掉；真建不出来下面 savePhoto 会报
+  await p.Media.createAlbum({ name: album }).catch(() => {});
+  const opt = { path: dataUrl, albumIdentifier: path.replace(/\/+$/, '') + '/' + album };
+  // 插件自己按 dataURL 的 mime 补扩展名（传 xx.png 会变 xx.png.png）；同名会覆盖 → 带上时间
+  if (fileName) opt.fileName = String(fileName).replace(/\.png$/i, '') + '_' + Date.now();
+  await p.Media.savePhoto(opt);
   return true;
 }
 

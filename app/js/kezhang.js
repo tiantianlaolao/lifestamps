@@ -7,8 +7,8 @@
 import { STAMPS, INIT_STAMPS, rebuildStampIndex, stampById } from './data.js';
 import { stampSVG } from './stamp.js';
 import { imageToStamp } from './trace.js';
-import { prepare, magicWand, refineMask, maskToStamp, thickenBin, judge, sourceHint } from './carve.js';
-import { toast } from './ui.js';
+import { prepare, magicWand, refineMask, maskToStamp, thickenBin, judge, sourceHint, decorate } from './carve.js';
+import { toast, thump } from './ui.js';
 
 // ---- 自刻章的存放（M1：localStorage；一枚 ≤ 30KB，几十枚没问题；M4 换 IndexedDB + 账号同步）----
 const K = 'lifestamps_carved';
@@ -115,7 +115,7 @@ function openFlow(src, done, onSaved) {
       crop: { cx: .5, cy: .5, zoom: 1 },
       mode: 'line', thr: 0, detail: 2, weight: 2,
       taps: [], tolAdj: 0, erase: false, style: 'line',
-      name: '', cat: 'meet', ink: 'zhu' };
+      name: '', cat: 'mine', ink: 'zhu', frame: 'none', ringText: '', dateOn: false, decoD: null };
     ensureOverlay();
     render();
   };
@@ -142,6 +142,8 @@ function render() {
   if (F.step === 'crop') renderCrop(ov);
   else if (F.step === 'adjust') renderAdjust(ov);
   else if (F.step === 'trial') renderTrial(ov);
+  else if (F.step === 'carving') renderCarving(ov);
+  else if (F.step === 'saved') renderSaved(ov);
   else renderFinish(ov);
 }
 
@@ -314,7 +316,7 @@ function renderAdjust(ov) {
   bindActs(ov, {
     back: () => { F.step = 'crop'; F.taps = []; render(); }, close,
     undo: () => { F.taps.pop(); refresh(); },
-    next: () => { if (F.result && F.result.out.d) { F.step = 'finish'; render(); } },
+    next: () => { if (F.result && F.result.out.d) { F.step = 'finish'; F.decoD = null; render(); } },
   });
   if (F.mode === 'sel') {
     const photo = ov.querySelector('#kz-photo');
@@ -349,19 +351,61 @@ function drawPhoto(ov, sel) {
 }
 
 // ---- ③ 起名 + 放哪一格 + 刻好了（M2 在这一步前面插装饰和动效）----
+const finalD = () => F.decoD || F.result.out.d;
+const today = () => { const d = new Date(); return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`; };
+const decoText = () => [String(F.ringText || '').trim(), F.dateOn ? today() : ''].filter(Boolean).join(' · ');
+let decoSeq = 0;
+async function updateDeco(ov) {
+  const my = ++decoSeq, stage = ov.querySelector('#kz-fstage');
+  if (F.frame === 'none' && !decoText()) F.decoD = null;
+  else {
+    if (stage) stage.classList.add('busy');
+    const d = await decorate(F.result.out.d, { frame: F.frame, text: decoText() });
+    if (my !== decoSeq || !F) return;
+    F.decoD = d;
+  }
+  if (stage) { stage.classList.remove('busy'); stage.innerHTML = S(finalD(), 220, F.ink); }
+}
+
+// ---- ③ 起名 + 装饰（边框 / 章上的字 / 日期）+ 默认印泥 ----
 function renderFinish(ov) {
   ov.innerHTML = `<div class="kz-pane">
-    <div class="kz-top"><button class="kz-link" data-act="back">‹ 返回调整</button><span>起个名字</span><button class="kz-link" data-act="close">取消</button></div>
-    <div class="kz-stage big">${S(F.result.out.d, 220, F.ink)}</div>
+    <div class="kz-top"><button class="kz-link" data-act="back">‹ 返回调整</button><span>起名 · 装饰</span><button class="kz-link" data-act="close">取消</button></div>
+    <div class="kz-stage big" id="kz-fstage">${S(finalD(), 220, F.ink)}</div>
     <div class="kz-lab2">名字</div><input class="kz-field" id="kz-name" maxlength="8" placeholder="比如：小狗" value="${esc(F.name)}">
-    <div class="kz-xs">放进托盘后在「我刻的」那一格</div>
-    <div class="kz-lab2">默认印泥</div><div class="kz-row">${['zhu', 'mo', 'song', 'tao'].map(k => `<button class="kz-chip ${F.ink === k ? 'on' : ''}" data-ink="${k}">${{ zhu: '朱砂', mo: '墨', song: '松绿', tao: '桃' }[k]}</button>`).join('')}</div>
+    <div class="kz-lab2">边框</div><div class="kz-opts">${[['none', '无'], ['circle', '圆'], ['square', '方']].map(([k, n]) => `<button data-frame="${k}" class="${F.frame === k ? 'on' : ''}">${n}</button>`).join('')}</div>
+    <div class="kz-lab2">章上的字（可空）</div><input class="kz-field" id="kz-ring" maxlength="12" placeholder="${F.frame === 'circle' ? '沿着圆圈排，比如：我家小狗' : '写在章下面，比如：我家小狗'}" value="${esc(F.ringText)}">
+    <div class="kz-row"><button class="kz-chip ${F.dateOn ? 'on' : ''}" data-act="date">带上今天的日期 ${today()}</button></div>
+    <div class="kz-lab2">默认印泥</div><div class="kz-row">${Object.entries(TRIAL_INKS).map(([k, n]) => `<button class="kz-chip ${F.ink === k ? 'on' : ''}" data-ink="${k}">${n}</button>`).join('')}</div>
+    <div class="kz-xs" style="margin-top:8px">放进托盘后在「我刻的」那一格</div>
     <div class="kz-bottom"><button class="kz-btn" data-act="trial">刻好了，试盖一下</button></div>
     <div class="kz-xs kz-center">试盖不扣次数 · 满意放进托盘时才算用掉 1 次</div>
   </div>`;
   ov.querySelector('#kz-name').oninput = e => { F.name = e.target.value; };
+  let t = 0;
+  ov.querySelector('#kz-ring').oninput = e => { F.ringText = e.target.value; clearTimeout(t); t = setTimeout(() => updateDeco(ov), 350); };
+  ov.querySelectorAll('[data-frame]').forEach(b => b.onclick = () => { F.frame = b.dataset.frame; renderFinish(ov); updateDeco(ov); });
   ov.querySelectorAll('[data-ink]').forEach(b => b.onclick = () => { F.ink = b.dataset.ink; renderFinish(ov); });
-  bindActs(ov, { back: () => { F.step = 'adjust'; render(); }, close, trial: () => { F.step = 'trial'; F.trials = []; render(); } });
+  bindActs(ov, {
+    back: () => { F.step = 'adjust'; render(); }, close,
+    date: () => { F.dateOn = !F.dateOn; renderFinish(ov); updateDeco(ov); },
+    trial: async () => { if (F.frame !== 'none' || decoText()) await updateDeco(ov); F.step = 'carving'; F.trials = []; render(); },
+  });
+  if (!F.decoD && (F.frame !== 'none' || decoText())) updateDeco(ov);
+}
+
+// ---- 刻章动效：刻刀一路刻下来 → 章面成形 → 啪。约 2.3 秒，点一下跳过 ----
+function renderCarving(ov) {
+  ov.innerHTML = `<div class="kz-pane kz-carving" data-act="skip">
+    <div class="kz-t kz-center" style="margin-top:auto">正在刻…</div>
+    <div class="kz-block"><div class="kz-face"><div class="kz-reveal">${S(finalD(), 170, 'mo')}</div><i class="kz-knife"></i></div></div>
+    <div class="kz-xs kz-center" style="margin-bottom:auto">点一下跳过</div>
+  </div>`;
+  let done = false;
+  const go = () => { if (done || !F) return; done = true; F.step = 'trial'; render(); };
+  setTimeout(() => { if (!done) { try { thump(); } catch (_) {} const b = ov.querySelector('.kz-block'); if (b) b.classList.add('pa'); } }, 1650);
+  setTimeout(go, 2300);
+  bindActs(ov, { skip: go });
 }
 
 // ---- ④ 试盖（9-11 用户拍板）：在草稿纸上随便盖，满意才入库、才扣次数；入库后跟普通章一样，不能删、不能改名 ----
@@ -373,7 +417,7 @@ function renderTrial(ov) {
     <div class="kz-paper" id="kz-paper"><div class="kz-xs kz-paper-hint">在纸上点一点，试着盖几下</div></div>
     <div class="kz-row"><span class="kz-xs">印泥</span>${Object.entries(TRIAL_INKS).map(([k, n]) => `<button class="kz-chip ${F.ink === k ? 'on' : ''}" data-ink="${k}">${n}</button>`).join('')}
       <span class="kz-grow"></span><button class="kz-chip" data-act="wipe">擦掉</button></div>
-    <div class="kz-row" style="margin-top:10px"><span class="kz-xs">放进托盘里：</span><div class="kz-tray">${['milktea', 'coffee'].map(id => stampById[id] ? `<span>${stampSVG(stampById[id], { size: 26 })}</span>` : '').join('')}<span class="me">${S(F.result.out.d, 26, F.ink)}</span></div></div>
+    <div class="kz-row" style="margin-top:10px"><span class="kz-xs">放进托盘里：</span><div class="kz-tray">${['milktea', 'coffee'].map(id => stampById[id] ? `<span>${stampSVG(stampById[id], { size: 26 })}</span>` : '').join('')}<span class="me">${S(finalD(), 26, F.ink)}</span></div></div>
     <div class="kz-lab2">名字（放进托盘后就不能改了）</div><input class="kz-field" id="kz-name" maxlength="8" placeholder="比如：小狗" value="${esc(F.name)}">
     <div class="kz-ask">满意吗？放进托盘后，它就跟别的章一样了：<b>不能删，也不能改名</b>。</div>
     <div class="kz-bottom"><button class="kz-btn2" data-act="back">再调调</button><button class="kz-btn" data-act="save">满意，放进托盘</button></div>
@@ -382,7 +426,7 @@ function renderTrial(ov) {
   const paper = ov.querySelector('#kz-paper');
   const drawTrials = () => {
     paper.querySelectorAll('.kz-imp').forEach(n => n.remove());
-    for (const t of F.trials) paper.insertAdjacentHTML('beforeend', `<div class="kz-imp" style="left:${t.x}%;top:${t.y}%;transform:translate(-50%,-50%) rotate(${t.rot}deg)">${S(F.result.out.d, 64, t.ink)}</div>`);
+    for (const t of F.trials) paper.insertAdjacentHTML('beforeend', `<div class="kz-imp" style="left:${t.x}%;top:${t.y}%;transform:translate(-50%,-50%) rotate(${t.rot}deg)">${S(finalD(), 64, t.ink)}</div>`);
     const h = paper.querySelector('.kz-paper-hint'); if (h) h.style.display = F.trials.length ? 'none' : '';
   };
   paper.addEventListener('click', e => {
@@ -403,14 +447,25 @@ function renderTrial(ov) {
 
 function save() {
   const name = (F.name || '').trim() || '我的章';
-  const s = { id: 'my_' + Date.now().toString(36), name: name.slice(0, 8), cat: 'mine', ink: F.ink, d: F.result.out.d, ts: Date.now(), style: F.mode === 'line' ? 'line' : F.style };
+  const s = { id: 'my_' + Date.now().toString(36), name: name.slice(0, 8), cat: 'mine', ink: F.ink, d: finalD(), ts: Date.now(), style: F.mode === 'line' ? 'line' : F.style, frame: F.frame };
   if (!register(s)) { toast('这枚章的数据不对，没存上'); return; }
   carved.push(s); rebuildStampIndex();
   if (!saveAll(carved)) { toast('手机存储满了，没存上'); carved.pop(); return; }
-  const done = F.done, onSaved = F.onSaved; close();
-  if (onSaved) onSaved(s);   // main.js：托盘切到「我刻的」，新章一眼就看得到（收起态的托盘只摆得下前几枚）
-  toast(`刻好了，「${s.name}」在托盘「我刻的」那一格`);
-  if (done) done();
+  F.saved = s; F.step = 'saved'; render();
+}
+
+// ---- 入库之后：去今天盖一下 / 回刻章铺 ----
+function renderSaved(ov) {
+  const s = F.saved;
+  ov.innerHTML = `<div class="kz-pane">
+    <div style="margin-top:auto" class="kz-center">${S(s.d, 150, s.ink)}</div>
+    <div class="kz-t kz-center" style="margin-top:14px">刻好了！</div>
+    <div class="kz-xs kz-center">「${esc(s.name)}」已经放进托盘「我刻的」那一格</div>
+    <div class="kz-bottom kz-col" style="margin-bottom:auto"><button class="kz-btn" data-act="go">现在就去今天盖一下</button><button class="kz-btn2" data-act="stay">回刻章铺</button></div>
+  </div>`;
+  // main.js 的 onSaved：托盘切到「我刻的」；go = 选中这枚、切到今日页
+  const finish = go => { const done = F.done, onSaved = F.onSaved; close(); if (onSaved) onSaved(s, go); if (done && !go) done(); };
+  bindActs(ov, { go: () => finish(true), stay: () => finish(false) });
 }
 
 function bindActs(root, map) {

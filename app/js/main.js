@@ -2043,7 +2043,11 @@ function renderCollection() {
   document.querySelectorAll('#drawer-seg [data-seg], #page-collection [data-goseg]').forEach(b =>
     b.addEventListener('click', () => { drawerSeg = b.dataset.seg || b.dataset.goseg; renderCollection(); }));
 
-  if (drawerSeg === 'carve') { bindKz($('#page-collection'), renderCollection, () => { deckCat = 'mine'; }); return; }
+  if (drawerSeg === 'carve') {
+    // 入库后：托盘切到「我刻的」；选了「去今天盖一下」就直接选中这枚、切到今日页
+    bindKz($('#page-collection'), renderCollection, (st, go) => { deckCat = 'mine'; if (go) { selStamp = st.id; switchTab('today'); } });
+    return;
+  }
   if (drawerSeg === 'market') {
     bindProCard($('#page-collection'), renderCollection);
     bindBoxOpeners($('#page-collection'));

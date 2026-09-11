@@ -250,6 +250,64 @@ export function judge(out, raw = out) {
   return { level: worst.level, why: worst.why, tip: worst.tip, all, m };
 }
 
+/**
+ * 装饰（边框 / 环形字 / 日期）→ 新的一条 d。
+ * 🔴 章的 d 只能是 M/L/Z + 数字（路径白名单），所以字不能用 SVG <text>：
+ *    做法 = 边框、字、章本体（Path2D 画原来的 d）一起画进一张 1024 的画布，再整张走 imageToStamp 描一遍。
+ *    本体是从干净的矢量填充重新描的，几乎无损；产物还是「一条 path + evenodd」。
+ * @param {string} stampD  原来的 d（<path d="…" fill="CC" fill-rule="evenodd"/>）
+ * @param {{frame:'none'|'circle'|'square', text:string}} o
+ */
+export async function decorate(stampD, o = {}) {
+  const frame = o.frame || 'none', text = String(o.text || '').trim().slice(0, 24);
+  if (frame === 'none' && !text) return stampD;
+  const pd = (stampD.match(/ d="([^"]*)"/) || [])[1] || '';
+  const FONT = '"LXGW WenKai","Xiaolai","KaiTi",serif';
+  try { await document.fonts.load(`64px ${FONT}`); } catch (_) { /* 字体没到位就用回落字体 */ }
+  const N = 1024, c = document.createElement('canvas'); c.width = c.height = N;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, N, N); ctx.fillStyle = '#000';
+  const body = (cx, cy, side) => {           // 章本体放进边长 side 的方框（原 d 在 0..100 里）
+    ctx.save(); ctx.translate(cx - side / 2, cy - side / 2); ctx.scale(side / 100, side / 100);
+    ctx.fill(new Path2D(pd), 'evenodd'); ctx.restore();
+  };
+  const ringW = 34;                           // 外圈线宽：托盘 30px 下 ≈ 2.9 单位，跟库里线宽一个量级
+  if (frame === 'circle') {
+    const C = N / 2, R = 496;
+    ctx.beginPath(); ctx.arc(C, C, R, 0, Math.PI * 2); ctx.arc(C, C, R - ringW, 0, Math.PI * 2, true); ctx.fill('evenodd');
+    let rc = R - ringW - 24;
+    if (text) {
+      // 环形字：沿上半圈居中排；字多就铺开到整圈
+      const fs = 74, rt = R - ringW - 16 - fs / 2;
+      ctx.font = `${fs}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const chars = [...text], step = Math.min((fs * 1.08) / rt, (Math.PI * 2) / chars.length);
+      const start = -Math.PI / 2 - step * (chars.length - 1) / 2;
+      chars.forEach((ch, i) => { const a = start + i * step; ctx.save(); ctx.translate(C + Math.cos(a) * rt, C + Math.sin(a) * rt); ctx.rotate(a + Math.PI / 2); ctx.fillText(ch, 0, 0); ctx.restore(); });
+      // 内圈细线把字和本体隔开
+      const r2 = rt - fs / 2 - 14;
+      ctx.beginPath(); ctx.arc(C, C, r2, 0, Math.PI * 2); ctx.arc(C, C, r2 - 12, 0, Math.PI * 2, true); ctx.fill('evenodd');
+      rc = r2 - 26;
+    }
+    body(C, C, rc * 1.55);                    // 本体装进内圈（不贴边：内容很少顶到方框四角）
+  } else {
+    const M = 14, inner = frame === 'square' ? M + ringW + 30 : 40;
+    if (frame === 'square') {
+      ctx.beginPath(); ctx.rect(M, M, N - 2 * M, N - 2 * M); ctx.rect(M + ringW, M + ringW, N - 2 * (M + ringW), N - 2 * (M + ringW)); ctx.fill('evenodd');
+    }
+    let bottom = N - inner;
+    if (text) {
+      const fs = 84; ctx.font = `${fs}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      const w = ctx.measureText(text).width, maxW = N - 2 * inner, sc = Math.min(1, maxW / w);
+      ctx.save(); ctx.translate(N / 2, N - inner - 10); ctx.scale(sc, 1); ctx.fillText(text, 0, 0); ctx.restore();
+      bottom = N - inner - fs - 30;
+    }
+    const side = Math.min(N - 2 * inner, bottom - inner);
+    body(N / 2, inner + side / 2, side);
+  }
+  const r = imageToStamp(c, { flatten: false, thr: 128, dropFrame: false, minArea: 6, eps: 0.9 });
+  return r.d || stampD;
+}
+
 /** 选图时的第一眼提示（还没裁）：手机截图的比例一眼就能认出来 */
 export function sourceHint(src) {
   const w = src.naturalWidth || src.width, h = src.naturalHeight || src.height;

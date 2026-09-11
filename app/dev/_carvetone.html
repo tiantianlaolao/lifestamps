@@ -1,0 +1,98 @@
+<!doctype html><meta charset="utf-8"><title>刻章铺 · 保留层次试验</title>
+<!-- 9-11 用户：程序描线跟原图差太远；要尽量还原原样，难在照片有颜色层次。
+     试两种「一种印泥也能有层次」的印法：① 单色分层（深浅 3 层叠印，颜色仍由印泥定）② 网点（点的大小表示深浅）。
+     参照：现在的「去掉背景」线条、彩色分 3 层。dev 页，不进包。 -->
+<style>
+body{margin:0;background:#E9E4D8;font:12px/1.5 system-ui;padding:10px;width:1180px}
+.r{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:8px}
+.c{background:#F6F2EA;border-radius:8px;padding:6px;text-align:center}
+.p{background:#FBF7EE;height:170px;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:6px}
+.p img{max-width:165px;max-height:165px}.m{color:#6B655C;font-size:11.5px;margin-top:4px}
+.stack{position:relative}.stack>span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+</style><div id="out"></div>
+<script type="module">
+import { INKS } from '../js/data.js';
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+import { imageToStamp } from '../js/trace.js';
+import { prepare, autoSubject, thickenBin } from '../js/carve.js';
+document.body.insertAdjacentHTML('afterbegin', `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+const load = s => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = s; });
+const crop = (img, x0, y0, x1, y1) => { const w = img.naturalWidth, h = img.naturalHeight, c = document.createElement('canvas'); c.width = Math.round((x1-x0)*w); c.height = Math.round((y1-y0)*h); c.getContext('2d').drawImage(img, x0*w, y0*h, c.width, c.height, 0, 0, c.width, c.height); return c; };
+const S = (d, size, ink = 'zhu') => stampSVG({ id: 'x', name: 'x', cat: 'meet', ink, d }, { size, ink });
+let inkN = 0; const mkInk = hex => { const id = 'kt' + (inkN++); INKS[id] = { name: id, type: 'solid', color: hex, free: true }; return id; };
+const maskC = (w, h, on) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'), id = x.createImageData(w, h); for (let i = 0; i < w*h; i++) { const v = on(i) ? 0 : 255; id.data[i*4] = id.data[i*4+1] = id.data[i*4+2] = v; id.data[i*4+3] = 255; } x.putImageData(id, 0, 0); return c; };
+function dropSmall(m, w, h, min) { const lab = new Int32Array(w*h), keep = new Uint8Array(w*h); let id = 0;
+  for (let s = 0; s < w*h; s++) { if (!m[s] || lab[s]) continue; id++; const st = [s], px = []; lab[s] = id; while (st.length) { const i = st.pop(); px.push(i); const x = i % w; for (const j of [x>0?i-1:-1, x<w-1?i+1:-1, i>=w?i-w:-1, i<w*(h-1)?i+w:-1]) if (j>=0 && m[j] && !lab[j]) { lab[j] = id; st.push(j); } } if (px.length >= min) for (const i of px) keep[i] = 1; }
+  return keep; }
+// 取主体里的灰度（主体外 = 纸），尺寸 = 选区尺寸
+function grayIn(src, sel) {
+  const { w, h } = sel, c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d', { willReadFrequently: true }); x.filter = 'blur(1px)'; x.drawImage(src, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h).data, g = new Float32Array(w * h), rgb = new Float32Array(w * h * 3);
+  for (let i = 0; i < w * h; i++) { g[i] = sel.mask[i] ? (.299 * d[i*4] + .587 * d[i*4+1] + .114 * d[i*4+2]) / 255 : 1; rgb[i*3] = d[i*4]; rgb[i*3+1] = d[i*4+1]; rgb[i*3+2] = d[i*4+2]; }
+  return { g, rgb };
+}
+// ① 单色分层：主体内按亮度分位数切 3 档（浅/中/深），每档一层，钉角对齐，叠印时浅层淡、深层浓
+function toneLayers(sel, g, k = 3) {
+  const { w, h, mask } = sel, vals = [];
+  for (let i = 0; i < w * h; i++) if (mask[i]) vals.push(g[i]);
+  vals.sort((a, b) => a - b);
+  const cut = [vals[Math.floor(vals.length / 3)], vals[Math.floor(vals.length * 2 / 3)]];
+  let x0 = w, y0 = h, x1 = 0, y1 = 0;
+  for (let i = 0; i < w*h; i++) if (mask[i]) { const x = i % w, y = (i - x) / w; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  const layers = [];
+  // 层 0 = 整个主体（最浅的底色），层 1 = 中+深，层 2 = 最深：每层都是「比某档暗」的累积区域，叠起来自然有深浅
+  for (let L = 0; L < k; L++) {
+    let m = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) if (mask[i] && (L === 0 || g[i] <= cut[2 - L])) m[i] = 1;
+    m = dropSmall(m, w, h, 30); m[y0 * w + x0] = 1; m[y1 * w + x1] = 1;
+    layers.push(imageToStamp(maskC(w, h, i => m[i]), { flatten: false, thr: 128, dropFrame: false, minArea: 0, eps: 1.3 }));
+  }
+  return layers;
+}
+// ② 网点：主体内每个网格一个圆点，半径按该格平均暗度；45° 网格更像印刷。整张画进画布再描一次，单条 path
+function halftone(sel, g, cell) {
+  const { w, h, mask } = sel, N = 1024, s = N / Math.max(w, h), c = document.createElement('canvas'); c.width = c.height = N;
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, N, N); x.fillStyle = '#000';
+  const step = cell, ang = Math.PI / 4, ca = Math.cos(ang), sa = Math.sin(ang), R = Math.hypot(w, h);
+  for (let v = -R; v < R; v += step) for (let u = -R; u < R; u += step) {
+    const px = w / 2 + u * ca - v * sa, py = h / 2 + u * sa + v * ca;
+    if (px < 0 || py < 0 || px >= w || py >= h) continue;
+    // 该点周围的平均暗度
+    let dark = 0, n = 0, inn = 0; const r0 = step / 2;
+    for (let dy = -r0; dy <= r0; dy += 1) for (let dx = -r0; dx <= r0; dx += 1) { const X = Math.round(px + dx), Y = Math.round(py + dy); if (X < 0 || Y < 0 || X >= w || Y >= h) continue; const i = Y * w + X; n++; if (mask[i]) { inn++; dark += 1 - g[i]; } }
+    if (!n || inn / n < 0.5) continue;
+    const t = Math.min(1, (dark / inn) * 1.25 + 0.12);     // 主体里再亮也留个小点，轮廓不丢
+    const rad = Math.sqrt(t) * step * 0.62 * s;
+    if (rad < 1.2) continue;
+    x.beginPath(); x.arc(px * s, py * s, rad, 0, Math.PI * 2); x.fill();
+  }
+  return imageToStamp(c, { flatten: false, thr: 128, dropFrame: false, minArea: 3, eps: 0.9 });
+}
+function bgLine(src, sel) { const { w, h } = sel, c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, w, h); const px = x.getImageData(0, 0, w, h); for (let i = 0; i < w*h; i++) if (!sel.mask[i]) px.data[i*4] = px.data[i*4+1] = px.data[i*4+2] = 255; x.putImageData(px, 0, 0); return thickenBin(imageToStamp(c, {}), 1); }
+const stack = (layers, size, inks, ops) => `<div class="stack" style="width:${size}px;height:${size}px">${layers.map((l, n) => `<span style="opacity:${ops[n]}">${S(l.d, size, inks[n])}</span>`).join('')}</div>`;
+const cell = (t, inner, note) => `<div class="c"><div class="p">${inner}</div><div class="m"><b>${t}</b>${note ? '<br>' + note : ''}</div></div>`;
+async function run(label, file, box) {
+  const img = await load(file), c = crop(img, ...box), sel = autoSubject(prepare(c));
+  if (!sel) return;
+  const { g, rgb } = grayIn(c, sel);
+  const line = bgLine(c, sel);
+  const tl = toneLayers(sel, g);
+  const tlKB = tl.reduce((a, l) => a + l.chars, 0) / 1024;
+  const ht = halftone(sel, g, Math.max(6, Math.round(Math.max(sel.w, sel.h) / 46)));
+  // 彩色 3 层作参照：每层的平均色
+  const cols = tl.map((_, L) => { let r = 0, gg = 0, b = 0, n = 0; const cut = []; return null; });
+  document.getElementById('out').insertAdjacentHTML('beforeend', `<div class="r">
+    ${cell(label, `<img src="${c.toDataURL('image/jpeg', .8)}">`, '裁切后的原图')}
+    ${cell('现在：去掉背景', S(line.d, 150) + S(line.d, 30), `${(line.chars / 1024).toFixed(0)}KB`)}
+    ${cell('① 单色分层（朱红）', stack(tl, 150, ['zhu', 'zhu', 'zhu'], [.3, .55, 1]) + stack(tl, 30, ['zhu', 'zhu', 'zhu'], [.3, .55, 1]), `3 层叠印 · ${tlKB.toFixed(0)}KB`)}
+    ${cell('① 单色分层（墨）', stack(tl, 150, ['mo', 'mo', 'mo'], [.28, .55, 1]), '换一种印泥，层次还在')}
+    ${cell('② 网点（朱红）', S(ht.d, 150) + S(ht.d, 30), `${(ht.chars / 1024).toFixed(0)}KB`)}
+    ${cell('② 网点（墨）', S(ht.d, 150, 'mo'), '一层，一种印泥')}
+  </div>`);
+}
+await run('荷花', '_samples/real/p03.jpg', [.26, .24, .62, .56]);
+await run('卡通头像', '_samples/real/p14.jpg', [.1, .06, .9, .86]);
+await run('海报里的布', '_samples/real/p07.jpg', [.12, .24, .88, .72]);
+await run('纽扣电池', '_samples/real/p10.jpg', [.18, .24, .82, .74]);
+document.title = 'done';
+</script>

@@ -1,6 +1,6 @@
 {
   "name": "lifestamps",
-  "version": "1.12.5",
+  "version": "1.12.6",
   "private": true,
   "description": "生活图鉴 / Life Stamps —— 原生壳（Capacitor）。网页源码在 app/，本仓不引入任何打包器。",
   "scripts": {

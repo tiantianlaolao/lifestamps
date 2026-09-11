@@ -56,36 +56,46 @@ export function kzSegmentHTML() {
       <label class="kz-btn2">从相册选<input type="file" accept="image/*" hidden data-kzfile></label>
     </div>
     <div class="kz-xs kz-quota">${freeLeft() > 0 ? `还能免费刻 <b>${freeLeft()}</b> 枚` : '免费次数用完了（买断在后续版本接上，本地测试不拦）'}</div>
-    <div class="kz-sec"><span>我刻的章 · ${carved.length}</span><span class="kz-xs">点一枚可以改名或删除</span></div>
+    <div class="kz-sec"><span>我刻的章 · ${carved.length}</span><span class="kz-xs">在托盘里跟别的章一样用</span></div>
     ${carved.length ? `<div class="kz-mine">${mine}</div>` : `<div class="kz-xs kz-empty">还没有，刻一枚试试</div>`}
   </div>`;
+}
+
+// ---- 选图把关（9-11 用户拍板）----
+// 只收照片：视频 / 文档给明确的话；动图、SVG 这类不收。过大的直接拒（防旧手机内存顶满白屏）。
+// 能用的一进来就缩到长边 ≤ 2048：只缩一次，之后裁切拖动、每次重算都用小图，反而比拿原图省。
+const MAX_BYTES = 30 * 1024 * 1024, MAX_PIXELS = 50e6, WORK_EDGE = 2048;
+const OK_TYPES = /^image\/(jpeg|jpg|png|webp|heic|heif)$/i;
+function checkFile(f) {
+  const t = (f.type || '').toLowerCase();
+  if (t.startsWith('video/')) return '刻章只能用照片，不能用视频';
+  if (t && !t.startsWith('image/')) return '这不是照片，请选一张照片';
+  if (t && !OK_TYPES.test(t)) return '这种格式刻不了，换一张普通照片（JPG / PNG）';
+  if (f.size > MAX_BYTES) return '这张图太大了，换一张，或者先截个图再用';
+  return '';   // 没有 type（个别安卓文件管理器）就放行，交给解码去判断
+}
+function shrink(img) {
+  const w = img.naturalWidth, h = img.naturalHeight, s = Math.min(1, WORK_EDGE / Math.max(w, h));
+  const c = document.createElement('canvas'); c.width = Math.round(w * s); c.height = Math.round(h * s);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c;
 }
 
 export function bindKz(root, rerender) {
   root.querySelectorAll('[data-kzfile]').forEach(inp => inp.addEventListener('change', e => {
     const f = e.target.files && e.target.files[0];
     e.target.value = '';
-    if (f) openFlow(URL.createObjectURL(f), rerender);
+    if (!f) return;
+    const bad = checkFile(f);
+    if (bad) { toast(bad, 2400); return; }
+    openFlow(URL.createObjectURL(f), rerender);
   }));
   root.querySelectorAll('[data-demo]').forEach(b => b.addEventListener('click', () => openFlow(b.dataset.demo, rerender)));
-  root.querySelectorAll('[data-kzid]').forEach(b => b.addEventListener('click', () => manage(b.dataset.kzid, rerender)));
-}
-
-function manage(id, rerender) {
-  const s = carved.find(x => x.id === id);
-  if (!s) return;
-  const name = prompt('改个名字（清空 = 删除这枚章）', s.name);
-  if (name === null) return;
-  if (!name.trim()) {
-    if (!confirm('删除后，盖过它的那些天会显示成空白。确定删除？')) return;
-    carved.splice(carved.indexOf(s), 1);
-    const i = STAMPS.findIndex(x => x.id === id); if (i >= 0) STAMPS.splice(i, 1);
-    const j = INIT_STAMPS.indexOf(id); if (j >= 0) INIT_STAMPS.splice(j, 1);
-  } else {
-    s.name = name.trim().slice(0, 8);
-    register(s);
-  }
-  rebuildStampIndex(); saveAll(carved); rerender();
+  // 入库后跟普通章一样：不能删、不能改名（9-11 用户拍板）。点一下只报它的来历。
+  root.querySelectorAll('[data-kzid]').forEach(b => b.addEventListener('click', () => {
+    const s = carved.find(x => x.id === b.dataset.kzid);
+    if (s) { const d = new Date(s.ts); toast(`「${s.name}」· ${d.getMonth() + 1} 月 ${d.getDate()} 日刻的`); }
+  }));
 }
 
 // ============================================================
@@ -94,8 +104,11 @@ function manage(id, rerender) {
 let F = null;   // 当前这一次刻章的全部状态
 
 function openFlow(src, done) {
-  const img = new Image();
-  img.onload = () => {
+  const im = new Image();
+  im.onload = () => {
+    if (im.naturalWidth * im.naturalHeight > MAX_PIXELS) { toast('这张图太大了，换一张，或者先截个图再用', 2400); return; }
+    const img = shrink(im);
+    if (src.startsWith('blob:')) URL.revokeObjectURL(src);
     F = { img, done, hint: sourceHint(img), step: 'crop',
       // 裁切：方框边长 = 图短边 * zoom^-1，中心 (cx, cy) 用 0..1
       crop: { cx: .5, cy: .5, zoom: 1 },
@@ -105,8 +118,8 @@ function openFlow(src, done) {
     ensureOverlay();
     render();
   };
-  img.onerror = () => toast('这张图打不开，换一张试试');
-  img.src = src;
+  im.onerror = () => toast('这张图打不开，换一张照片试试', 2400);
+  im.src = src;
 }
 
 function ensureOverlay() {
@@ -127,13 +140,14 @@ function render() {
   ov.classList.add('show');
   if (F.step === 'crop') renderCrop(ov);
   else if (F.step === 'adjust') renderAdjust(ov);
+  else if (F.step === 'trial') renderTrial(ov);
   else renderFinish(ov);
 }
 
 // ---- ① 裁切：方框固定，拖动 / 双指缩放 / 滚轮 / 滑杆 ----
 const BOX = 300;
 function cropRect() {
-  const { img } = F, w = img.naturalWidth, h = img.naturalHeight;
+  const { img } = F, w = img.width, h = img.height;
   const side = Math.min(w, h) / F.crop.zoom;
   const x = Math.min(w - side, Math.max(0, F.crop.cx * w - side / 2));
   const y = Math.min(h - side, Math.max(0, F.crop.cy * h - side / 2));
@@ -167,8 +181,8 @@ function renderCrop(ov) {
     const r = cropRect(), { img } = F;
     if (pts.size === 1) {
       const k = r.side / BOX;
-      F.crop.cx -= (e.clientX - prev[0]) * k / img.naturalWidth;
-      F.crop.cy -= (e.clientY - prev[1]) * k / img.naturalHeight;
+      F.crop.cx -= (e.clientX - prev[0]) * k / img.width;
+      F.crop.cy -= (e.clientY - prev[1]) * k / img.height;
     } else {
       const [a, b] = [...pts.values()], dist = Math.hypot(a[0] - b[0], a[1] - b[1]);
       if (last) F.crop.zoom = Math.min(6, Math.max(1, F.crop.zoom * dist / last));
@@ -184,8 +198,8 @@ function renderCrop(ov) {
 }
 function clampCrop() {
   const r = cropRect(), { img } = F;
-  F.crop.cx = (r.x + r.side / 2) / img.naturalWidth;
-  F.crop.cy = (r.y + r.side / 2) / img.naturalHeight;
+  F.crop.cx = (r.x + r.side / 2) / img.width;
+  F.crop.cy = (r.y + r.side / 2) / img.height;
 }
 
 // ---- ② 调整 ----
@@ -342,13 +356,50 @@ function renderFinish(ov) {
     <div class="kz-lab2">名字</div><input class="kz-field" id="kz-name" maxlength="8" placeholder="比如：小狗" value="${esc(F.name)}">
     <div class="kz-lab2">放在托盘哪一格</div><div class="kz-cats">${cats}</div>
     <div class="kz-lab2">默认印泥</div><div class="kz-row">${['zhu', 'mo', 'song', 'tao'].map(k => `<button class="kz-chip ${F.ink === k ? 'on' : ''}" data-ink="${k}">${{ zhu: '朱砂', mo: '墨', song: '松绿', tao: '桃' }[k]}</button>`).join('')}</div>
-    <div class="kz-bottom"><button class="kz-btn" data-act="save">刻好了</button></div>
-    <div class="kz-xs kz-center">${freeLeft() > 0 ? `用掉 1 次免费（还剩 ${freeLeft() - 1} 次）· 刻好前随便改，不扣次数` : '本地测试版：不限次数'}</div>
+    <div class="kz-bottom"><button class="kz-btn" data-act="trial">刻好了，试盖一下</button></div>
+    <div class="kz-xs kz-center">试盖不扣次数 · 满意放进托盘时才算用掉 1 次</div>
   </div>`;
   ov.querySelector('#kz-name').oninput = e => { F.name = e.target.value; };
   ov.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => { F.cat = b.dataset.cat; ov.querySelectorAll('[data-cat]').forEach(x => x.classList.toggle('on', x === b)); });
   ov.querySelectorAll('[data-ink]').forEach(b => b.onclick = () => { F.ink = b.dataset.ink; renderFinish(ov); });
-  bindActs(ov, { back: () => { F.step = 'adjust'; render(); }, close, save });
+  bindActs(ov, { back: () => { F.step = 'adjust'; render(); }, close, trial: () => { F.step = 'trial'; F.trials = []; render(); } });
+}
+
+// ---- ④ 试盖（9-11 用户拍板）：在草稿纸上随便盖，满意才入库、才扣次数；入库后跟普通章一样，不能删、不能改名 ----
+const TRIAL_INKS = { zhu: '朱砂', mo: '墨', song: '松绿', tao: '桃' };
+function renderTrial(ov) {
+  const left = freeLeft();
+  ov.innerHTML = `<div class="kz-pane">
+    <div class="kz-top"><button class="kz-link" data-act="back">‹ 再调调</button><span>试盖一下</span><button class="kz-link" data-act="drop">不要了</button></div>
+    <div class="kz-paper" id="kz-paper"><div class="kz-xs kz-paper-hint">在纸上点一点，试着盖几下</div></div>
+    <div class="kz-row"><span class="kz-xs">印泥</span>${Object.entries(TRIAL_INKS).map(([k, n]) => `<button class="kz-chip ${F.ink === k ? 'on' : ''}" data-ink="${k}">${n}</button>`).join('')}
+      <span class="kz-grow"></span><button class="kz-chip" data-act="wipe">擦掉</button></div>
+    <div class="kz-row" style="margin-top:10px"><span class="kz-xs">放进托盘里：</span><div class="kz-tray">${['milktea', 'coffee'].map(id => stampById[id] ? `<span>${stampSVG(stampById[id], { size: 26 })}</span>` : '').join('')}<span class="me">${S(F.result.out.d, 26, F.ink)}</span></div></div>
+    <div class="kz-lab2">名字（放进托盘后就不能改了）</div><input class="kz-field" id="kz-name" maxlength="8" placeholder="比如：小狗" value="${esc(F.name)}">
+    <div class="kz-ask">满意吗？放进托盘后，它就跟别的章一样了：<b>不能删，也不能改名</b>。</div>
+    <div class="kz-bottom"><button class="kz-btn2" data-act="back">再调调</button><button class="kz-btn" data-act="save">满意，放进托盘</button></div>
+    <div class="kz-xs kz-center">${left > 0 ? `会用掉 1 次免费（还剩 ${left} 次）` : '本地测试版：不限次数'}</div>
+  </div>`;
+  const paper = ov.querySelector('#kz-paper');
+  const drawTrials = () => {
+    paper.querySelectorAll('.kz-imp').forEach(n => n.remove());
+    for (const t of F.trials) paper.insertAdjacentHTML('beforeend', `<div class="kz-imp" style="left:${t.x}%;top:${t.y}%;transform:translate(-50%,-50%) rotate(${t.rot}deg)">${S(F.result.out.d, 64, t.ink)}</div>`);
+    const h = paper.querySelector('.kz-paper-hint'); if (h) h.style.display = F.trials.length ? 'none' : '';
+  };
+  paper.addEventListener('click', e => {
+    const r = paper.getBoundingClientRect();
+    F.trials.push({ x: (e.clientX - r.left) / r.width * 100, y: (e.clientY - r.top) / r.height * 100, rot: Math.round(Math.random() * 14 - 7), ink: F.ink });
+    drawTrials();
+  });
+  drawTrials();
+  ov.querySelector('#kz-name').oninput = e => { F.name = e.target.value; };
+  ov.querySelectorAll('[data-ink]').forEach(b => b.onclick = () => { F.ink = b.dataset.ink; renderTrial(ov); });
+  bindActs(ov, {
+    back: () => { F.step = 'adjust'; render(); },
+    drop: () => { if (confirm('不要这枚了？不会扣次数。')) close(); },
+    wipe: () => { F.trials = []; drawTrials(); },
+    save,
+  });
 }
 
 function save() {

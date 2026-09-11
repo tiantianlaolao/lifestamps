@@ -69,3 +69,11 @@
 .kz-opts button.on { border-color: var(--accent); color: var(--accent) }
 .kz-field { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; background: var(--card); font-family: var(--f-hand); font-size: 15px; color: var(--ink) }
 .kz-cats { display: flex; flex-wrap: wrap; gap: 6px }
+/* 试盖 */
+.kz-paper { position: relative; margin-top: 12px; height: 300px; border-radius: 10px; border: 1px solid var(--line); overflow: hidden; cursor: pointer;
+  background-color: #FBF7EE; background-image: radial-gradient(circle, rgba(120,105,85,.22) 1px, transparent 1.3px); background-size: 18px 18px }
+.kz-paper-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none }
+.kz-imp { position: absolute; pointer-events: none; animation: kzPress .28s cubic-bezier(.2,1.4,.4,1) }
+@keyframes kzPress { from { opacity: 0; transform: translate(-50%,-50%) scale(1.25) } }
+.kz-ask { margin-top: 14px; font-family: var(--f-hand); font-size: 13.5px; color: var(--ink); line-height: 1.7; text-align: center }
+.kz-ask b { color: var(--accent); font-weight: 400 }

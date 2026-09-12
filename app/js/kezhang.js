@@ -217,12 +217,25 @@ function cropRect() {
   };
   return { x: at(F.crop.cx, w), y: at(F.crop.cy, h), side };
 }
+// 处理用的画布。方框比照片大的部分**不补白，把照片边缘的颜色拉伸出去**（贴边延展）。
+// 🔴 9-12 踩坑：补白的话「灌背景」从四角起灌，四角是纯白，灌到照片边缘就停——它就认为
+//    背景 = 两条白边、主体 = 整张照片，层次出来是个大矩形、剪影是条碎片。
+//    延展之后四角还是桌面的颜色，灌背景照旧能找到苹果。裁切页的预览仍然补白（用户看着干净）。
 function cropCanvas(max = 1024) {
   const r = cropRect(), s = Math.min(1, max / r.side);
-  const c = document.createElement('canvas'); c.width = c.height = Math.round(r.side * s);
+  const N = Math.round(r.side * s), img = F.img, w = img.width, h = img.height;
+  const c = document.createElement('canvas'); c.width = c.height = N;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
-  ctx.drawImage(F.img, r.x, r.y, r.side, r.side, 0, 0, c.width, c.height);
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, N, N);
+  // 照片在画布上占的范围（方框超出照片的部分 = 需要延展的边）
+  const x0 = Math.round(Math.max(0, -r.x) * s), y0 = Math.round(Math.max(0, -r.y) * s);
+  const x1 = Math.round(Math.min(r.side, w - r.x) * s), y1 = Math.round(Math.min(r.side, h - r.y) * s);
+  const sx = Math.max(0, r.x), sy = Math.max(0, r.y), sw = Math.min(w, r.x + r.side) - sx, sh = Math.min(h, r.y + r.side) - sy;
+  ctx.drawImage(img, sx, sy, sw, sh, x0, y0, x1 - x0, y1 - y0);
+  if (x0 > 0) ctx.drawImage(img, sx, sy, 1, sh, 0, y0, x0, y1 - y0);                       // 左边：最左一列拉出去
+  if (x1 < N) ctx.drawImage(img, sx + sw - 1, sy, 1, sh, x1, y0, N - x1, y1 - y0);           // 右边
+  if (y0 > 0) ctx.drawImage(c, 0, y0, N, 1, 0, 0, N, y0);                                     // 上边：拉已经画好的第一行（连角一起）
+  if (y1 < N) ctx.drawImage(c, 0, y1 - 1, N, 1, 0, y1, N, N - y1);                            // 下边
   return c;
 }
 function renderCrop(ov) {
@@ -543,16 +556,74 @@ function renderFinish(ov) {
 }
 
 // ---- 刻章动效：刻刀一路刻下来 → 章面成形 → 啪。约 2.3 秒，点一下跳过 ----
+// ---- 刻章动效（9-12 用户拍板 A：刀顺着笔画走）----
+// 原来是「揭幕布」：章面整个备好，clip-path 从上往下露出来，一根横线滑过当刻刀——用户：「感觉不是一点点刻出来的」。
+// 现在用章自己的矢量数据：每一条闭合轮廓（M…Z）就是一刀。刀尖沿它走（SMIL animateMotion），
+// 走过的地方露出一道刻痕（蒙版里同一条线做 dashoffset 描边），一条走完这一块填实（蒙版里该块变白）。
+// 艺术层是原样的 path（evenodd、层次的 fill-opacity 都保留），只是被蒙版按刻的进度露出来——
+// 所以洞、层次都天然对，不用自己判断嵌套。
+// 时长按各条轮廓的长度分摊，总共 CARVE_T 秒；条数太多时小条并批起刀。点一下照旧跳过。
+const CARVE_T = 2.6, CARVE_MAX = 200;
+function carvePlan(dStr) {
+  const paths = [...dStr.matchAll(/<path d="([^"]*)"([^>]*)\/>/g)].map(m => ({ d: m[1], attrs: m[2] }));
+  const loops = [];
+  for (const pth of paths) for (const seg of pth.d.split(/(?=M)/)) {
+    const nums = seg.match(/-?\d+(?:\.\d+)?/g); if (!nums || nums.length < 6) continue;
+    const pts = []; for (let i = 0; i + 1 < nums.length; i += 2) pts.push([+nums[i], +nums[i + 1]]);
+    let len = 0; for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    len += Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]);
+    loops.push({ d: seg, len, x0: pts[0][0], y0: pts[0][1] });
+  }
+  // 条数上限：密线稿能有上千条，每条两个 SMIL 动画手机上扛不住。只给最长的 CARVE_MAX 条单独起刀，
+  // 剩下的碎条最后一起露出来（rest）。
+  loops.sort((p, q) => q.len - p.len);
+  const rest = loops.splice(CARVE_MAX);
+  // 从上往下、从左往右刻，看着像人在刻
+  loops.sort((p, q) => (p.y0 - q.y0) || (p.x0 - q.x0));
+  const total = loops.reduce((a, l) => a + l.len, 0) || 1;
+  // 每条按长度分摊时长，最短 0.03s；碎条一多总时长会超，整体按比例压回 CARVE_T
+  for (const l of loops) l.dur = Math.max(0.03, l.len / total * CARVE_T);
+  const sum = loops.reduce((a, l) => a + l.dur, 0);
+  if (sum > CARVE_T) for (const l of loops) l.dur *= CARVE_T / sum;
+  let t = 0.15;
+  for (const l of loops) { l.t0 = t; t += l.dur; }
+  return { paths, loops, rest, end: t };
+}
+function carveSVG(dStr, color) {
+  const { paths, loops, rest, end } = carvePlan(dStr);
+  const f = n => n.toFixed(3);
+  // 一条刻完，这一块 0.35 秒铺开（像铲底），不是"啪"一下整块跳出来
+  const mask = loops.map(l => `<path d="${l.d}" fill="#fff" opacity="0"><animate attributeName="opacity" from="0" to="1" begin="${f(l.t0 + l.dur)}s" dur=".35s" fill="freeze"/></path>
+    <path d="${l.d}" fill="none" stroke="#fff" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="${f(l.len)}" stroke-dashoffset="${f(l.len)}"><animate attributeName="stroke-dashoffset" to="0" begin="${f(l.t0)}s" dur="${f(l.dur)}s" fill="freeze"/></path>`).join('');
+  const restMask = rest.length ? `<path d="${rest.map(l => l.d).join('')}" fill="#fff" opacity="0"><animate attributeName="opacity" from="0" to="1" begin="${f(end)}s" dur=".4s" fill="freeze"/></path>` : '';
+  const art = paths.map(p => `<path d="${p.d}"${p.attrs.replace('fill="CC"', `fill="${color}"`)}/>`).join('');
+  // 刀只跟长一点的轮廓（太碎的一闪而过，跟了反而抖）；木屑在每一刀起点冒三粒
+  const big = loops.filter(l => l.len > 2.5);
+  const knife = big.map(l => `<animateMotion path="${l.d.replace(/Z$/, '')}" begin="${f(l.t0)}s" dur="${f(l.dur)}s" rotate="auto" fill="freeze"/>`).join('');
+  const chips = big.filter((_, i) => i % 2 === 0).map(l => [[-2.2, -1.6], [1.8, -2.4], [2.6, 1.2]].map(([dx, dy]) =>
+    `<circle cx="${f(l.x0)}" cy="${f(l.y0)}" r=".7" fill="#8A5A2B" opacity="0">
+      <animate attributeName="opacity" values="0;.9;0" begin="${f(l.t0)}s" dur=".45s" fill="freeze"/>
+      <animate attributeName="cx" from="${f(l.x0)}" to="${f(l.x0 + dx)}" begin="${f(l.t0)}s" dur=".45s" fill="freeze"/>
+      <animate attributeName="cy" from="${f(l.y0)}" to="${f(l.y0 + dy)}" begin="${f(l.t0)}s" dur=".45s" fill="freeze"/></circle>`).join('')).join('');
+  return { end, svg: `<svg class="kz-carve" viewBox="-3 -3 106 106" xmlns="http://www.w3.org/2000/svg">
+    <defs><mask id="kz-cm"><rect x="-3" y="-3" width="106" height="106" fill="#000"/>${mask}${restMask}</mask></defs>
+    <g mask="url(#kz-cm)">${art}</g>
+    ${chips}
+    <g opacity="${big.length ? 1 : 0}"><g transform="rotate(-35)"><polygon points="0,0 -6,-1.4 -6,1.4" fill="#3A3230"/><rect x="-11" y="-1" width="5.5" height="2" rx=".8" fill="#8A6A48"/></g>${knife}</g>
+  </svg>` };
+}
 function renderCarving(ov) {
+  const { svg, end } = carveSVG(finalD(), '#4A463E');
   ov.innerHTML = `<div class="kz-pane kz-carving" data-act="skip">
     <div class="kz-t kz-center" style="margin-top:auto">正在刻…</div>
-    <div class="kz-block"><div class="kz-face"><div class="kz-reveal">${S(finalD(), 170, 'mo')}</div><i class="kz-knife"></i></div></div>
+    <div class="kz-block"><div class="kz-face">${svg}</div></div>
     <div class="kz-xs kz-center" style="margin-bottom:auto">点一下跳过</div>
   </div>`;
   let done = false;
   const go = () => { if (done || !F) return; done = true; F.step = 'trial'; render(); };
-  setTimeout(() => { if (!done) { try { thump(); } catch (_) {} const b = ov.querySelector('.kz-block'); if (b) b.classList.add('pa'); } }, 1650);
-  setTimeout(go, 2300);
+  const paAt = Math.round((end + 0.15) * 1000);
+  setTimeout(() => { if (!done) { try { thump(); } catch (_) {} const b = ov.querySelector('.kz-block'); if (b) b.classList.add('pa'); } }, paAt);
+  setTimeout(go, paAt + 700);
   bindActs(ov, { skip: go });
 }
 

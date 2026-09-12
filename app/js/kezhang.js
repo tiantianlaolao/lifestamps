@@ -203,7 +203,7 @@ function openFlow(src, done, onSaved) {
       // 9-12 用户拍板：一进来先看到**整张照片**（zoom 拉到下限），要多近自己往里推。
       // 原来默认 1 = 短边方框，竖着拍的照片一上来上下就被切掉，用户以为东西丢了。
       crop: { cx: .5, cy: .5, zoom: Math.min(1, Math.min(img.width, img.height) / Math.max(img.width, img.height)) },
-      pick: null, hint2: null, detail: 2, weight: 2,
+      pick: null, hint2: null, detail: 2, weight: 0,   // 9-12 用户拍板：线条只有「原样」，不再加粗（原样大多已经是完善的，加粗反而糊）
       taps: [], tolAdj: 0, erase: false, picking: false, src2: null, Ptap: null, tapSel: null, autoTap: undefined,
       name: '', cat: 'mine', ink: 'zhu', frame: 'none', ringText: '', dateOn: false, decoD: null };
     ensureOverlay();
@@ -444,7 +444,6 @@ const HINTS = {
   styles: 'kzHintStyles',
   tolAdj: 'kzHintTol',
   detail: 'kzHintDetail',
-  weight: 'kzHintWeight',
 };
 const q = k => `<button class="kz-q" data-hint="${k}" aria-label="${t('kzHelp')}">?</button>`;
 const hintBox = k => F.hint2 === k ? `<div class="kz-hintbox">${esc(t(HINTS[k])).replace(/\n/g, '<br>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</div>` : '';
@@ -470,7 +469,6 @@ function renderAdjust(ov) {
       ${F.taps.length ? `<div class="kz-ctl"><div class="kz-lab">${t('kzTolLab')}${q('tolAdj')}<span>${t('kzTolScale')}</span></div><input type="range" min="-16" max="16" step="2" value="${F.tolAdj}" data-k="tolAdj"></div>${hintBox('tolAdj')}` : ''}`
       : `<button class="kz-link kz-pick" data-act="pickon">${F.taps.length ? t('kzFixAgain') : t('kzFix')}</button>`}
     <div class="kz-ctl"><div class="kz-lab">${t('kzDetail')}${q('detail')}<span>${t('kzDetailScale')}</span></div><input type="range" min="1" max="3" step="1" value="${F.detail}" data-k="detail"></div>${hintBox('detail')}
-    ${F.pick === 'line' ? `<div class="kz-ctl"><div class="kz-lab">${t('kzWeight')}${q('weight')}</div><div class="kz-opts">${t('kzWeightOpts').split('|').map((n, i) => `<button data-weight="${i}" class="${F.weight === i ? 'on' : ''}">${n}</button>`).join('')}</div></div>${hintBox('weight')}` : ''}
     <div class="kz-bottom"><button class="kz-btn" data-act="next" id="kz-next" disabled>${t('kzNext')}</button></div>
   </div>`;
 
@@ -503,7 +501,6 @@ function renderAdjust(ov) {
 
   let tm = 0;
   ov.querySelectorAll('[data-k]').forEach(inp => inp.oninput = () => { F[inp.dataset.k] = +inp.value; F.forced = false; clearTimeout(tm); tm = setTimeout(refresh, 160); });
-  ov.querySelectorAll('[data-weight]').forEach(b => b.onclick = () => { F.weight = +b.dataset.weight; ov.querySelectorAll('[data-weight]').forEach(x => x.classList.toggle('on', x === b)); refresh(); });
   ov.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
     const k = b.dataset.pick;
     F.pick = k; F.forced = false; renderAdjust(ov);

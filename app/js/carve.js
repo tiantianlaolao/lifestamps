@@ -502,7 +502,7 @@ const RANK = { green: 3, yellow: 2, red: 1 };
  * （摆件那张两边都判绿，但全局版被大理石花纹撒了一地小块，局部版干净）。
  * 用户只看到「线条」一格，不需要知道下面有两条路。
  */
-export function lineStamp(src, o = {}, weight = 2) {
+export function lineStamp(src, o = {}, weight = 0) {   // 9-12 起线条只有「原样」（weight 0），加粗那几档留着给 dev 页试
   const mk = img => { const raw = imageToStamp(img, o); return { raw, out: thickenBin(raw, weight) }; };
   const a = mk(src);
   const b = mk(sauvolaCanvas(src, 1024, 20, 0.2));

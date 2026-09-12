@@ -49,7 +49,18 @@ function flood(P, sx, sy, tol) {
     L += lab[i * 3]; A += lab[i * 3 + 1]; B += lab[i * 3 + 2]; n++;
   }
   L /= n; A /= n; B /= n;
-  const t2 = tol * tol, m = new Uint8Array(w * h), st = [sy * w + sx];
+  // 双闸（9-12）。原来只有「跟种子像」一条：一只鞋从受光面到背光面 ΔE 一路变大，
+  //   tol 小了只选到亮的半只，tol 大到能盖住暗部时背景已经整片灌进来——那根 tol 轴上
+  //   不存在正确答案，用户怎么调都不对（9-12 用户实测反馈）。
+  //   ① 跟种子够像（≤ tol）→ 收，和以前一样；
+  //   ② 跟**上一格**够像（≤ localT）且离种子没远到离谱（≤ CEIL·tol）→ 也收。
+  //      ②让选区顺着渐变一路走下去，天花板保证它走不到另一个东西上。
+  //   ⛔ 别去掉天花板：纯局部闸在软边界（阴影、失焦）上会一路漏穿整张图。
+  // 天花板是唯一能拦住局部闸的东西：桌面、墙这种平缓渐变上每一步都很小，
+  // 局部闸永远过得去，只有「离种子多远」能叫停。9-12 实测 2.4 太松（纽扣电池会把桌面拖进来），1.6 合适。
+  const CEIL = 1.6;
+  const t2 = tol * tol, lt2 = Math.min(Math.max(1.5, tol * 0.25), 3) ** 2, c2 = (tol * CEIL) ** 2;
+  const m = new Uint8Array(w * h), st = [sy * w + sx];
   m[sy * w + sx] = 1;
   let area = 0;
   while (st.length) {
@@ -59,7 +70,13 @@ function flood(P, sx, sy, tol) {
     for (const j of nb) {
       if (j < 0 || m[j]) continue;
       const dl = lab[j * 3] - L, da = lab[j * 3 + 1] - A, db = lab[j * 3 + 2] - B;
-      if (dl * dl + da * da + db * db < t2) { m[j] = 1; st.push(j); }
+      const ds = dl * dl + da * da + db * db;
+      if (ds >= c2) continue;                       // 离种子太远，两条闸都不给过
+      if (ds >= t2) {                               // 种子闸没过 → 看局部闸
+        const el = lab[j * 3] - lab[i * 3], ea = lab[j * 3 + 1] - lab[i * 3 + 1], eb = lab[j * 3 + 2] - lab[i * 3 + 2];
+        if (el * el + ea * ea + eb * eb >= lt2) continue;
+      }
+      m[j] = 1; st.push(j);
     }
   }
   return { m, area };
@@ -84,12 +101,14 @@ export function magicWand(P, fx, fy, tol) {
     for (let y = 1; y < h - 1; y++) n += m[y * w] + m[y * w + w - 1];
     return n / (2 * (w + h) - 4);
   };
-  // 从小到大：一旦贴边超过 20% 或面积超过 75% 就停在上一档。
-  // ⚠️ 不再用「面积暴涨就停」：脸、花瓣这种有明暗渐变的主体，正常长大也会一档翻倍，停早了只剩一小条
+  // 从小到大：贴边超过 20% / 面积超过 75% / 面积一档翻三倍，都停在上一档。
+  // 「翻三倍就停」9-11 被拿掉过，理由是脸和花瓣这种渐变主体正常长大也会翻倍；9-12 加了双闸之后
+  // 渐变已经由局部闸接住，一档之内还能翻三倍就只剩「漏进背景」这一种解释了，于是把它请回来。
   let pick = null;
   for (let k = 0; k < runs.length; k++) {
     const r = runs[k], a = r.area / N;
     if (edgeFrac(r.m) > 0.2 || a > 0.75) break;
+    if (k && pick && r.area > pick.area * 3) break;
     if (a >= 0.005) pick = r;
   }
   pick = pick || runs[0];
@@ -148,15 +167,80 @@ function blobs(m, w, h) {
   return { lab, sizes };
 }
 
-/** 选区收拾干净：补缝 → 补洞 → 留最大块（和 ≥ 最大块 15% 的块） */
-export function refineMask({ w, h, mask }) {
+/**
+ * 边界贴边（9-12）：膨胀腐蚀是"圆"的，完全不看原图，边界要么溢出到背景、要么啃掉主体一圈。
+ * 在 ±R 的边界带里按**局部颜色**重判一遍：以 B×B 的格子为单位，分别取「肯定在里面」
+ * （腐蚀掉 R 之后还剩的）和「肯定在外面」（膨胀 R 之后仍在外的）两拨的 Lab 均值，
+ * 带里的像素谁近归谁。格子里缺一边就往周围 3×3 借。
+ * ⚠️ 只动边界带，不碰内部——它是收拾边界的，不是重新抠图。
+ */
+export function snapMask(P, { w, h, mask }, R) {
+  const { lab } = P;
+  R = R || Math.max(2, Math.round(Math.max(w, h) * 0.012));
+  const inner = erode(mask, w, h, R), outer = dilate(mask, w, h, R);
+  const B = Math.max(8, R * 4), gw = Math.ceil(w / B), gh = Math.ceil(h / B), G = gw * gh;
+  // 每格两拨的 Lab 和与个数
+  const sI = new Float64Array(G * 3), nI = new Int32Array(G);
+  const sO = new Float64Array(G * 3), nO = new Int32Array(G);
+  for (let y = 0; y < h; y++) {
+    const gy = (y / B) | 0;
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x, g = gy * gw + ((x / B) | 0);
+      const s = inner[i] ? sI : (outer[i] ? null : sO), c = inner[i] ? nI : (outer[i] ? null : nO);
+      if (!s) continue;                                  // 边界带自己不参与取均值
+      s[g * 3] += lab[i * 3]; s[g * 3 + 1] += lab[i * 3 + 1]; s[g * 3 + 2] += lab[i * 3 + 2]; c[g]++;
+    }
+  }
+  // 某格缺一边就往周围 3×3 借（物体边上的格子经常只有一边）
+  const mean = (s, c, gx, gy) => {
+    for (let r = 0; r <= 2; r++) {
+      let L = 0, A = 0, Bb = 0, n = 0;
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        const X = gx + dx, Y = gy + dy; if (X < 0 || Y < 0 || X >= gw || Y >= gh) continue;
+        const g = Y * gw + X; if (!c[g]) continue;
+        L += s[g * 3]; A += s[g * 3 + 1]; Bb += s[g * 3 + 2]; n += c[g];
+      }
+      if (n) return [L / n, A / n, Bb / n];
+    }
+    return null;
+  };
+  const cacheI = new Array(G), cacheO = new Array(G);
+  const o = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const gy = (y / B) | 0;
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (inner[i]) { o[i] = 1; continue; }
+      if (!outer[i]) continue;                           // 带外的外面，保持 0
+      const gx = (x / B) | 0, g = gy * gw + gx;
+      const mi = cacheI[g] !== undefined ? cacheI[g] : (cacheI[g] = mean(sI, nI, gx, gy));
+      const mo = cacheO[g] !== undefined ? cacheO[g] : (cacheO[g] = mean(sO, nO, gx, gy));
+      if (!mi || !mo) { o[i] = mask[i]; continue; }       // 借不到就维持原判
+      const l = lab[i * 3], a = lab[i * 3 + 1], b = lab[i * 3 + 2];
+      const di = (l - mi[0]) ** 2 + (a - mi[1]) ** 2 + (b - mi[2]) ** 2;
+      const doo = (l - mo[0]) ** 2 + (a - mo[1]) ** 2 + (b - mo[2]) ** 2;
+      o[i] = di <= doo ? 1 : 0;
+    }
+  }
+  return { w, h, mask: o };
+}
+
+/**
+ * 选区收拾干净：补缝 → 补洞 → 留最大块（和 ≥ 最大块 15% 的块）。
+ * 给了 P（prepare 的结果）就在最后按原图颜色把边界贴一次边（9-12）。
+ */
+export function refineMask({ w, h, mask }, P) {
   const r = Math.max(1, Math.round(Math.max(w, h) * 0.008));
   let m = erode(dilate(mask, w, h, r), w, h, r);
   m = fillHoles(m, w, h);
   const { lab, sizes } = blobs(m, w, h);
   const big = Math.max(0, ...sizes.slice(1));
-  const o = new Uint8Array(w * h);
+  let o = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) if (m[i] && sizes[lab[i]] >= big * 0.15) o[i] = 1;
+  if (P) {
+    o = snapMask(P, { w, h, mask: o }).mask;
+    o = fillHoles(erode(dilate(o, w, h, 1), w, h, 1), w, h);   // 贴边后会有零星毛刺，抹一格
+  }
   return { w, h, mask: o };
 }
 
@@ -184,7 +268,10 @@ function strokeStats(bin, w, h) {
     if (x === 0 || x === w - 1 || !bin[i - 1] || !bin[i + 1] || !bin[i - w] || !bin[i + w]) edge++;
   }
   const span = Math.max(1, maxx - minx + 1, maxy - miny + 1);
-  return { ink, edge, span, px: 2 * ink / (edge || 1) };
+  const bw = Math.max(1, maxx - minx + 1), bh = Math.max(1, maxy - miny + 1);
+  // fill = 墨占**包围盒**的比例。⛔ 别跟 cover 混：cover 的分母是长边的平方，
+  // 一个 4:3 的实心方块 cover 只有 0.75，压在「一整块」那条红线底下溜过去（9-12 查出来的）。
+  return { ink, edge, span, bw, bh, fill: ink / (bw * bh), px: 2 * ink / (edge || 1) };
 }
 
 // 被笔画围起来的白（从四边灌不到的背景）有多少像素
@@ -228,16 +315,21 @@ export function thickenBin(r, level = 2) {
  * 单位：章视框 100、内容占 84；库里线宽 ≈ 3.6；托盘 30px 下 1 单位 = 0.3px。
  * @returns {{ level:'red'|'yellow'|'green', why:string, tip:string, all:Array, m:object }}
  */
-export function judge(out, raw = out) {
+export function judge(out, raw = out, o = {}) {
   if (!out.d || !out.bbox) return { level: 'red', why: '什么都没描出来', tip: '换一张背景干净、主体清楚的图', all: [], m: null };
   const s = strokeStats(out.bin, out.w, out.h);
   const line = s.px * 84 / s.span;              // 成品线宽（单位）
   const cover = s.ink / (s.span * s.span);      // 包围方框里墨占多少
-  const m = { rawParts: raw.loops, parts: out.loops, line: +line.toFixed(1), cover: +cover.toFixed(2), kb: +(out.chars / 1024).toFixed(1) };
+  const m = { rawParts: raw.loops, parts: out.loops, line: +line.toFixed(1), cover: +cover.toFixed(2), fill: +s.fill.toFixed(2), kb: +(out.chars / 1024).toFixed(1) };
   const all = [];
   const hit = (level, why, tip) => all.push({ level, why, tip });
   if (raw.loops > 300) hit('red', '图里东西太杂，描出来碎成一片', '裁得再近一点，只留想刻的东西；照片可以改用「点一下主体」');
   else if (raw.loops > 200) hit('yellow', '细节偏多，托盘里会有点糊', '裁近一点，或者把「细节」往少调');
+  // 剪影专用（9-12）：墨占包围盒 > 0.72 = 外形已经退化成方块 / 圆 / 一坨，轮廓不带信息了。
+  // 只对剪影判，⛔ 别对层次判——层次和剪影共用同一个 bin（toneStamp 的 base 是整块 mask），
+  // 拿这条去卡层次会把池塘、山水这些层次做得挺好的图一起误杀。
+  // 阈值来自 9-12 的 33 张回归（剪影改走线条管线之后重测）：好的落在 0.46~0.73，一坨的 0.76 起。
+  if (o.solid && s.fill > 0.75) hit('red', '剪影退化成一整块了，看不出是什么', '这张图的轮廓不带信息，换「线条」或「层次」；要用剪影得让主体侧过来、背景换成纯色');
   if (cover > 0.8) hit('red', '变成了一整块，看不出形状', '裁近一点重新点主体，或者改用线稿');
   else if (cover > 0.55 && out.loops > 3) hit('yellow', '太满了，托盘里看不出细节', '把「粗细」调细一档，或者裁近一点');
   if (cover < 0.12 && out.loops >= 8) hit('red', '东西太散，拼不成一个图案', '裁到只剩一个主体');
@@ -359,15 +451,229 @@ export function toneStamp(src, sel, o = {}) {
   return { d: parts.join(''), raw: base, out: { ...base, d: parts.join(''), chars: parts.join('').length } };
 }
 
+
 /**
- * 自动找主体（不用点）：中心 + 四周 4 个点各灌一次，取「面积 8%~70%」里最大的那块。
+ * 局部阈值（Sauvola，9-12）：每个像素跟它周围 r 圈的均值/方差比，而不是跟全图比一个 otsu。
+ *
+ * 为什么要它：全局阈值只有在「主体整体比背景暗」时才成立（苹果、叶子）。用户那个浅色摆件
+ *   压在中等亮度的大理石上，otsu 只能刮出几条断线，大理石花纹还被一起描进来；局部阈值出来的
+ *   是一只认得出的猫（圆脸、耳朵、眯眼、蝴蝶结）。
+ * ⚠️ 反过来苹果用局部阈值会变差：实心苹果变成空心轮廓 + 一堆斑点。两种阈值是两种线条，
+ *   谁也替代不了谁 —— 所以 lineStamp 两边都描一遍，按判定挑。
+ * 积分图求局部均值/方差，O(N)，1024 长边上几十毫秒。
+ */
+export function sauvolaCanvas(src, MAX = 1024, r = 20, k = 0.2) {
+  const sw = src.naturalWidth || src.width, sh = src.naturalHeight || src.height;
+  const sc = Math.min(1, MAX / Math.max(sw, sh));
+  const w = Math.max(1, Math.round(sw * sc)), h = Math.max(1, Math.round(sh * sc));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(src, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h).data, g = new Float64Array(w * h);
+  for (let i = 0; i < w * h; i++) g[i] = .299 * d[i * 4] + .587 * d[i * 4 + 1] + .114 * d[i * 4 + 2];
+  const W = w + 1, S1 = new Float64Array(W * (h + 1)), S2 = new Float64Array(W * (h + 1));
+  for (let y = 0; y < h; y++) for (let xx = 0; xx < w; xx++) {
+    const v = g[y * w + xx], i1 = (y + 1) * W + xx + 1;
+    S1[i1] = v + S1[i1 - 1] + S1[i1 - W] - S1[i1 - W - 1];
+    S2[i1] = v * v + S2[i1 - 1] + S2[i1 - W] - S2[i1 - W - 1];
+  }
+  const box = (S, x0, y0, x1, y1) => S[(y1 + 1) * W + x1 + 1] - S[y0 * W + x1 + 1] - S[(y1 + 1) * W + x0] + S[y0 * W + x0];
+  const out = document.createElement('canvas'); out.width = w; out.height = h;
+  const ox = out.getContext('2d'), img = ox.createImageData(w, h);
+  for (let y = 0; y < h; y++) for (let xx = 0; xx < w; xx++) {
+    const x0 = Math.max(0, xx - r), y0 = Math.max(0, y - r), x1 = Math.min(w - 1, xx + r), y1 = Math.min(h - 1, y + r);
+    const n = (x1 - x0 + 1) * (y1 - y0 + 1), s1 = box(S1, x0, y0, x1, y1), s2 = box(S2, x0, y0, x1, y1);
+    const m = s1 / n, sd = Math.sqrt(Math.max(0, s2 / n - m * m));
+    const i = y * w + xx, v = g[i] < m * (1 + k * (sd / 128 - 1)) ? 0 : 255;
+    img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255;
+  }
+  ox.putImageData(img, 0, 0);
+  return out;
+}
+
+const RANK = { green: 3, yellow: 2, red: 1 };
+/**
+ * 线条（9-12）：全局阈值和局部阈值各描一遍，判定好的那个赢；平手时碎块少的赢
+ * （摆件那张两边都判绿，但全局版被大理石花纹撒了一地小块，局部版干净）。
+ * 用户只看到「线条」一格，不需要知道下面有两条路。
+ */
+export function lineStamp(src, o = {}, weight = 2) {
+  const mk = img => { const raw = imageToStamp(img, o); return { raw, out: thickenBin(raw, weight) }; };
+  const a = mk(src);
+  const b = mk(sauvolaCanvas(src, 1024, 20, 0.2));
+  if (!b.out.d) return a;
+  if (!a.out.d) return b;
+  const ja = judge(a.out, a.raw), jb = judge(b.out, b.raw);
+  if (RANK[jb.level] !== RANK[ja.level]) return RANK[jb.level] > RANK[ja.level] ? b : a;
+  // 平手裁决：墨占包围盒多的赢（实心的在托盘 26px 下比空心线框耐看）。
+  // ⛔ 别用「碎块少的赢」：苹果全局是实心苹果、局部是空心轮廓 + 一地斑点，
+  //    斑点连成的块反而少，按块数选会把好的那版淘汰掉（9-12 踩过）。
+  const fa = strokeStats(a.out.bin, a.out.w, a.out.h).fill, fb = strokeStats(b.out.bin, b.out.w, b.out.h).fill;
+  return fb > fa ? b : a;
+}
+
+/**
+ * 剪影（9-12 用户拍板）：**直接从线条那条管线来**，不再另起炉灶抠图。
+ *
+ * 为什么：线条已经把轮廓描对了（用户那颗苹果，线条版是完整的苹果），剪影却要靠魔棒
+ *   重新找一遍主体，找歪了就成一坨。既然轮廓现成，把它填实就是剪影——
+ *   同一条管线出来的两个样子，轮廓天然一致，用户也不会看到"线条对、剪影不对"。
+ *
+ * 三步：闭运算把线稿的断口补上（不补的话填不住，墨会从缺口漏出去）→ 填洞 →
+ *   只留最大的一块。第三步顺手解决影子：苹果左下角那团影子是独立的一小块，直接丢掉。
+ *
+ * @param raw imageToStamp 的返回（要带 bin/w/h）
+ */
+export function silLineMask(raw) {
+  const { w, h, bin } = raw;
+  if (!bin) return null;
+  const r = Math.max(1, Math.round(Math.max(w, h) * 0.008));
+  let m = erode(dilate(bin, w, h, r), w, h, r);     // 闭运算：补断口
+  m = fillHoles(m, w, h);
+  const { lab, sizes } = blobs(m, w, h);
+  const big = Math.max(0, ...sizes.slice(1));
+  if (!big) return null;
+  const o = new Uint8Array(w * h);
+  // ⛔ 只留最大那一块，别像 refineMask 那样把 ≥15% 的块也留下——影子、反光就是那些块
+  for (let i = 0; i < w * h; i++) if (m[i] && sizes[lab[i]] === big) o[i] = 1;
+  return { w, h, mask: o };
+}
+const maskFrac = m => { let a = 0; for (let i = 0; i < m.mask.length; i++) a += m.mask[i]; return a / (m.w * m.h); };
+const maskBox = ({ w, h, mask }) => {
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let i = 0; i < w * h; i++) { if (!mask[i]) continue; const x = i % w, y = (i - x) / w;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  return x1 < 0 ? null : [x0 / w, y0 / h, (x1 + 1) / w, (y1 + 1) / h];
+};
+
+/**
+ * 边界对比度体检（9-12）：沿着主体的边走一圈，挨个比「边里面」和「边外面」的颜色差多少。
+ * 返回 weak = 几乎没差别的那一段占整圈的比例。
+ *
+ * 🔴 9-12 实测：这条**不成立，没有接进流程**，留着是为了别人别再走一遍。
+ *   本意是在裁切那步拦住"主体和背景太像"的照片（用户那个浅色摆件放在反光大理石上，
+ *   左边袋子和台面一样亮：亮度差 15，右边 132）。27 张跑下来完全分不开：
+ *     手绘小狗 0.95 / 奔跑小狗 0.92 / 小猪 0.63 —— 这三张效果最好，却排在最差
+ *     摆件（真出问题的那张）0.23，比效果很好的苹果 0.20 还接近
+ *   原因：铅笔画的"里面"和"外面"是同一张纸，区域色差本来就接近 0，但它靠线本身成立，
+ *   根本不需要区域对比度。只限定照片也分不开（摆件 0.23 vs 苹果 0.20）。
+ *   结论：这个指标测的东西跟"刻得好不好"没有稳定关系。要做提示得换思路——
+ *   测**结果**（描出来的轮廓有没有大段断口），而不是测照片。
+ * 做法跟 snapMask 一样按 B×B 的格子取内外两拨的 Lab 均值，只在有边界经过的格子上算。
+ */
+export function edgeContrast(P, { w, h, mask }) {
+  const { lab } = P;
+  const R = Math.max(3, Math.round(Math.max(w, h) * 0.015));
+  const inner = erode(mask, w, h, R), outer = dilate(mask, w, h, R);
+  const B = Math.max(10, R * 4), gw = Math.ceil(w / B), gh = Math.ceil(h / B), G = gw * gh;
+  const sI = new Float64Array(G * 3), nI = new Int32Array(G);
+  const sO = new Float64Array(G * 3), nO = new Int32Array(G);
+  const edge = new Int32Array(G);
+  for (let y = 0; y < h; y++) {
+    const gy = (y / B) | 0;
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x, g = gy * gw + ((x / B) | 0);
+      if (mask[i] && (x === 0 || y === 0 || x === w - 1 || y === h - 1 || !mask[i - 1] || !mask[i + 1] || !mask[i - w] || !mask[i + w])) edge[g]++;
+      const s = inner[i] ? sI : (outer[i] ? null : sO), c = inner[i] ? nI : (outer[i] ? null : nO);
+      if (!s) continue;
+      s[g * 3] += lab[i * 3]; s[g * 3 + 1] += lab[i * 3 + 1]; s[g * 3 + 2] += lab[i * 3 + 2]; c[g]++;
+    }
+  }
+  let total = 0, weak = 0; const dEs = [];
+  for (let g = 0; g < G; g++) {
+    if (!edge[g] || !nI[g] || !nO[g]) continue;
+    const d = Math.hypot(sI[g * 3] / nI[g] - sO[g * 3] / nO[g], sI[g * 3 + 1] / nI[g] - sO[g * 3 + 1] / nO[g], sI[g * 3 + 2] / nI[g] - sO[g * 3 + 2] / nO[g]);
+    total += edge[g]; if (d < 20) weak += edge[g];
+    dEs.push(+d.toFixed(1));
+  }
+  dEs.sort((a, b) => a - b);
+  return { weak: total ? +(weak / total).toFixed(2) : 0, median: dEs.length ? dEs[dEs.length >> 1] : 0, worst: dEs.length ? dEs[0] : 0, n: dEs.length };
+}
+
+/**
+ * 剪影（9-12）：线条那条路为主，漏了主体才改用选区。
+ *
+ * 线条走的是全局阈值（otsu），**主体比背景亮的时候会把主体判成背景**——
+ *   用户那把水壶，深色盖子和把手描出来了，发亮的壶身整个丢了，剪影只剩上半截。
+ *   选区那条路（灌背景取反）没有这个毛病，壶身壶嘴都在。
+ * 反过来，选区那条路会把紧贴主体的影子一起圈进来（苹果左下角那团），线条法靠
+ *   「只留最大一块」天然甩掉它。所以两条都要，按情况挑。
+ *
+ * 判据（9-12 实测 15 张）：线条的面积不到选区的 3/4，**并且**线条的包围盒套在选区的
+ *   包围盒里 = 线条漏了主体的一块（水壶 0.53、leaf_red 0.50）；正常时两者面积几乎相等
+ *   （0.92~1.11），有些图线条反而更大（池塘 2.75 = 选区没选住），那些一律用线条。
+ *   ⛔ 别只看面积比就切过去：框不套着说明两条路找的根本不是同一个东西。
+ */
+export function silhouette(raw, sel) {
+  const L = silLineMask(raw);
+  if (!sel) return L ? maskToStamp(L) : null;
+  if (!L) return maskToStamp(sel);
+  const bL = maskBox(L), bB = maskBox(sel);
+  if (bL && bB && maskFrac(L) / (maskFrac(sel) || 1) < 0.75) {
+    const pad = 0.05;
+    const inside = bL[0] >= bB[0] - pad && bL[1] >= bB[1] - pad && bL[2] <= bB[2] + pad && bL[3] <= bB[3] + pad;
+    if (inside) return maskToStamp(sel);
+  }
+  return maskToStamp(L);
+}
+
+// 一块选区的体检：占画面多少、填满包围盒多少（接近 1 = 退化成方块/圆）
+function maskStats(w, h, m) {
+  let a = 0, x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let i = 0; i < w * h; i++) {
+    if (!m[i]) continue;
+    a++; const x = i % w, y = (i - x) / w;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  if (x1 < 0) return { frac: 0, fill: 0 };
+  return { frac: a / (w * h), fill: a / ((x1 - x0 + 1) * (y1 - y0 + 1)) };
+}
+
+/**
+ * 干净背景照片的主体（9-12）：**先把背景灌出来，再取反**。
+ *
+ * 为什么反着来：背景通常是一整片均匀的（桌面、墙、白纸），主体往往是好几种颜色——
+ *   用户那张苹果就是红皮 + 白高光 + 绿果柄，从苹果中心往外灌，要么只圈到红的那一块，
+ *   要么容差一大就连桌面一起吞了（9-12 实测：苹果在容差 14~28 一直是 21%，33 那一档
+ *   直接跳到 37%，而贴边和「翻三倍」两道保险都没响，最后选到 38 = 苹果+半个桌面）。
+ *   背景没有这个毛病：从四角灌进来，遇到苹果边缘自然停住，取反就是完整的苹果（连果柄）。
+ *
+ * ⚠️ 画面里本身有个封闭框时会翻车（leaf_clean 那张带黑圆框的图 → 选出整个圆），
+ *    所以出口有体检：太满（fill > .75 = 退化成圆/方块）、太大太小的一律不认，交回中心种子法。
+ */
+export function subjectByBackground(P) {
+  const { w, h } = P, N = w * h;
+  const bg = new Uint8Array(N);
+  for (const [fx, fy] of [[.02, .02], [.98, .02], [.02, .98], [.98, .98], [.5, .02], [.5, .98], [.02, .5], [.98, .5]]) {
+    const s = magicWand(P, fx, fy);
+    for (let i = 0; i < N; i++) if (s.mask[i]) bg[i] = 1;
+  }
+  const m = new Uint8Array(N);
+  for (let i = 0; i < N; i++) m[i] = bg[i] ? 0 : 1;
+  const s0 = maskStats(w, h, m);
+  if (s0.frac < 0.05 || s0.frac > 0.85) return null;          // 背景没灌开 / 把整张都当了背景
+  const sel = refineMask({ w, h, mask: m }, P);
+  const s1 = maskStats(w, h, sel.mask);
+  if (s1.frac < 0.05 || s1.frac > 0.75 || s1.fill > 0.75) return null;
+  return sel;
+}
+
+/**
+ * 自动找主体（不用点）：先走「灌背景再取反」（干净背景的照片就是冲它来的），
+ * 不成立再退回中心 + 四周 4 个点各灌一次、取「面积 8%~70%」里最大的那块。
  * 9-11 实测：荷花、布、电池都能自己找到；找不到返回 null（界面上再请用户点一下）。
  */
 export function autoSubject(P) {
+  const byBg = subjectByBackground(P);
+  if (byBg) return byBg;
+  return autoSubjectCenter(P);
+}
+
+function autoSubjectCenter(P) {
   const { w, h } = P, N = w * h;
   let best = null;
   for (const [fx, fy] of [[.5, .5], [.5, .38], [.5, .62], [.38, .5], [.62, .5]]) {
-    const s = refineMask(magicWand(P, fx, fy));
+    const s = refineMask(magicWand(P, fx, fy), P);
     let a = 0; for (let i = 0; i < N; i++) a += s.mask[i];
     const f = a / N;
     if (f < 0.08 || f > 0.7) continue;

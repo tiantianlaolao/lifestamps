@@ -7,7 +7,7 @@
 import { STAMPS, INIT_STAMPS, rebuildStampIndex, stampById } from './data.js';
 import { stampSVG } from './stamp.js';
 import { imageToStamp } from './trace.js';
-import { prepare, magicWand, refineMask, maskToStamp, thickenBin, judge, sourceHint, decorate, autoSubject, looksLikeDrawing, toneStamp } from './carve.js';
+import { prepare, thickenBin, judge, sourceHint, decorate, autoSubject, toneStamp, silhouette, lineStamp } from './carve.js';
 import { toast, thump } from './ui.js';
 
 // ---- 自刻章的存放（M1：localStorage；一枚 ≤ 30KB，几十枚没问题；M4 换 IndexedDB + 账号同步）----
@@ -112,10 +112,11 @@ function openFlow(src, done, onSaved) {
     const img = shrink(im);
     if (src.startsWith('blob:')) URL.revokeObjectURL(src);
     F = { img, done, onSaved, hint: sourceHint(img), step: 'crop',
-      // 裁切：方框边长 = 图短边 * zoom^-1，中心 (cx, cy) 用 0..1
-      crop: { cx: .5, cy: .5, zoom: 1 },
-      pick: null, rec: null, fixing: false, more: false, thr: 0, detail: 2, weight: 2,
-      taps: [], tolAdj: 0, erase: false,
+      // 裁切：方框边长 = 图短边 / zoom，中心 (cx, cy) 用 0..1。
+      // 9-12 用户拍板：一进来先看到**整张照片**（zoom 拉到下限），要多近自己往里推。
+      // 原来默认 1 = 短边方框，竖着拍的照片一上来上下就被切掉，用户以为东西丢了。
+      crop: { cx: .5, cy: .5, zoom: Math.min(1, Math.min(img.width, img.height) / Math.max(img.width, img.height)) },
+      pick: null, more: false, hint2: null, thr: 0, detail: 2, weight: 2,
       name: '', cat: 'mine', ink: 'zhu', frame: 'none', ringText: '', dateOn: false, decoD: null };
     ensureOverlay();
     render();
@@ -143,6 +144,7 @@ function render() {
   if (F.step === 'crop') renderCrop(ov);
   else if (F.step === 'adjust') renderAdjust(ov);
   else if (F.step === 'trial') renderTrial(ov);
+  else if (F.step === 'again') renderAgain(ov);
   else if (F.step === 'carving') renderCarving(ov);
   else if (F.step === 'saved') renderSaved(ov);
   else renderFinish(ov);
@@ -150,30 +152,46 @@ function render() {
 
 // ---- ① 裁切：方框固定，拖动 / 双指缩放 / 滚轮 / 滑杆 ----
 const BOX = 300;
+// zoom = 1 时方框 = 照片的短边。9-12 用户反馈「只能放大不能缩小」：下限原来也写死成 1，
+// 于是竖着拍的照片上下从一开始就被切掉、再也找不回来。现在下限放到「整张照片刚好装进方框」，
+// 方框超出照片的部分补白 —— ⛔ 必须是白的：描边管线把白当背景（trace.js 开头就是 fillRect 白底），
+// 补别的颜色会被当成主体的一部分描出来。
+const zoomMin = () => { const { img } = F; return Math.min(1, Math.min(img.width, img.height) / Math.max(img.width, img.height)); };
+const ZOOM_MAX = 6;
+const clampZoom = z => Math.min(ZOOM_MAX, Math.max(zoomMin(), z));
 function cropRect() {
   const { img } = F, w = img.width, h = img.height;
   const side = Math.min(w, h) / F.crop.zoom;
-  const x = Math.min(w - side, Math.max(0, F.crop.cx * w - side / 2));
-  const y = Math.min(h - side, Math.max(0, F.crop.cy * h - side / 2));
-  return { x, y, side };
+  // 方框比照片大的时候 w - side 是负的：范围要反过来取，否则 min/max 会把它钉死在边上
+  const at = (c, len) => {
+    const lo = Math.min(0, len - side), hi = Math.max(0, len - side);
+    return Math.min(hi, Math.max(lo, c * len - side / 2));
+  };
+  return { x: at(F.crop.cx, w), y: at(F.crop.cy, h), side };
 }
 function cropCanvas(max = 1024) {
   const r = cropRect(), s = Math.min(1, max / r.side);
   const c = document.createElement('canvas'); c.width = c.height = Math.round(r.side * s);
-  c.getContext('2d').drawImage(F.img, r.x, r.y, r.side, r.side, 0, 0, c.width, c.height);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(F.img, r.x, r.y, r.side, r.side, 0, 0, c.width, c.height);
   return c;
 }
 function renderCrop(ov) {
   ov.innerHTML = `<div class="kz-dark">
     <div class="kz-top"><button class="kz-link" data-act="close">取消</button><span>裁一下</span><span></span></div>
-    <div class="kz-hint">拖动、双指缩放，让想刻的东西填满方框</div>
+    <div class="kz-hint">拖动、双指缩放；缩到底能看到整张照片</div>
     ${F.hint ? `<div class="kz-warn">${F.hint}</div>` : ''}
     <div class="kz-cropbox" id="kz-cropbox" style="width:${BOX}px;height:${BOX}px"><canvas id="kz-cropc" width="${BOX * 2}" height="${BOX * 2}"></canvas></div>
-    <input type="range" class="kz-zoom" id="kz-zoom" min="1" max="6" step=".01" value="${F.crop.zoom}">
+    <input type="range" class="kz-zoom" id="kz-zoom" min="${zoomMin().toFixed(3)}" max="${ZOOM_MAX}" step=".01" value="${F.crop.zoom}">
     <div class="kz-bottom"><button class="kz-btn2 dark" data-act="close">重选</button><button class="kz-btn" data-act="next">下一步</button></div>
   </div>`;
   const cv = ov.querySelector('#kz-cropc'), ctx = cv.getContext('2d');
-  const draw = () => { const r = cropRect(); ctx.clearRect(0, 0, cv.width, cv.height); ctx.drawImage(F.img, r.x, r.y, r.side, r.side, 0, 0, cv.width, cv.height); };
+  const draw = () => {
+    const r = cropRect();
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);      // 缩到比照片还小时，方框外面是白纸
+    ctx.drawImage(F.img, r.x, r.y, r.side, r.side, 0, 0, cv.width, cv.height);
+  };
   draw();
   // 拖动 + 双指
   const pts = new Map(); let last = null;
@@ -189,14 +207,14 @@ function renderCrop(ov) {
       F.crop.cy -= (e.clientY - prev[1]) * k / img.height;
     } else {
       const [a, b] = [...pts.values()], dist = Math.hypot(a[0] - b[0], a[1] - b[1]);
-      if (last) F.crop.zoom = Math.min(6, Math.max(1, F.crop.zoom * dist / last));
+      if (last) F.crop.zoom = clampZoom(F.crop.zoom * dist / last);
       last = dist; ov.querySelector('#kz-zoom').value = F.crop.zoom;
     }
     clampCrop(); draw();
   });
   const up = e => { pts.delete(e.pointerId); last = null; };
   box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
-  box.addEventListener('wheel', e => { e.preventDefault(); F.crop.zoom = Math.min(6, Math.max(1, F.crop.zoom * (e.deltaY < 0 ? 1.08 : 0.93))); ov.querySelector('#kz-zoom').value = F.crop.zoom; clampCrop(); draw(); }, { passive: false });
+  box.addEventListener('wheel', e => { e.preventDefault(); F.crop.zoom = clampZoom(F.crop.zoom * (e.deltaY < 0 ? 1.08 : 0.93)); ov.querySelector('#kz-zoom').value = F.crop.zoom; clampCrop(); draw(); }, { passive: false });
   ov.querySelector('#kz-zoom').addEventListener('input', e => { F.crop.zoom = +e.target.value; clampCrop(); draw(); });
   bindActs(ov, { close, next: () => { F.src = cropCanvas(); F.P = null; F.step = 'adjust'; render(); } });
 }
@@ -215,62 +233,69 @@ const DETAIL = { 1: { minArea: 40, eps: 2.0 }, 2: { minArea: 12, eps: 1.2 }, 3: 
 const CANDS = [['line', '线条'], ['tone', '层次'], ['sil', '剪影']];
 const TONE_DETAIL = { 1: { minArea: 80, eps: 2.0 }, 2: { minArea: 30, eps: 1.3 }, 3: { minArea: 12, eps: 0.9 } };
 function traceLine(src) {
-  const base = imageToStamp(src, { ...DETAIL[F.detail] });
-  const raw = F.thr ? imageToStamp(src, { ...DETAIL[F.detail], thr: Math.min(250, Math.max(5, base.thr + F.thr)) }) : base;
-  return { raw, out: thickenBin(raw, F.weight) };
+  // 「深浅」只对全局阈值那条路有意义（局部阈值没有一个全局的 thr 可调），
+  // 所以一动深浅就退回全局阈值那条；不动的时候走 lineStamp 自动二选一。
+  if (F.thr) {
+    const base = imageToStamp(src, { ...DETAIL[F.detail] });
+    const raw = imageToStamp(src, { ...DETAIL[F.detail], thr: Math.min(250, Math.max(5, base.thr + F.thr)) });
+    return { raw, out: thickenBin(raw, F.weight) };
+  }
+  return lineStamp(src, { ...DETAIL[F.detail] }, F.weight);
 }
-// 主体：没点过 = 自动找（只找一次）；点过 = 按点的并起来（减选从里面扣掉）
+// 主体：自动找，不给用户工具（9-12 用户拍板）。
+// 9-12 上午加过「划一下选主体」的魔棒，当天下午拆掉——需要六条说明才讲得清的功能，
+// 本身就是错的；剪影改成「先灌背景再取反」之后自动就能找对，工具没有存在的理由了。
+// ⛔ 别再加回来。抠不准的出路是「重新裁」或换一张，不是给普通人一把修图工具。
 function selection() {
   if (!F.P) F.P = prepare(F.src);
-  if (!F.taps.length) { if (F.autoSel === undefined) F.autoSel = autoSubject(F.P); return F.autoSel; }
-  const { w, h } = F.P;
-  const m = new Uint8Array(w * h);
-  // 第一下是减选时，从自动找到的主体上扣
-  if (F.taps[0].sub && F.autoSel) for (let i = 0; i < w * h; i++) m[i] = F.autoSel.mask[i];
-  for (const t of F.taps) {
-    // 自动容差每个点只算一次（要试十来档，最费时）；「范围」在它上面加减
-    if (t.auto == null) t.auto = magicWand(F.P, t.x, t.y).tol;
-    const s = magicWand(F.P, t.x, t.y, Math.max(4, t.auto + F.tolAdj));
-    for (let i = 0; i < w * h; i++) if (s.mask[i]) m[i] = t.sub ? 0 : 1;
-  }
-  return refineMask({ w, h, mask: m });
+  if (F.autoSel === undefined) F.autoSel = autoSubject(F.P);
+  return F.autoSel;
 }
 function computeAll() {
   const c = { line: traceLine(F.src) }, sel = selection();
   c.sel = sel;
-  if (sel) { c.tone = toneStamp(F.src, sel, TONE_DETAIL[F.detail]); const r = maskToStamp(sel); c.sil = { raw: r, out: r }; }
+  if (sel) c.tone = toneStamp(F.src, sel, TONE_DETAIL[F.detail]);
+  // 剪影（9-12 用户拍板）：以线条那条管线为主——轮廓已经描对了，填实就是剪影；
+  // 只有线条把主体漏掉一块时（发亮的壶身那种）才改用选区。没找到主体也照样有剪影。
+  const r = silhouette(c.line.raw, sel);
+  if (r && r.d) c.sil = { raw: r, out: r };
   return c;
 }
-// 推荐：像画（低饱和）→ 线条；照片且找到了主体 → 层次；照片没找到主体 → 线条（判定会提示裁近一点）。
-// 剪影永远不自动推荐（池塘那种一坨也会被判成看得清）
-function recommend(c) {
-  if (F.drawing === undefined) F.drawing = looksLikeDrawing(F.src);
-  if (F.drawing) return 'line';
-  return c.tone ? 'tone' : 'line';
-}
+// 9-12 用户拍板：**不推荐了**。原来按「像画还是像照片」猜一个戴上「推荐」标签，
+// 实测经常戴错格子（水壶戴在线条上，而线条那张只有半截壶），推错比不推更伤信任。
+// 现在默认停在「线条」——它是唯一不依赖找主体的一条，最不容易空——剩下的用户自己挑。
+// ⛔ 别再加回自动推荐，除非有真实用户数据能证明推得准。
+const firstPick = () => 'line';
+
+// 说明（9-12 用户：「加了个魔棒又不说怎么用」）。一句话一条，点问号才展开，同时只开一条。
+// ⛔ 别写成"魔棒 / 容差 / 选区"这类词——用户不认，全部说人话。
+const HINTS = {
+  styles: '线条＝把图里的线描出来，纸上画的、线清楚的东西最合适。\n层次＝主体内部按明暗分三层叠印，照片想尽量像原图时用。\n剪影＝主体整个填实，只剩外形——只有轮廓本身就认得出的东西才行（一块布、一只鞋、一朵花），圆的方的、要靠里面的字和细节认的（电池、脸、截图）一律不行。',
+  detail: '往少调＝去掉零碎小块，托盘里更干净；往多调＝保留细节，但缩小到托盘里容易糊。',
+  weight: '托盘 26px 下看不清就往粗调。密线稿加粗会把线缝填死，程序会自己退回去，所以有时候调了变化不大。',
+  thr: '描出来的东西太少就往深调，太脏太花就往浅调。',
+};
+const q = k => `<button class="kz-q" data-hint="${k}" aria-label="说明">?</button>`;
+const hintBox = k => F.hint2 === k ? `<div class="kz-hintbox">${esc(HINTS[k]).replace(/\n/g, '<br>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</div>` : '';
 
 let busy = 0;
 function renderAdjust(ov) {
   const lvl = { green: 'g', yellow: 'y', red: 'r' };
   const usesSel = F.pick === 'tone' || F.pick === 'sil';
   ov.innerHTML = `<div class="kz-pane">
-    <div class="kz-top"><button class="kz-link" data-act="back">‹ 重新裁</button><span>挑一个样子</span><button class="kz-link" data-act="close">取消</button></div>
+    <div class="kz-top"><button class="kz-link" data-act="back">‹ 重新裁</button><span>挑一个样子${q('styles')}</span><button class="kz-link" data-act="close">取消</button></div>
     <div class="kz-result">
       <div class="kz-stage" id="kz-stage"><div class="kz-xs">正在刻出几个样子…</div></div>
       <div class="kz-side"><div class="kz-xs">放进托盘里：</div><div class="kz-tray" id="kz-tray"></div><div class="kz-verdict" id="kz-verdict"></div></div>
     </div>
+    ${hintBox('styles')}
     <div class="kz-cands" id="kz-cands">${CANDS.map(([k, n]) => `<button class="kz-cand ${F.pick === k ? 'on' : ''}" data-pick="${k}"><span class="kz-cand-p"></span><i>${n}</i></button>`).join('')}</div>
-    ${usesSel ? (F.fixing ? `<div class="kz-photo" id="kz-photo"><canvas id="kz-photoc"></canvas></div>
-      <div class="kz-xs kz-center">${F.erase ? '点一下多选进来的地方，把它去掉' : '点一下你想刻的东西，亮着的就是选中的'}</div>
-      <div class="kz-row"><button class="kz-chip ${F.erase ? '' : 'on'}" data-erase="0">加一块</button><button class="kz-chip ${F.erase ? 'on' : ''}" data-erase="1">去掉一块</button><button class="kz-chip" data-act="undo">撤销</button><span class="kz-grow"></span><button class="kz-chip" data-act="fixdone">好了</button></div>`
-      : `<button class="kz-link kz-fixlink" data-act="fix" id="kz-fixlink">主体没选对？在照片上点一下你要刻的东西 ›</button>`) : ''}
-    <div class="kz-ctl"><div class="kz-lab">细节<span>少 · 多</span></div><input type="range" min="1" max="3" step="1" value="${F.detail}" data-k="detail"></div>
-    ${F.pick === 'line' ? `<div class="kz-ctl"><div class="kz-lab">粗细</div><div class="kz-opts">${['原样', '细', '中', '粗'].map((n, i) => `<button data-weight="${i}" class="${F.weight === i ? 'on' : ''}">${n}</button>`).join('')}</div></div>` : ''}
+    <div class="kz-ctl"><div class="kz-lab">细节${q('detail')}<span>少 · 多</span></div><input type="range" min="1" max="3" step="1" value="${F.detail}" data-k="detail"></div>${hintBox('detail')}
+    ${F.pick === 'line' ? `<div class="kz-ctl"><div class="kz-lab">粗细${q('weight')}</div><div class="kz-opts">${['原样', '细', '中', '粗'].map((n, i) => `<button data-weight="${i}" class="${F.weight === i ? 'on' : ''}">${n}</button>`).join('')}</div></div>${hintBox('weight')}` : ''}
     <button class="kz-link kz-more" data-act="more">${F.more ? '收起 ‹' : '更多调整 ›'}</button>
     ${F.more ? `<div class="kz-morebox">
-      ${F.pick === 'line' ? `<div class="kz-ctl"><div class="kz-lab">深浅<span>浅一点 · 深一点</span></div><input type="range" min="-60" max="60" step="2" value="${F.thr}" data-k="thr"></div>` : ''}
-      ${usesSel && F.taps.length ? `<div class="kz-ctl"><div class="kz-lab">点选的范围<span>小一点 · 大一点</span></div><input type="range" min="-16" max="16" step="2" value="${F.tolAdj}" data-k="tolAdj"></div>` : ''}
-      ${F.pick !== 'line' && !(usesSel && F.taps.length) ? '<div class="kz-xs">这个样子没有更多可调的了</div>' : ''}
+      ${F.pick === 'line' ? `<div class="kz-ctl"><div class="kz-lab">深浅${q('thr')}<span>浅一点 · 深一点</span></div><input type="range" min="-60" max="60" step="2" value="${F.thr}" data-k="thr"></div>${hintBox('thr')}` : ''}
+      ${F.pick !== 'line' ? '<div class="kz-xs">这个样子没有更多可调的了</div>' : ''}
     </div>` : ''}
     <div class="kz-bottom"><button class="kz-btn" data-act="next" id="kz-next" disabled>下一步</button></div>
   </div>`;
@@ -280,7 +305,7 @@ function renderAdjust(ov) {
     setTimeout(() => {
       if (my !== busy || !F) return;
       const c = computeAll();
-      if (!F.pick) { F.pick = recommend(c); F.rec = F.pick; renderAdjust(ov); return; }   // 第一次：定下推荐再按它画
+      if (!F.pick) { F.pick = firstPick(); renderAdjust(ov); return; }   // 第一次：定下默认那格再按它画
       F.cands = c;
       if (!c[F.pick]) F.pick = 'line';
       const r = c[F.pick];
@@ -289,12 +314,10 @@ function renderAdjust(ov) {
       ov.querySelectorAll('[data-pick]').forEach(b => {
         const cr = c[b.dataset.pick], box = b.querySelector('.kz-cand-p');
         b.classList.toggle('on', b.dataset.pick === F.pick);
-        b.classList.toggle('rec', b.dataset.pick === F.rec);
         box.innerHTML = cr ? S(cr.out.d, 54, F.ink) : '<span class="kz-xs">没找到主体</span>';
       });
-      if (F.pick !== 'line') drawPhoto(ov, c.sel);
       const stage = ov.querySelector('#kz-stage'), tray = ov.querySelector('#kz-tray'), v = ov.querySelector('#kz-verdict');
-      const j = judge(r.out, r.raw); F.judge = j;
+      const j = judge(r.out, r.raw, { solid: F.pick === 'sil' }); F.judge = j;
       stage.innerHTML = S(r.out.d, 188, F.ink);
       tray.innerHTML = ['milktea', 'coffee'].map(id => stampById[id] ? `<span>${stampSVG(stampById[id], { size: 26 })}</span>` : '').join('') + `<span class="me">${S(r.out.d, 26, F.ink)}</span>`;
       v.className = 'kz-verdict ' + lvl[j.level];
@@ -309,48 +332,20 @@ function renderAdjust(ov) {
   ov.querySelectorAll('[data-weight]').forEach(b => b.onclick = () => { F.weight = +b.dataset.weight; ov.querySelectorAll('[data-weight]').forEach(x => x.classList.toggle('on', x === b)); refresh(); });
   ov.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
     const k = b.dataset.pick;
-    if (k !== 'line' && F.cands && !F.cands[k]) { F.pick = k; F.fixing = true; F.forced = false; renderAdjust(ov); return; }   // 没自动找到主体 → 直接请他点
     F.pick = k; F.forced = false; renderAdjust(ov);
   });
-  ov.querySelectorAll('[data-erase]').forEach(b => b.onclick = () => { F.erase = b.dataset.erase === '1'; renderAdjust(ov); });
+  // 问号：同时只开一条，再点一下收起。走整页重画，别的状态都在 F 里，不会丢
+  ov.querySelectorAll('[data-hint]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    F.hint2 = F.hint2 === b.dataset.hint ? null : b.dataset.hint;
+    renderAdjust(ov);
+  });
   bindActs(ov, {
-    back: () => { F.step = 'crop'; F.taps = []; F.autoSel = undefined; F.P = null; F.pick = null; F.fixing = false; render(); }, close,
-    undo: () => { F.taps.pop(); refresh(); },
-    fix: () => { F.fixing = true; renderAdjust(ov); },
-    fixdone: () => { F.fixing = false; renderAdjust(ov); },
+    back: () => { F.step = 'crop'; F.autoSel = undefined; F.P = null; F.pick = null; render(); }, close,
     more: () => { F.more = !F.more; renderAdjust(ov); },
     next: () => { if (F.result && F.result.out.d) { F.step = 'finish'; F.decoD = null; render(); } },
   });
-  if (usesSel && F.fixing) {
-    const photo = ov.querySelector('#kz-photo');
-    photo.addEventListener('click', e => {
-      const rc = photo.getBoundingClientRect();
-      F.taps.push({ x: (e.clientX - rc.left) / rc.width, y: (e.clientY - rc.top) / rc.height, sub: F.erase });
-      F.forced = false; refresh();
-    });
-  }
   refresh();
-}
-
-// 照片 + 选区外压暗 + 选区白描边 + 点过的点
-function drawPhoto(ov, sel) {
-  const cv = ov.querySelector('#kz-photoc'); if (!cv) return;
-  if (!F.P) F.P = prepare(F.src);
-  const { w, h } = F.P; cv.width = w; cv.height = h;
-  const ctx = cv.getContext('2d'); ctx.drawImage(F.src, 0, 0, w, h);
-  if (sel) {
-    const id = ctx.getImageData(0, 0, w, h), d = id.data, m = sel.mask;
-    for (let i = 0; i < w * h; i++) {
-      const x = i % w;
-      if (!m[i]) { d[i * 4] *= .38; d[i * 4 + 1] *= .38; d[i * 4 + 2] *= .38; }
-      else if (x === 0 || !m[i - 1] || !m[i + 1] || !m[i - w] || !m[i + w]) { d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = 255; }
-    }
-    ctx.putImageData(id, 0, 0);
-  }
-  for (const t of F.taps) {
-    ctx.beginPath(); ctx.arc(t.x * w, t.y * h, 7, 0, 7);
-    ctx.fillStyle = t.sub ? '#333' : '#fff'; ctx.strokeStyle = t.sub ? '#fff' : '#222'; ctx.lineWidth = 2.5; ctx.fill(); ctx.stroke();
-  }
 }
 
 // ---- ③ 起名 + 放哪一格 + 刻好了（M2 在这一步前面插装饰和动效）----
@@ -424,6 +419,7 @@ function renderTrial(ov) {
     <div class="kz-lab2">名字（放进托盘后就不能改了）</div><input class="kz-field" id="kz-name" maxlength="8" placeholder="比如：小狗" value="${esc(F.name)}">
     <div class="kz-ask">满意吗？放进托盘后，它就跟别的章一样了：<b>不能删，也不能改名</b>。</div>
     <div class="kz-bottom"><button class="kz-btn2" data-act="back">再调调</button><button class="kz-btn" data-act="save">满意，放进托盘</button></div>
+    <button class="kz-link kz-center kz-again" data-act="again">都不满意？换一张照片 ›</button>
     <div class="kz-xs kz-center">${left > 0 ? `会用掉 1 次免费（还剩 ${left} 次）` : '本地测试版：不限次数'}</div>
   </div>`;
   const paper = ov.querySelector('#kz-paper');
@@ -443,9 +439,48 @@ function renderTrial(ov) {
   bindActs(ov, {
     back: () => { F.step = 'adjust'; render(); },
     drop: () => { if (confirm('不要这枚了？不会扣次数。')) close(); },
+    // 9-12 用户拍板：三个样子都不满意时，出路是换一张照片，不是继续调参数。
+    // 这里顺手把「什么样的照片刻得好」讲一遍 —— 这是整条流程里他最可能听得进去的时刻。
+    again: () => { F.step = 'again'; render(); },
     wipe: () => { F.trials = []; drawTrials(); },
     save,
   });
+}
+
+// ---- ④' 换一张（9-12 用户拍板）----
+// 三个样子都不满意 = 这张照片本身不合适，出路是换一张，不是继续调。
+// ⛔ 这一页不做任何自动判断（9-12 试过按"主体和背景的色差"自动拦截，27 张里把效果最好的
+//    三张手绘全误报了，见 carve.js edgeContrast 的注释）—— 好不好由用户自己看，这里只讲怎么拍。
+function renderAgain(ov) {
+  const pickAgain = f => {
+    const bad = checkFile(f);
+    if (bad) { toast(bad, 2400); return; }
+    const done = F.done, onSaved = F.onSaved;
+    openFlow(URL.createObjectURL(f), done, onSaved);
+  };
+  ov.innerHTML = `<div class="kz-pane">
+    <div class="kz-top"><button class="kz-link" data-act="back">‹ 回去</button><span>换一张试试</span><button class="kz-link" data-act="close">取消</button></div>
+    <div class="kz-card" style="margin-top:14px">
+      <div class="kz-t">这样的照片刻得好</div>
+      <ul class="kz-tips">
+        <li><b>底色要跟东西差得远</b>：浅色的东西放深色布或黑纸上，深色的东西放白纸上。⛔ 最忌讳反光的台面（大理石、玻璃）——东西和台面一样亮的那一侧，线会整条描不出来。</li>
+        <li><b>只放一个东西</b>，摆在正中间，占画面三分之一到三分之二。</li>
+        <li><b>光要平</b>，别让东西旁边压着一道浓影子。</li>
+        <li><b>侧过来拍</b>，别俯拍——俯拍容易把东西拍成一个圆或一个方。</li>
+      </ul>
+    </div>
+    <div class="kz-entries">
+      <label class="kz-btn">重新拍一张<input type="file" accept="image/*" capture="environment" hidden data-again></label>
+      <label class="kz-btn2">从相册换一张<input type="file" accept="image/*" hidden data-again></label>
+    </div>
+    <div class="kz-bottom"><button class="kz-btn2" data-act="back">还是用刚才那张</button></div>
+  </div>`;
+  ov.querySelectorAll('[data-again]').forEach(inp => inp.addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (f) pickAgain(f);
+  }));
+  bindActs(ov, { back: () => { F.step = 'trial'; render(); }, close });
 }
 
 function save() {

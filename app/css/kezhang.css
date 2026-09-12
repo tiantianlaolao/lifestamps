@@ -44,7 +44,8 @@
 .kz-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 2px }
 .kz-seg button { border: none; background: none; font-family: var(--f-title); font-size: 13px; padding: 4px 12px; border-radius: 7px; color: var(--sub) }
 .kz-seg button.on { background: var(--paper-deep, #EDE6D8); color: var(--ink) }
-.kz-photo { margin-top: 10px; border-radius: 12px; overflow: hidden; background: #000; cursor: crosshair }
+/* touch-action:none —— 在照片上划一笔选主体（9-12），不写这行手指一动就变成页面滚动 */
+.kz-photo { margin-top: 10px; border-radius: 12px; overflow: hidden; background: #000; cursor: crosshair; touch-action: none }
 .kz-photo canvas { width: 100%; display: block }
 .kz-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px }
 .kz-grow { flex: 1 }
@@ -101,7 +102,23 @@
 .kz-cand.on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(201,75,60,.15) }
 .kz-cand i { font-style: normal; font-family: var(--f-title); font-size: 12.5px; color: var(--ink); letter-spacing: .04em }
 .kz-cand-p { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center }
-.kz-cand.rec::after { content: '推荐'; position: absolute; top: -7px; right: -4px; background: var(--accent); color: var(--btn-face); font-family: var(--f-title); font-size: 10px; padding: 0 6px; border-radius: 6px }
 .kz-fixlink { display: block; margin: 8px auto 0; font-size: 12.5px; text-decoration: underline }
 .kz-more { display: block; margin: 10px auto 0; font-size: 13px }
 .kz-morebox { margin-top: 2px; padding: 4px 10px 10px; background: var(--card); border: .5px solid var(--line); border-radius: 10px }
+
+/* 问号说明（9-12 用户：「加了个魔棒又不说怎么用」）。点一下展开一条，同时只开一条。
+   🔴 .kz-lab 是 space-between 的三件套（名字 / ? / 副标），问号要 margin-right:auto 才会贴着名字，
+      否则会被摊到中间去。 */
+.kz-q { flex: none; align-self: center; margin: 0 auto 0 6px; width: 17px; height: 17px; padding: 0;
+  border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--sub);
+  font: 11px/15px var(--f-title); text-align: center; cursor: pointer; vertical-align: middle }
+.kz-q:active { background: var(--btn-face) }
+.kz-hintbox { margin: 6px 0 2px; padding: 9px 11px; border-radius: 10px; background: var(--btn-face);
+  font-family: var(--f-hand); font-size: 12px; line-height: 1.7; color: var(--ink) }
+.kz-hintbox b { color: var(--accent) }
+
+/* 「都不满意？换一张照片」（9-12）：试盖页底下的出口 + 换图页那张「怎么拍」卡片 */
+.kz-again { display: block; width: 100%; text-align: center; margin-top: 10px }
+.kz-tips { margin: 8px 0 0; padding-left: 18px; font-family: var(--f-hand); font-size: 13px; line-height: 1.8; color: var(--sub) }
+.kz-tips li { margin-bottom: 6px }
+.kz-tips b { color: var(--ink); font-weight: 400 }

@@ -1,0 +1,65 @@
+<!doctype html><meta charset="utf-8"><title>刻章铺 · 剪影到底什么时候赢</title>
+<!-- 9-12 用户问「剪影用在什么情况，我从来没做出合适的东西」：把全部样图的 线条/层次/剪影 三档并排出来，
+     每档给大图 + 托盘 26px + 判定，人眼挑出剪影真正比另外两档好的例子。dev 页，不进包。 -->
+<style>
+body{margin:0;background:#E9E4D8;font:12px/1.5 system-ui;padding:10px;width:1120px}
+.r{display:grid;grid-template-columns:150px repeat(3,1fr);gap:8px;margin-bottom:8px}
+.c{background:#F6F2EA;border-radius:8px;padding:6px;text-align:center}
+.p{background:#FBF7EE;height:140px;display:flex;align-items:center;justify-content:center;gap:12px;border-radius:6px}
+.p img{max-width:138px;max-height:136px}
+.m{color:#6B655C;font-size:11px;margin-top:3px;text-align:left;min-height:30px}
+h2{font:600 13px/1.4 system-ui;margin:2px 0 6px;color:#3A352E}
+</style><h2 id="h">跑…</h2><div id="out"></div>
+<script type="module">
+import { defsMarkup, stampSVG } from '../js/stamp.js';
+import { imageToStamp } from '../js/trace.js';
+import { prepare, maskToStamp, thickenBin, judge, autoSubject, toneStamp, silhouette, lineStamp } from '../js/carve.js';
+document.body.insertAdjacentHTML('afterbegin', `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
+const load = s => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = s; });
+const crop = (img, x0, y0, x1, y1) => { const w = img.naturalWidth, h = img.naturalHeight, c = document.createElement('canvas'); c.width = Math.round((x1-x0)*w); c.height = Math.round((y1-y0)*h); c.getContext('2d').drawImage(img, x0*w, y0*h, c.width, c.height, 0, 0, c.width, c.height); return c; };
+const S = (d, size) => stampSVG({ id: 'x', name: 'x', cat: 'meet', ink: 'zhu', d }, { size, ink: 'zhu' });
+window.__rows = [];
+let __cur = '', __cand = '';
+const J = r => { const j = judge(r.out, r.raw, { solid: __cand === '剪影' });
+  window.__rows.push({ img: __cur, cand: __cand, lv: j.level, fill: j.m.fill, cover: j.m.cover, parts: j.m.parts, kb: j.m.kb });
+  return `${{green:'🟢',yellow:'🟡',red:'🔴'}[j.level]} ${j.why} <i>fill ${j.m.fill}</i>`; };
+const KB = r => (r.out.chars/1024).toFixed(1) + 'KB';
+async function run(label, file, box) {
+  let img; try { img = await load(file); } catch { return; }
+  const c = box ? crop(img, ...box) : img;
+  const line = lineStamp(c, { minArea: 12, eps: 1.2 }, 2);
+  const lraw = line.raw;
+  const P = prepare(c), sel = autoSubject(P);
+  const tone = sel ? toneStamp(c, sel, { minArea: 30, eps: 1.3 }) : null;
+  const _s = silhouette(lraw, sel); const sil = _s && _s.d ? { raw: _s, out: _s } : null;
+  const thumb = c instanceof HTMLImageElement ? c.src : c.toDataURL('image/jpeg', .8);
+  document.getElementById('out').insertAdjacentHTML('beforeend', `<div class="r">
+    <div class="c"><div class="p"><img src="${thumb}"></div><div class="m"><b>${label}</b>${sel?'':'<br>没找到主体'}</div></div>
+    ${[['线条',line],['层次',tone],['剪影',sil]].map(([n,r]) => { __cur = label; __cand = n; return `<div class="c"><div class="p">${r?S(r.out.d,116)+S(r.out.d,26):'<span class="m">—</span>'}</div><div class="m"><b>${n}</b> ${r?J(r)+' · '+KB(r):''}</div></div>`; }).join('')}</div>`);
+}
+// ?only=1 只留能说明问题的 6 行（剪影赢 1 · 平 1 · 输 4）
+const ONLY = new URLSearchParams(location.search).has('only');
+// ?quick=1 只跑几张有代表性的（一轮 15 秒，调参数时用）；不带参数 = 全量 35 张
+if (new URLSearchParams(location.search).has('quick')) {
+  for (const n of ['cat','pot','apple','dog_stand','pig','leaf_photo','leaf_clean']) await run(n, '_samples/' + n + '.jpg');
+  document.getElementById('h').textContent = '快查：线条自动二选一之后';
+  window.__done = true;
+} else if (ONLY) {
+  await run('海报的布 p07（剪影赢）', '_samples/real/p07.jpg');
+  await run('荷花 p03（裁过，打平）', '_samples/real/p03.jpg', [.26,.24,.62,.56]);
+  await run('手绘小猪（线条赢）', '_samples/pig.jpg');
+  await run('纽扣电池 p10（裁过，线条赢）', '_samples/real/p10.jpg', [.18,.24,.82,.74]);
+  await run('池塘 pond（剪影=一坨，判定却给绿）', '_samples/pond.jpg');
+  await run('手机截图 p05（剪影=方块，判定却给绿）', '_samples/real/p05.jpg');
+  document.getElementById('h').textContent = '剪影什么时候赢：同一张图的 线条 / 层次 / 剪影（大图 + 托盘 26px）';
+  window.__done = true;
+} else {
+const A = ['cat','pot','apple','dog_stand','dog_run','pig','leaf_clean','leaf_photo','leaf_red','feather','lion','castle','pond','shanshui','venice','wukong','solar_crop'];
+for (const n of A) { await run(n, `_samples/${n}.${n==='leaf_red'||n.startsWith('solar')?'png':'jpg'}`); }
+const R = [['荷花 p03',[.26,.24,.62,.56]],['卡通头像 p14',[.1,.06,.9,.86]],['海报的布 p07',[.12,.24,.88,.72]],['纽扣电池 p10',[.18,.24,.82,.74]]];
+for (const [n,b] of R) await run(n, `_samples/real/${n.split(' ')[1]}.jpg`, b);
+for (let i = 1; i <= 14; i++) { const id = 'p' + String(i).padStart(2,'0'); await run(id + '(原图)', `_samples/real/${id}.jpg`); }
+document.getElementById('h').textContent = '跑完';
+window.__done = true;
+}
+</script>

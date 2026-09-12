@@ -9,6 +9,7 @@ import { stampSVG } from './stamp.js';
 import { prepare, magicWand, refineMask, thickenBin, judge, sourceHint, decorate, autoSubject, toneStamp, silhouette, lineStamp } from './carve.js';
 import { toast, thump } from './ui.js';
 import { sync } from './sync.js';
+import { store } from './store.js';
 
 // ---- 自刻章的存放（M1：localStorage；一枚 ≤ 30KB，几十枚没问题；M4 换 IndexedDB + 账号同步）----
 const K = 'lifestamps_carved';
@@ -51,6 +52,22 @@ sync.ext.carved = {
 
 export const freeLeft = () => Math.max(0, FREE_N - carved.length);
 
+// ---- 买断（M3，9-12 用户拍板：免费 3 枚 → ¥18 一次买断，不限次）----
+// 权益跟通行证 / 盒子同一套：store.products 里有 'kezhang' 就是买过（登录后随账号走）。
+// 买 / 恢复 / 标价 / 协议弹窗都借 main.js 现成的那套，通过 bindKz 第四个参数递进来（这里不 import main.js）。
+// 没递（老调用方 / 单测）= 不拦。
+const PRODUCT = 'kezhang';
+export const kzOwned = () => store.hasProduct(PRODUCT);
+let PAY = null;
+const canSave = () => !PAY || kzOwned() || freeLeft() > 0;
+function quotaLine() {
+  if (kzOwned()) return '已买断，想刻多少刻多少';
+  const left = freeLeft();
+  if (left > 0) return `还能免费刻 <b>${left}</b> 枚，之后一次买断 <span data-price="${PRODUCT}">¥18</span>`;
+  if (!PAY) return '免费次数用完了（本地测试版不拦）';
+  return `免费的 ${FREE_N} 枚刻完了 · <button class="kz-link kz-inline" data-kzbuy>买断，接着刻 ›</button>`;
+}
+
 // ============================================================
 // 入口：印集 · 刻章铺
 // ============================================================
@@ -82,7 +99,8 @@ export function kzSegmentHTML() {
       <label class="kz-btn">画一张，拍下来<input type="file" accept="image/*" capture="environment" hidden data-kzfile></label>
       <label class="kz-btn2">从相册选<input type="file" accept="image/*" hidden data-kzfile></label>
     </div>
-    <div class="kz-xs kz-quota">${freeLeft() > 0 ? `还能免费刻 <b>${freeLeft()}</b> 枚` : '免费次数用完了（买断在后续版本接上，本地测试不拦）'}</div>
+    <div class="kz-xs kz-quota">${quotaLine()}</div>
+    ${F && F.step === 'buy' && F.buyFrom === 'trial' ? `<button class="kz-btn2 kz-resume" data-kzresume>继续刚才那枚「${esc((F.name || '').trim() || '我的章')}」›</button>` : ''}
     <div class="kz-sec"><span>我刻的章 · ${carved.length}</span><span class="kz-xs">在托盘里跟别的章一样用</span></div>
     ${carved.length ? `<div class="kz-mine">${mine}</div>` : `<div class="kz-xs kz-empty">还没有，刻一枚试试</div>`}
   </div>`;
@@ -108,7 +126,11 @@ function shrink(img) {
   return c;
 }
 
-export function bindKz(root, rerender, onSaved) {
+export function bindKz(root, rerender, onSaved, pay = null) {
+  if (pay) PAY = pay;
+  root.querySelectorAll('[data-kzbuy]').forEach(b => b.addEventListener('click', () => openBuy(rerender)));
+  root.querySelectorAll('[data-kzresume]').forEach(b => b.addEventListener('click', () => { if (F) { ensureOverlay(); render(); } }));
+  if (PAY && PAY.loadPrices) PAY.loadPrices(root);         // 入口那行的标价：商店 / 价目表有真价就换上
   root.querySelectorAll('[data-kzfile]').forEach(inp => inp.addEventListener('change', e => {
     const f = e.target.files && e.target.files[0];
     e.target.value = '';
@@ -194,6 +216,8 @@ function ensureOverlay() {
   ov.className = 'kz-ov';
   (document.getElementById('app') || document.body).appendChild(ov);
 }
+// 只收起浮层、不丢 F：支付宝要先登录时用 —— 人去「我的」登录，刻到一半的章留着，入口那行「继续刚才那枚」能回来
+function hide() { const ov = document.getElementById('ov-kz'); if (ov) ov.classList.remove('show'); }
 function close() {
   const ov = document.getElementById('ov-kz');
   if (ov) { ov.classList.remove('show'); ov.innerHTML = ''; }
@@ -209,6 +233,7 @@ function render() {
   else if (F.step === 'again') renderAgain(ov);
   else if (F.step === 'carving') renderCarving(ov);
   else if (F.step === 'saved') renderSaved(ov);
+  else if (F.step === 'buy') renderBuy(ov);
   else renderFinish(ov);
 }
 
@@ -664,7 +689,7 @@ function renderTrial(ov) {
     <div class="kz-ask">满意吗？放进托盘后，它就跟别的章一样了：<b>不能删，也不能改名</b>。</div>
     <div class="kz-bottom"><button class="kz-btn2" data-act="back">再调调</button><button class="kz-btn" data-act="save">满意，放进托盘</button></div>
     <button class="kz-link kz-center kz-again" data-act="again">都不满意？换一张照片 ›</button>
-    <div class="kz-xs kz-center">${left > 0 ? `会用掉 1 次免费（还剩 ${left} 次）` : '本地测试版：不限次数'}</div>
+    <div class="kz-xs kz-center">${kzOwned() ? '已买断，不计次' : left > 0 ? `会用掉 1 次免费（还剩 ${left} 次）` : PAY ? `免费的 ${FREE_N} 枚刻完了，放进托盘前要先买断` : '本地测试版：不限次数'}</div>
   </div>`;
   const paper = ov.querySelector('#kz-paper');
   const drawTrials = () => {
@@ -729,6 +754,7 @@ function renderAgain(ov) {
 }
 
 function save() {
+  if (!canSave()) { F.step = 'buy'; F.buyFrom = 'trial'; render(); return; }   // 免费 3 枚用完：先买断，买完自动接着放进托盘
   const name = (F.name || '').trim() || '我的章';
   const s = { id: 'my_' + Date.now().toString(36), name: name.slice(0, 8), cat: 'mine', ink: F.ink, d: finalD(), ts: Date.now(), style: F.pick, frame: F.frame };
   if (!register(s)) { toast('这枚章的数据不对，没存上'); return; }
@@ -736,6 +762,39 @@ function save() {
   if (!saveAll(carved)) { toast('手机存储满了，没存上'); carved.pop(); return; }
   sync.touch('carved', s.id, s);                          // 登录了就同步上去；没登录只记 mtime，登录时 all() 补推
   F.saved = s; F.step = 'saved'; render();
+}
+
+// ---- 买断页（M3）：免费 3 枚刻完、又要放进托盘时来这儿；入口那行「买断」也进这儿 ----
+// 付款 / 恢复 / 协议弹窗 / 标价全是 main.js 的现成流程（PAY），这页只管前后衔接：
+//   · 从试盖来：买成了直接 save()（他本来就在放进托盘那一步）；从入口来：买成了回入口。
+//   · 支付宝那条 buy() 立刻返回 false（到账是回前台后 main.js 查单发的），页面留在这儿，付完回来点「回试盖」再放进托盘即可。
+function openBuy(done) { ensureOverlay(); F = { step: 'buy', buyFrom: 'entry', done }; render(); }
+function renderBuy(ov) {
+  const fromTrial = F.buyFrom === 'trial';
+  const needLogin = !!(PAY.alipay && PAY.alipay() && !sync.isLoggedIn());   // 国内：支付宝那单要记在账号上
+  ov.innerHTML = `<div class="kz-pane">
+    <div class="kz-top"><button class="kz-link" data-act="back">‹ ${fromTrial ? '回试盖' : '返回'}</button><span>刻章铺</span><span></span></div>
+    <div style="margin-top:auto" class="kz-center">${fromTrial ? S(finalD(), 120, F.ink) : '<div class="kz-buy-glyph">刻</div>'}</div>
+    <div class="kz-t kz-center" style="margin-top:14px">免费的 ${FREE_N} 枚刻完了</div>
+    <div class="kz-xs kz-center">买断一次，以后想刻多少刻多少。<br>刻好的章跟别的章一样：不能删，也不能改名。</div>
+    <div class="kz-bottom kz-col" style="margin-bottom:auto">
+      <button class="kz-btn" data-act="pay">买断 · <span data-price="${PRODUCT}">¥18</span></button>
+      ${needLogin ? `<div class="kz-xs kz-center">支付宝付款要先登录。点「买断」会带你去「我的」登录，这枚章先留着，回来接着放进托盘。</div>` : ''}
+      <button class="kz-link kz-center" data-act="restore">恢复购买</button>
+      ${PAY.refundNote ? `<div class="kz-xs kz-center kz-refund">${PAY.refundNote()}</div>` : ''}
+    </div>
+  </div>`;
+  if (PAY.loadPrices) PAY.loadPrices(ov);
+  const back = () => { if (fromTrial) { F.step = 'trial'; render(); } else { const done = F.done; close(); if (done) done(); } };
+  const after = ok => { if (!ok || !F) return; if (fromTrial) save(); else back(); };
+  const lock = async (b, fn) => { b.disabled = true; try { return await fn(); } finally { b.disabled = false; } };
+  bindActs(ov, {
+    back,
+    pay: async e => { const b = e.currentTarget; if (PAY.requireLegal && !PAY.requireLegal(() => b.click())) return;
+      if (needLogin) { hide(); PAY.buy(PRODUCT); return; }          // main.js 会提示并切到「我的」；F 留着，入口有「继续刚才那枚」
+      after(await lock(b, () => PAY.buy(PRODUCT))); },
+    restore: async e => { const b = e.currentTarget; after((await lock(b, () => PAY.restore())) && kzOwned()); },
+  });
 }
 
 // ---- 入库之后：去今天盖一下 / 回刻章铺 ----

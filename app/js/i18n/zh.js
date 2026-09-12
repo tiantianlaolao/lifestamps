@@ -107,7 +107,8 @@ export const ZH = {
   mkSeries: '系列', mkLimited: '限量', mkNotInPass: '不含在通行证内',
   mkBoxCount: '{n} 枚', mkPassHas: '通行证已含', mkHave: '已拥有', mkPriceSoon: '价格稍后',
   // 自刻章（9-12，刻章铺 M4）：转发版占位 / 分享面板提示 / 链接页占位与说明
-  mineMark: '自己刻的',
+  mineMark: '自己刻的',
+  mkThanksKz: '买好了，接着刻吧。',
   mineShareHint: '自己刻的章只会在你自己保存的图里显示；转发出去和链接里都是虚线框',
   frMine: '自己刻的章',
   frMineNote: '这天有 TA 自己刻的章，这里不显示图案',

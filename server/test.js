@@ -754,6 +754,7 @@ function client() {
     ok(P.body.products.box_animals && P.body.products.box_animals.fen === 800 && P.body.products.box_animals.subject.includes('手绘动物'), '内容包 free:false 的盒子进价目表：box_animals ¥8');
     ok(P.body.products.box_plants && P.body.products.box_plants.fen === 600, 'pass:false 的限量盒照样单卖：box_plants ¥6');
     ok(!P.body.products.box_gift, 'free:true 的盒子不卖');
+    ok(P.body.products.kezhang && P.body.products.kezhang.fen === 1800, '刻章铺买断 ¥18（9-12 M3）');
     ok(!P.body.products.box_nopr, '收费盒没写 price = 不卖（跟客户端校验一致）');
     const CB = await ja('POST', '/api/pay/create', { product: 'box_animals' }, TOK);
     ok(CB.status === 200 && CB.body.amountFen === 800 && CB.body.payUrl, '按盒建单：金额由服务端按内容包定');

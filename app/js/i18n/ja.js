@@ -97,7 +97,8 @@ export const JA = {
   mkSeries: 'シリーズ', mkLimited: '限定', mkNotInPass: 'パス対象外',
   mkBoxCount: '{n}個', mkPassHas: 'パスに含む', mkHave: '所有済み', mkPriceSoon: '価格は後ほど',
   // 自刻章（9-12，刻章铺 M4）：转发版占位 / 分享面板提示 / 链接页占位与说明
-  mineMark: '自作',
+  mineMark: '自作',
+  mkThanksKz: '購入しました。続けて彫れます。',
   mineShareHint: '自分で彫ったはんこは自分で保存した画像にだけ表示されます。転送した画像やリンクでは枠だけになります',
   frMine: '自作のはんこ',
   frMineNote: 'この日には送り主が自分で彫ったはんこがあり、ここでは表示されません',

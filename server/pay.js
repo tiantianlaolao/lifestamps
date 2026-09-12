@@ -51,6 +51,8 @@ const PRODUCTS = {
 if (TEST_PRODUCT) PRODUCTS.test001 = { fen: 1, subject: '戳了么 · 支付链路测试' };
 // 通行证：首发 ¥38，随目录涨到 ¥68 封顶 —— 涨价只改 pm2 里的 LS_PASS_FEN，不发版
 PRODUCTS.pass = { fen: Number(process.env.LS_PASS_FEN) > 0 ? Number(process.env.LS_PASS_FEN) : 3800, subject: '戳了么 · 印章通行证' };
+// 刻章铺买断（9-12 M3，feat/kezhangpu）：免费刻 3 枚，之后 ¥18 一次买断、不限次。跟印泥 / 章互不包含。
+PRODUCTS.kezhang = { fen: 1800, subject: '戳了么 · 刻章铺买断' };
 
 // ---- 内容包里的盒子 → 商品（按 mtime 缓存）-------------------------------------
 const CATALOG_PATH = process.env.LS_CATALOG || path.join(__dirname, '..', 'app', 'js', 'catalog.json');

@@ -1778,7 +1778,7 @@ async function checkPendingOrder() {
       if (r.http === 200 && r.status === 'PAID') {
         localStorage.removeItem(PAY_K);
         grantProduct(p.product || 'premiuminks');
-        toast(isInkProduct(p.product) ? COPY.proThanks : COPY.mkThanks, 2200); haptic();
+        toast(thanksFor(p.product), 2200); haptic();
         render();                                                      // 当前页整体重画（印泥盒 / 托盘跟着变）
         return true;
       }
@@ -1790,6 +1790,7 @@ async function checkPendingOrder() {
 // 到账落地（9-08 起商品不止一个）：印泥盒 → pro 布尔；通行证 / 盒子 → store.products。
 // 两套分开存是故意的——印泥和章永不互含，存也不混。setPro / setProducts 都只往有利方向合。
 const isInkProduct = p => !p || p === 'premiuminks' || p === 'test001';
+const thanksFor = p => isInkProduct(p) ? COPY.proThanks : p === 'kezhang' ? COPY.mkThanksKz : COPY.mkThanks;
 function grantProduct(product) {
   if (isInkProduct(product)) { if (!store.isPro()) store.setPro(true); }
   else store.setProducts([product]);
@@ -1799,7 +1800,7 @@ async function startPurchase(product = 'premiuminks') {
   if (alipayLane()) return startAlipay(product);
   if (!window.Capacitor) {                       // 海外网页版：没有支付通道，内测放行照旧（9-01 拍板）
     grantProduct(product);
-    toast(isInkProduct(product) ? COPY.proThanks : COPY.mkThanks, 1800); haptic();
+    toast(thanksFor(product), 1800); haptic();
     return true;
   }
   // 原生壳的另外三条：iOS 国内区 / iOS 海外区 / 安卓 Play——native-purchases 就是 StoreKit / Play Billing，
@@ -1807,7 +1808,7 @@ async function startPurchase(product = 'premiuminks') {
   const r = await iapBuy(product);
   if (r === 'ok') {
     grantProduct(product);                       // setPro / setProducts 里带同步埋点，另一台设备也会亮
-    toast(isInkProduct(product) ? COPY.proThanks : COPY.mkThanks, 1800); haptic();
+    toast(thanksFor(product), 1800); haptic();
     return true;
   }
   if (r === 'cancel') return false;              // 人家自己关的面板，不需要被告知"失败了"
@@ -1835,6 +1836,11 @@ async function restorePurchase() {
   toast(r.status === 'none' ? COPY.proNoneFound : COPY.proFailed, 2200);
   return false;
 }
+
+// 刻章铺买断（feat/kezhangpu 分支，M3）：把买 / 恢复 / 标价 / 协议弹窗借给 kezhang.js 用，它不 import main.js。
+// 没有自刻章、没进刻章铺时这几个引用什么都不做。
+const kzPay = { buy: startPurchase, restore: restorePurchase, requireLegal, loadPrices: loadMarketPrices, alipay: alipayLane,
+  refundNote: () => alipayLane() ? legalLinks(esc(COPY.payRefundNote)) : '' };
 
 function bindProCard(root, rerender) {
   root.querySelectorAll('[data-pro]').forEach(b =>
@@ -2045,7 +2051,7 @@ function renderCollection() {
 
   if (drawerSeg === 'carve') {
     // 入库后：托盘切到「我刻的」；选了「去今天盖一下」就直接选中这枚、切到今日页
-    bindKz($('#page-collection'), renderCollection, (st, go) => { deckCat = 'mine'; if (go) { selStamp = st.id; switchTab('today'); } });
+    bindKz($('#page-collection'), renderCollection, (st, go) => { deckCat = 'mine'; if (go) { selStamp = st.id; switchTab('today'); } }, kzPay);
     return;
   }
   if (drawerSeg === 'market') {

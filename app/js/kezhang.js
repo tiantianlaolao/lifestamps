@@ -40,7 +40,16 @@ export const freeLeft = () => Math.max(0, FREE_N - carved.length);
 // ============================================================
 // 入口：印集 · 刻章铺
 // ============================================================
-const DEMOS = [['kz/demo/dog.jpg', '小狗'], ['kz/demo/pig.jpg', '小猪'], ['kz/demo/leaf.jpg', '叶子']];
+// ---- 教程（9-12 用户拍板）：三组「照片 → 章」对照，只看不刻 ----
+// 原来的示范图走真流程、能入库成"我刻的章"——用户没拍就得到一枚，体验被抢了；
+// 而且那三张是用户家里的手绘，不该放公网。现在是三组对照：悟空→线条、花→层次、苹果→剪影，
+// 各配一句"什么样的图适合它"。点开只放大看 + 「拍一张试试」，⛔ 不进流程、不入库。
+// 章存的是 path（kz/tutorial.json），用当前印泥现场画，永远跟当前版本一致。
+let TUT = null;                                 // 拉到之后才有；拉之前卡片上先空着
+function loadTutorial(then) {
+  if (TUT) return then();
+  fetch('kz/tutorial.json', { cache: 'no-store' }).then(r => r.json()).then(j => { TUT = j; then(); }).catch(() => {});
+}
 const S = (d, size, ink = 'zhu') => stampSVG({ id: 'x', name: '', cat: 'meet', ink, d }, { size, ink });
 
 export function kzSegmentHTML() {
@@ -49,8 +58,11 @@ export function kzSegmentHTML() {
     <div class="kz-card">
       <div class="kz-t">自己刻一枚章</div>
       <div class="kz-s">一个主体、背景干净、光线亮，最容易刻好看</div>
-      <div class="kz-demos">${DEMOS.map(([src, n]) => `<button class="kz-demo" data-demo="${src}"><img src="${src}" alt=""><span>${n}</span></button>`).join('')}</div>
-      <div class="kz-xs">点一张示范图，走一遍就知道怎么刻</div>
+      <div class="kz-tut">${(TUT || []).map((t, i) => `<button class="kz-tut-row" data-tut="${i}">
+        <img src="${t.photo}" alt=""><span class="kz-tut-arrow">→</span>
+        <span class="kz-tut-stamp">${S(t.d, 56)}</span>
+        <span class="kz-tut-txt"><b>${t.style}</b><i>${esc(t.fit)}</i></span></button>`).join('')}</div>
+      <div class="kz-xs">三种样子各适合什么，点一组看大图</div>
     </div>
     <div class="kz-entries">
       <label class="kz-btn">画一张，拍下来<input type="file" accept="image/*" capture="environment" hidden data-kzfile></label>
@@ -91,12 +103,48 @@ export function bindKz(root, rerender, onSaved) {
     if (bad) { toast(bad, 2400); return; }
     openFlow(URL.createObjectURL(f), rerender, onSaved);
   }));
-  root.querySelectorAll('[data-demo]').forEach(b => b.addEventListener('click', () => openFlow(b.dataset.demo, rerender, onSaved)));
+  root.querySelectorAll('[data-tut]').forEach(b => b.addEventListener('click', () => openTutorial(+b.dataset.tut, rerender, onSaved)));
+  loadTutorial(() => { if (!root.querySelector('.kz-tut-row')) rerender(); });   // 第一次进来 json 还没到：到了重画一次
   // 入库后跟普通章一样：不能删、不能改名（9-11 用户拍板）。点一下只报它的来历。
   root.querySelectorAll('[data-kzid]').forEach(b => b.addEventListener('click', () => {
     const s = carved.find(x => x.id === b.dataset.kzid);
     if (s) { const d = new Date(s.ts); toast(`「${s.name}」· ${d.getMonth() + 1} 月 ${d.getDate()} 日刻的`); }
   }));
+}
+
+// ---- 教程页：一组一页，‹ › 翻，底下「拍一张试试 / 从相册选」直接进真流程 ----
+function openTutorial(i, done, onSaved) {
+  if (!TUT) return;
+  const t = TUT[(i + TUT.length) % TUT.length]; i = TUT.indexOf(t);
+  ensureOverlay();
+  const ov = document.getElementById('ov-kz');
+  ov.classList.add('show');
+  ov.innerHTML = `<div class="kz-pane">
+    <div class="kz-top"><button class="kz-link" data-act="prev">‹ 上一组</button><span>什么样的图适合${t.style}</span><button class="kz-link" data-act="close">关闭</button></div>
+    <div class="kz-tut-big">
+      <img src="${t.photo}" alt="">
+      <span class="kz-tut-arrow">→</span>
+      <span class="kz-tut-bigstamp">${S(t.d, 150)}</span>
+    </div>
+    <div class="kz-card">
+      <div class="kz-t">${t.style} · 适合${esc(t.fit)}</div>
+      <div class="kz-s">${esc(t.why)}</div>
+    </div>
+    <div class="kz-entries">
+      <label class="kz-btn">拍一张试试<input type="file" accept="image/*" capture="environment" hidden data-tutfile></label>
+      <label class="kz-btn2">从相册选<input type="file" accept="image/*" hidden data-tutfile></label>
+    </div>
+    <div class="kz-bottom"><button class="kz-btn2" data-act="next">下一组 ›</button></div>
+  </div>`;
+  ov.querySelectorAll('[data-tutfile]').forEach(inp => inp.addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    const bad = checkFile(f);
+    if (bad) { toast(bad, 2400); return; }
+    openFlow(URL.createObjectURL(f), done, onSaved);       // 教程页直接让位给真流程
+  }));
+  bindActs(ov, { close, prev: () => openTutorial(i - 1, done, onSaved), next: () => openTutorial(i + 1, done, onSaved) });
 }
 
 // ============================================================

@@ -48,8 +48,9 @@
 .kz-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 2px }
 .kz-seg button { border: none; background: none; font-family: var(--f-title); font-size: 13px; padding: 4px 12px; border-radius: 7px; color: var(--sub) }
 .kz-seg button.on { background: var(--paper-deep, #EDE6D8); color: var(--ink) }
-/* touch-action:none —— 在照片上划一笔选主体（9-12），不写这行手指一动就变成页面滚动 */
-.kz-photo { margin-top: 10px; border-radius: 12px; overflow: hidden; background: #000; cursor: crosshair; touch-action: none }
+/* 点选的照片（9-12 晚）：宽约六成、居中，一屏能同时看到图、按钮和三个候选；pan-y = 手指在图上上下滑照样滚页面，点一下照样选
+   （原来 100% 宽 + touch-action:none 是给已拆掉的「划一笔」留的：图占大半屏，落在图上就滚不动） */
+.kz-photo { width: 60%; max-width: 260px; margin: 10px auto 0; border-radius: 12px; overflow: hidden; background: #000; cursor: crosshair; touch-action: pan-y }
 .kz-photo canvas { width: 100%; display: block }
 .kz-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px }
 .kz-grow { flex: 1 }

@@ -373,6 +373,7 @@ export async function syncPush(token, cursor, changes) {
   });
   if (status === 0) return null;
   if (status === 401) return { status: 401, changes: [], cursor, more: false };
+  if (status === 400) return { status: 400, changes: [], cursor, more: false };   // 这一批服务端不收（跟「网不通」要分开，见 sync.flush）
   if (!data || !Number.isFinite(data.cursor)) return null;
   return { status, cursor: data.cursor, more: !!data.more, changes: data.changes || [] };
 }

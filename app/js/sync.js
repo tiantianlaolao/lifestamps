@@ -233,6 +233,15 @@ export const sync = {
           this.persist();
           return;
         }
+        if (r.status === 400) {                      // 这一批服务端整批不收。9-12：多半是扩展 kind（自刻章）太大/没过校验，
+          //    或服务端还没升到会收它的版本 —— 只把扩展 kind 的从队列摘掉，别让它们把别的同步一起卡死。
+          //    本机的章还在，下次登录 fullPush 会再试；没有扩展 kind 也 400 就还是老规矩：留着下次再来。
+          const bad = keys.filter(k => this.queue[k] && this.ext[this.queue[k].kind]);
+          if (!bad.length) return;
+          for (const k of bad) delete this.queue[k];
+          this.persist();
+          continue;
+        }
         // 推成功的从队列里摘掉。⚠️ 只摘"这一轮推的那些"——flush 期间新入队的不能误删
         for (const k of keys) {
           if (this.queue[k] && this.queue[k].mtime === changes[keys.indexOf(k)].mtime) {

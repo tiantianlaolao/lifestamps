@@ -122,3 +122,4 @@
 .kz-tips { margin: 8px 0 0; padding-left: 18px; font-family: var(--f-hand); font-size: 13px; line-height: 1.8; color: var(--sub) }
 .kz-tips li { margin-bottom: 6px }
 .kz-tips b { color: var(--ink); font-weight: 400 }
+.kz-pick { display: block; width: 100%; text-align: center; margin-top: 8px }

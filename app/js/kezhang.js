@@ -7,7 +7,7 @@
 import { STAMPS, INIT_STAMPS, rebuildStampIndex, stampById } from './data.js';
 import { stampSVG } from './stamp.js';
 import { imageToStamp } from './trace.js';
-import { prepare, thickenBin, judge, sourceHint, decorate, autoSubject, toneStamp, silhouette, lineStamp } from './carve.js';
+import { prepare, magicWand, refineMask, thickenBin, judge, sourceHint, decorate, autoSubject, toneStamp, silhouette, lineStamp } from './carve.js';
 import { toast, thump } from './ui.js';
 
 // ---- 自刻章的存放（M1：localStorage；一枚 ≤ 30KB，几十枚没问题；M4 换 IndexedDB + 账号同步）----
@@ -117,6 +117,7 @@ function openFlow(src, done, onSaved) {
       // 原来默认 1 = 短边方框，竖着拍的照片一上来上下就被切掉，用户以为东西丢了。
       crop: { cx: .5, cy: .5, zoom: Math.min(1, Math.min(img.width, img.height) / Math.max(img.width, img.height)) },
       pick: null, more: false, hint2: null, thr: 0, detail: 2, weight: 2,
+      tap: null, picking: false, src2: null, Ptap: null, tapSel: null,
       name: '', cat: 'mine', ink: 'zhu', frame: 'none', ringText: '', dateOn: false, decoD: null };
     ensureOverlay();
     render();
@@ -181,6 +182,7 @@ function renderCrop(ov) {
   ov.innerHTML = `<div class="kz-dark">
     <div class="kz-top"><button class="kz-link" data-act="close">取消</button><span>裁一下</span><span></span></div>
     <div class="kz-hint">拖动、双指缩放；缩到底能看到整张照片</div>
+    <div class="kz-xs kz-center" style="margin-top:6px">东西挤在一起时，裁到只剩你要的那一样，刻出来最清楚</div>
     ${F.hint ? `<div class="kz-warn">${F.hint}</div>` : ''}
     <div class="kz-cropbox" id="kz-cropbox" style="width:${BOX}px;height:${BOX}px"><canvas id="kz-cropc" width="${BOX * 2}" height="${BOX * 2}"></canvas></div>
     <input type="range" class="kz-zoom" id="kz-zoom" min="${zoomMin().toFixed(3)}" max="${ZOOM_MAX}" step=".01" value="${F.crop.zoom}">
@@ -242,19 +244,62 @@ function traceLine(src) {
   }
   return lineStamp(src, { ...DETAIL[F.detail] }, F.weight);
 }
+// ---- 「点一下你要的那个」（9-12 用户拍板）----
+// A（裁切）解决不了花和叶子交叠的情况。给一个**一次点击**的选择：点中哪样东西，
+// 就把它以外的地方涂白、裁到它的框，然后三个样子全部跑在这张上——
+// 所以点完之后线条 / 层次 / 剪影会一起变，不会出现「我点了花、线条还是整张」。
+// ⛔ 只有"点一下"这一个动作：点不准就再点别处（每次重算，不叠加），
+//    不做加一块 / 去掉一块 / 撤销 / 范围。那套 9-12 上午加过，当天就拆了。
+const TAP_WORK = 1024;                 // 点选这条路单独用大尺寸，边缘才不糊（9-12 用户反馈）
+const workSrc = () => F.src2 || F.src;
+function applyTap() {
+  F.P = null; F.autoSel = undefined;                 // 换了底图，选区和 prepare 都要重来
+  if (!F.tap) { F.src2 = null; F.tapSel = null; return; }
+  if (!F.Ptap) F.Ptap = prepare(F.src, TAP_WORK);
+  const sel = F.tapSel = refineMask(magicWand(F.Ptap, F.tap.x, F.tap.y), F.Ptap);
+  const { w, h, mask } = sel;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1, area = 0;
+  for (let i = 0; i < w * h; i++) {
+    if (!mask[i]) continue;
+    area++; const x = i % w, y = (i - x) / w;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  if (x1 < 0 || area < w * h * 0.01) { F.src2 = null; F.tap = null; F.tapSel = null; toast('这儿没圈出什么，换个地方点', 2200); return; }
+  // 选区（512 那档）→ 带透明的蒙版 → 按原图尺寸放大扣图 → 白底 → 裁到框 + 6% 边距
+  const mc = document.createElement('canvas'); mc.width = w; mc.height = h;
+  const mx = mc.getContext('2d'), id = mx.createImageData(w, h);
+  for (let i = 0; i < w * h; i++) { id.data[i * 4] = id.data[i * 4 + 1] = id.data[i * 4 + 2] = 255; id.data[i * 4 + 3] = mask[i] ? 255 : 0; }
+  mx.putImageData(id, 0, 0);
+  const src = F.src, sw = src.width, sh = src.height;
+  const cut = document.createElement('canvas'); cut.width = sw; cut.height = sh;
+  const cx = cut.getContext('2d');
+  cx.drawImage(src, 0, 0);
+  cx.globalCompositeOperation = 'destination-in';
+  cx.drawImage(mc, 0, 0, sw, sh);
+  const pad = Math.round(Math.max(sw, sh) * 0.06);
+  const bx = Math.max(0, Math.round(x0 / w * sw) - pad), by = Math.max(0, Math.round(y0 / h * sh) - pad);
+  const bw = Math.min(sw - bx, Math.round((x1 - x0 + 1) / w * sw) + pad * 2);
+  const bh = Math.min(sh - by, Math.round((y1 - y0 + 1) / h * sh) + pad * 2);
+  const out = document.createElement('canvas'); out.width = bw; out.height = bh;
+  const ox = out.getContext('2d');
+  ox.fillStyle = '#fff'; ox.fillRect(0, 0, bw, bh);
+  ox.drawImage(cut, bx, by, bw, bh, 0, 0, bw, bh);
+  F.src2 = out;
+}
+
 // 主体：自动找，不给用户工具（9-12 用户拍板）。
 // 9-12 上午加过「划一下选主体」的魔棒，当天下午拆掉——需要六条说明才讲得清的功能，
 // 本身就是错的；剪影改成「先灌背景再取反」之后自动就能找对，工具没有存在的理由了。
 // ⛔ 别再加回来。抠不准的出路是「重新裁」或换一张，不是给普通人一把修图工具。
 function selection() {
-  if (!F.P) F.P = prepare(F.src);
+  if (!F.P) F.P = prepare(workSrc());
   if (F.autoSel === undefined) F.autoSel = autoSubject(F.P);
   return F.autoSel;
 }
 function computeAll() {
-  const c = { line: traceLine(F.src) }, sel = selection();
+  const c = { line: traceLine(workSrc()) }, sel = selection();
   c.sel = sel;
-  if (sel) c.tone = toneStamp(F.src, sel, TONE_DETAIL[F.detail]);
+  if (sel) c.tone = toneStamp(workSrc(), sel, TONE_DETAIL[F.detail]);
   // 剪影（9-12 用户拍板）：以线条那条管线为主——轮廓已经描对了，填实就是剪影；
   // 只有线条把主体漏掉一块时（发亮的壶身那种）才改用选区。没找到主体也照样有剪影。
   const r = silhouette(c.line.raw, sel);
@@ -290,6 +335,11 @@ function renderAdjust(ov) {
     </div>
     ${hintBox('styles')}
     <div class="kz-cands" id="kz-cands">${CANDS.map(([k, n]) => `<button class="kz-cand ${F.pick === k ? 'on' : ''}" data-pick="${k}"><span class="kz-cand-p"></span><i>${n}</i></button>`).join('')}</div>
+    ${F.picking ? `<div class="kz-photo" id="kz-photo"><canvas id="kz-photoc"></canvas></div>
+      <div class="kz-xs kz-center">${F.tap ? '刻的是亮着的那块 · 不对就再点别处' : '点一下你要刻的那个东西'}</div>
+      <div class="kz-row">${F.tap ? `<button class="kz-chip" data-act="pickall">整张都要</button>` : ''}<span class="kz-grow"></span><button class="kz-chip" data-act="pickoff">好了</button></div>`
+      : `<button class="kz-link kz-pick" data-act="pickon">${F.tap ? '只刻了你点的那块 · 换一个 ›' : '这张里东西有点多？点一下你要的那个 ›'}</button>
+         ${F.tap ? `<button class="kz-link kz-pick" data-act="pickall">整张都要 ›</button>` : ''}`}
     <div class="kz-ctl"><div class="kz-lab">细节${q('detail')}<span>少 · 多</span></div><input type="range" min="1" max="3" step="1" value="${F.detail}" data-k="detail"></div>${hintBox('detail')}
     ${F.pick === 'line' ? `<div class="kz-ctl"><div class="kz-lab">粗细${q('weight')}</div><div class="kz-opts">${['原样', '细', '中', '粗'].map((n, i) => `<button data-weight="${i}" class="${F.weight === i ? 'on' : ''}">${n}</button>`).join('')}</div></div>${hintBox('weight')}` : ''}
     <button class="kz-link kz-more" data-act="more">${F.more ? '收起 ‹' : '更多调整 ›'}</button>
@@ -341,10 +391,31 @@ function renderAdjust(ov) {
     renderAdjust(ov);
   });
   bindActs(ov, {
-    back: () => { F.step = 'crop'; F.autoSel = undefined; F.P = null; F.pick = null; render(); }, close,
+    back: () => { F.step = 'crop'; F.autoSel = undefined; F.P = null; F.Ptap = null; F.pick = null; F.tap = null; F.src2 = null; F.tapSel = null; F.picking = false; render(); }, close,
+    pickon: () => { F.picking = true; renderAdjust(ov); },
+    pickoff: () => { F.picking = false; renderAdjust(ov); },
+    pickall: () => { F.tap = null; applyTap(); F.forced = false; renderAdjust(ov); },
     more: () => { F.more = !F.more; renderAdjust(ov); },
     next: () => { if (F.result && F.result.out.d) { F.step = 'finish'; F.decoD = null; render(); } },
   });
+  if (F.picking) {
+    const photo = ov.querySelector('#kz-photo'), cv = ov.querySelector('#kz-photoc');
+    if (!F.Ptap) F.Ptap = prepare(F.src, TAP_WORK);
+    const { w, h } = F.Ptap; cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d'); ctx.drawImage(F.src, 0, 0, w, h);
+    if (F.tap && F.tapSel) {                         // 已经点过：把没选中的压暗，让他看清刻的是哪块
+      const sel = F.tapSel, d = ctx.getImageData(0, 0, w, h);
+      for (let i = 0; i < w * h; i++) if (!sel.mask[i]) { d.data[i * 4] *= .4; d.data[i * 4 + 1] *= .4; d.data[i * 4 + 2] *= .4; }
+      ctx.putImageData(d, 0, 0);
+    }
+    photo.addEventListener('click', e => {
+      const r = photo.getBoundingClientRect();
+      F.tap = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+      applyTap();
+      F.forced = false; F.picking = !!F.tap;         // 点空了（applyTap 会清掉）就留在选择态
+      renderAdjust(ov);
+    }, { once: true });
+  }
   refresh();
 }
 
@@ -467,6 +538,7 @@ function renderAgain(ov) {
         <li><b>只放一个东西</b>，摆在正中间，占画面三分之一到三分之二。</li>
         <li><b>光要平</b>，别让东西旁边压着一道浓影子。</li>
         <li><b>侧过来拍</b>，别俯拍——俯拍容易把东西拍成一个圆或一个方。</li>
+        <li><b>东西挤在一起（花和叶子那种）</b>：先在手机相册里<b>长按主体把它拎出来</b>，存成图片，再回来「从相册换一张」选它——比在这儿裁干净得多。</li>
       </ul>
     </div>
     <div class="kz-entries">

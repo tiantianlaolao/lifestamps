@@ -21,10 +21,15 @@ function toLab(r, g, b) {
   return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
 }
 
-/** 把源图画到 ≤WORK 的画布上，模糊两遍压掉纹理（木纹、布纹、JPEG 噪点），转成 Lab */
-export function prepare(src) {
+/**
+ * 把源图画到 ≤work 的画布上，模糊两遍压掉纹理（木纹、布纹、JPEG 噪点），转成 Lab。
+ * work 默认 512（自动找主体够用、也够快）。9-12 起「点一下你要的那个」单独传 1024——
+ * 蒙版算完要放大回原图，512 那档是 2 倍放大，边缘会糊成块状（用户反馈"边缘细节粗糙"）。
+ * ⚠️ 1024 是 512 的四倍像素，魔棒的自动挡要试十来档，别拿它去喂滑杆那种连续操作。
+ */
+export function prepare(src, work = WORK) {
   const sw = src.naturalWidth || src.width, sh = src.naturalHeight || src.height;
-  const s = Math.min(1, WORK / Math.max(sw, sh));
+  const s = Math.min(1, work / Math.max(sw, sh));
   const w = Math.max(1, Math.round(sw * s)), h = Math.max(1, Math.round(sh * s));
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const ctx = c.getContext('2d', { willReadFrequently: true });

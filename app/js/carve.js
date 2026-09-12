@@ -337,9 +337,11 @@ export function judge(out, raw = out, o = {}) {
   if (o.solid && s.fill > 0.75) hit('red', 'kzJSilBlob', 'kzJSilBlobTip');
   if (cover > 0.8) hit('red', 'kzJBlock', 'kzJBlockTip');
   else if (cover > 0.55 && out.loops > 3) hit('yellow', 'kzJFull', 'kzJFullTip');
-  if (cover < 0.12 && out.loops >= 8) hit('red', 'kzJScatter', 'kzJScatterTip');
-  if (line < 1.6 && cover < 0.5) hit('red', 'kzJThin', 'kzJThinTip');
-  else if (line < 2.4 && cover < 0.5) hit('yellow', 'kzJThinish', 'kzJThinishTip');
+  // 9-12 晚重定（线条只剩「原样」之后）：原来 cover<0.12 判「太散」、line<1.6 判「太细」都是按加粗后的成品定的，
+  //   原样的手绘（狗 cover 0.09 / line 1.3，猪 0.06 / 1.0）张张被判红，可用户就是要原样。
+  //   现在「太散」只抓真的只剩几颗点的（cover<0.05），「太细」只给黄提示、不拦。
+  if (cover < 0.05 && out.loops >= 8) hit('red', 'kzJScatter', 'kzJScatterTip');
+  if (line < 2.0 && cover < 0.5) hit('yellow', 'kzJThinish', 'kzJThinishTip');
   if (out.loops > 45) hit('yellow', 'kzJPieces', 'kzJPiecesTip');
   if (out.chars > 30 * 1024) hit('yellow', 'kzJComplex', 'kzJComplexTip');
   const worst = all.find(x => x.level === 'red') || all.find(x => x.level === 'yellow');
@@ -503,7 +505,10 @@ const RANK = { green: 3, yellow: 2, red: 1 };
  * 用户只看到「线条」一格，不需要知道下面有两条路。
  */
 export function lineStamp(src, o = {}, weight = 0) {   // 9-12 起线条只有「原样」（weight 0），加粗那几档留着给 dev 页试
-  const mk = img => { const raw = imageToStamp(img, o); return { raw, out: thickenBin(raw, weight) }; };
+  // dropFrame 必须关（9-12 晚用户抓到）：trace.js 默认把「包围盒盖住 ≥85% 画面的连通域」当扫描件的边框丢掉，
+  //   可用户裁到只剩一个头时，头的轮廓正好撑满画面 —— 整条轮廓被当边框扔了，只剩眼睛鼻子。
+  //   整张画时轮廓不到 85% 所以没事，一放大裁切就中招。刻章铺里画面是用户自己裁的，没有边框这回事。
+  const mk = img => { const raw = imageToStamp(img, { dropFrame: false, ...o }); return { raw, out: thickenBin(raw, weight) }; };
   const a = mk(src);
   const b = mk(sauvolaCanvas(src, 1024, 20, 0.2));
   if (!b.out.d) return a;

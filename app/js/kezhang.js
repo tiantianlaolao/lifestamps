@@ -275,10 +275,23 @@ function cropCanvas(max = 1024) {
   const x1 = Math.round(Math.min(r.side, w - r.x) * s), y1 = Math.round(Math.min(r.side, h - r.y) * s);
   const sx = Math.max(0, r.x), sy = Math.max(0, r.y), sw = Math.min(w, r.x + r.side) - sx, sh = Math.min(h, r.y + r.side) - sy;
   ctx.drawImage(img, sx, sy, sw, sh, x0, y0, x1 - x0, y1 - y0);
-  if (x0 > 0) ctx.drawImage(img, sx, sy, 1, sh, 0, y0, x0, y1 - y0);                       // 左边：最左一列拉出去
-  if (x1 < N) ctx.drawImage(img, sx + sw - 1, sy, 1, sh, x1, y0, N - x1, y1 - y0);           // 右边
-  if (y0 > 0) ctx.drawImage(c, 0, y0, N, 1, 0, 0, N, y0);                                     // 上边：拉已经画好的第一行（连角一起）
-  if (y1 < N) ctx.drawImage(c, 0, y1 - 1, N, 1, 0, y1, N, N - y1);                            // 下边
+  // 方框超出照片的部分填「纸色」= 照片四条边像素各通道的中位数。
+  // ⛔ 不能填白（灌背景会把整张照片当主体，9-12 上午踩过），也不能把边上那一列/行拉出去
+  //   （9-12 晚踩过：线条画的笔画一碰到照片边，拉出去就是一根贯穿的黑条，去纸底那步把真正的线一起吞掉）。
+  //   中位数取的是边上的多数像素 = 纸/桌面，笔画只是少数，压不过它；四角仍是桌面色，灌背景照旧成立。
+  if (x0 > 0 || y0 > 0 || x1 < N || y1 < N) {
+    const d = ctx.getImageData(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0)), pw = d.width, ph = d.height, px = d.data;
+    const R = [], G = [], B = [];
+    const take = i => { R.push(px[i]); G.push(px[i + 1]); B.push(px[i + 2]); };
+    for (let x = 0; x < pw; x++) { take(x * 4); take(((ph - 1) * pw + x) * 4); }
+    for (let y = 0; y < ph; y++) { take(y * pw * 4); take((y * pw + pw - 1) * 4); }
+    const med = a => { a.sort((p, q) => p - q); return a[a.length >> 1]; };
+    ctx.fillStyle = `rgb(${med(R)},${med(G)},${med(B)})`;
+    if (x0 > 0) ctx.fillRect(0, 0, x0, N);
+    if (x1 < N) ctx.fillRect(x1, 0, N - x1, N);
+    if (y0 > 0) ctx.fillRect(0, 0, N, y0);
+    if (y1 < N) ctx.fillRect(0, y1, N, N - y1);
+  }
   return c;
 }
 function renderCrop(ov) {

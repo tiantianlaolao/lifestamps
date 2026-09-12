@@ -28,7 +28,7 @@ const KB = r => (r.out.chars/1024).toFixed(1) + 'KB';
 async function run(label, file, box) {
   let img; try { img = await load(file); } catch { return; }
   const c = box ? crop(img, ...box) : img;
-  const line = lineStamp(c, { minArea: 12, eps: 1.2 }, 2);
+  const line = lineStamp(c, { minArea: 12, eps: 1.2 }, 0);   // 9-12 起产品里只有原样（weight 0）
   const lraw = line.raw;
   const P = prepare(c), sel = autoSubject(P);
   const tone = sel ? toneStamp(c, sel, { minArea: 30, eps: 1.3 }) : null;

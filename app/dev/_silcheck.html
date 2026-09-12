@@ -13,6 +13,7 @@ h2{font:600 13px/1.4 system-ui;margin:2px 0 6px;color:#3A352E}
 <script type="module">
 import { defsMarkup, stampSVG } from '../js/stamp.js';
 import { imageToStamp } from '../js/trace.js';
+import { t } from '../js/i18n.js';   // judge 的 why 现在是词典键（9-12 刻章铺三语）
 import { prepare, maskToStamp, thickenBin, judge, autoSubject, toneStamp, silhouette, lineStamp } from '../js/carve.js';
 document.body.insertAdjacentHTML('afterbegin', `<svg width="0" height="0" style="position:absolute">${defsMarkup()}</svg>`);
 const load = s => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = s; });
@@ -22,7 +23,7 @@ window.__rows = [];
 let __cur = '', __cand = '';
 const J = r => { const j = judge(r.out, r.raw, { solid: __cand === '剪影' });
   window.__rows.push({ img: __cur, cand: __cand, lv: j.level, fill: j.m.fill, cover: j.m.cover, parts: j.m.parts, kb: j.m.kb });
-  return `${{green:'🟢',yellow:'🟡',red:'🔴'}[j.level]} ${j.why} <i>fill ${j.m.fill}</i>`; };
+  return `${{green:'🟢',yellow:'🟡',red:'🔴'}[j.level]} ${t(j.why)} <i>fill ${j.m.fill}</i>`; };
 const KB = r => (r.out.chars/1024).toFixed(1) + 'KB';
 async function run(label, file, box) {
   let img; try { img = await load(file); } catch { return; }

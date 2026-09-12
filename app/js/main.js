@@ -87,7 +87,7 @@ let holdGesture = null;          // 拿着章按在纸上不放的那个手势�
 let pendingPose = null;          // 影子出现时就掷好的姿态 —— 影子长什么样，盖下去就是什么样
 let deckCat = 'all';
 // 刻章铺（分支）：有自刻章时，托盘 / 藏品的分类栏多一格「我刻的」，跟其他分类并排（9-11 用户拍板）
-const catsUI = () => carved.length ? [{ id: 'mine', name: '我刻的' }, ...CATEGORIES] : CATEGORIES;
+const catsUI = () => carved.length ? [{ id: 'mine', name: COPY.catMine }, ...CATEGORIES] : CATEGORIES;
 let deckOpen = false;             // 托盘展开态（收起态只有一行常用章）
 let undoRec = null;              // {id, at} 刚盖下的那一枚，10 秒内可以撤
 let undoTimer = null;
@@ -2036,7 +2036,7 @@ function renderCollection() {
 
   // 印集（9-08 用户拍板）：藏品 = 我的东西（章 + 印泥盒，最底一节）；集市 = 能买的。
   // 藏品里永远没有购买按钮——印泥盒的购买卡搬到集市；今日页印泥弹层里那张卡留着（挑颜色时顺手的入口）。
-  const seg = [['mine', COPY.colSegMine], ['market', COPY.colSegMarket], ['carve', '刻章铺']].map(([k, n]) =>
+  const seg = [['mine', COPY.colSegMine], ['market', COPY.colSegMarket], ['carve', COPY.colSegCarve]].map(([k, n]) =>
     `<button class="${drawerSeg === k ? 'sel' : ''}" data-seg="${k}">${n}</button>`).join('');
 
   $('#page-collection').innerHTML = `

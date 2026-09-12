@@ -4,7 +4,8 @@
 // M1 范围：以上整条链 + 本机保存。装饰 / 刻章动效 / 买断 / 同步 / 分享占位 = 后续里程碑。
 // 照片只在这台手机上处理（canvas），不上传。产物跟官方章同一种 d（M/L/Z 路径，禁 base64）。
 // ============================================================
-import { STAMPS, INIT_STAMPS, rebuildStampIndex, stampById } from './data.js';
+import { STAMPS, INIT_STAMPS, rebuildStampIndex, stampById, INKS } from './data.js';
+import { t, nameOf } from './i18n.js';
 import { stampSVG } from './stamp.js';
 import { prepare, magicWand, refineMask, thickenBin, judge, sourceHint, decorate, autoSubject, toneStamp, silhouette, lineStamp } from './carve.js';
 import { toast, thump } from './ui.js';
@@ -61,11 +62,11 @@ export const kzOwned = () => store.hasProduct(PRODUCT);
 let PAY = null;
 const canSave = () => !PAY || kzOwned() || freeLeft() > 0;
 function quotaLine() {
-  if (kzOwned()) return '已买断，想刻多少刻多少';
+  if (kzOwned()) return t('kzQuotaOwned');
   const left = freeLeft();
-  if (left > 0) return `还能免费刻 <b>${left}</b> 枚，之后一次买断 <span data-price="${PRODUCT}">¥18</span>`;
-  if (!PAY) return '免费次数用完了（本地测试版不拦）';
-  return `免费的 ${FREE_N} 枚刻完了 · <button class="kz-link kz-inline" data-kzbuy>买断，接着刻 ›</button>`;
+  if (left > 0) return t('kzQuotaLeft', { n: left, price: `<span data-price="${PRODUCT}">¥18</span>` });
+  if (!PAY) return t('kzQuotaLocal');
+  return `${t('kzQuotaUsed', { n: FREE_N })}<button class="kz-link kz-inline" data-kzbuy>${t('kzQuotaUsedBtn')}</button>`;
 }
 
 // ============================================================
@@ -77,6 +78,9 @@ function quotaLine() {
 // 各配一句"什么样的图适合它"。点开只放大看 + 「拍一张试试」，⛔ 不进流程、不入库。
 // 章存的是 path（kz/tutorial.json），用当前印泥现场画，永远跟当前版本一致。
 let TUT = null;                                 // 拉到之后才有；拉之前卡片上先空着
+// 教程三组的文字（样子名 / 适合什么 / 为什么）全在词典里，json 只剩 key / photo / d
+const TUT_KEYS = { line: 'Line', tone: 'Tone', sil: 'Sil' };
+const tutText = g => { const c = TUT_KEYS[g.key] || 'Line'; return { style: t('kzStyle' + c), name: t('kzTut' + c + 'Name'), fit: t('kzTut' + c + 'Fit'), why: t('kzTut' + c + 'Why') }; };
 function loadTutorial(then) {
   if (TUT) return then();
   fetch('kz/tutorial.json', { cache: 'no-store' }).then(r => r.json()).then(j => { TUT = j; then(); }).catch(() => {});
@@ -87,22 +91,22 @@ export function kzSegmentHTML() {
   const mine = carved.map(s => `<button class="kz-mine-c" data-kzid="${s.id}">${stampSVG(stampById[s.id], { size: 38 })}<i>${esc(s.name)}</i></button>`).join('');
   return `<div class="kz">
     <div class="kz-card">
-      <div class="kz-t">自己刻一枚章</div>
-      <div class="kz-s">一个主体、背景干净、光线亮，最容易刻好看</div>
-      <div class="kz-tut">${(TUT || []).map((t, i) => `<button class="kz-tut-row" data-tut="${i}">
-        <img src="${t.photo}" alt=""><span class="kz-tut-arrow">→</span>
-        <span class="kz-tut-stamp">${S(t.d, 56)}</span>
-        <span class="kz-tut-txt"><b>${t.style}</b><i>${esc(t.fit)}</i></span></button>`).join('')}</div>
-      <div class="kz-xs">三种样子各适合什么，点一组看大图</div>
+      <div class="kz-t">${t('kzTitle')}</div>
+      <div class="kz-s">${t('kzSub')}</div>
+      <div class="kz-tut">${(TUT || []).map((g, i) => { const tx = tutText(g); return `<button class="kz-tut-row" data-tut="${i}">
+        <img src="${g.photo}" alt=""><span class="kz-tut-arrow">→</span>
+        <span class="kz-tut-stamp">${S(g.d, 56)}</span>
+        <span class="kz-tut-txt"><b>${tx.style}</b><i>${esc(tx.fit)}</i></span></button>`; }).join('')}</div>
+      <div class="kz-xs">${t('kzTutHint')}</div>
     </div>
     <div class="kz-entries">
-      <label class="kz-btn">画一张，拍下来<input type="file" accept="image/*" capture="environment" hidden data-kzfile></label>
-      <label class="kz-btn2">从相册选<input type="file" accept="image/*" hidden data-kzfile></label>
+      <label class="kz-btn">${t('kzShoot')}<input type="file" accept="image/*" capture="environment" hidden data-kzfile></label>
+      <label class="kz-btn2">${t('kzAlbum')}<input type="file" accept="image/*" hidden data-kzfile></label>
     </div>
     <div class="kz-xs kz-quota">${quotaLine()}</div>
-    ${F && F.step === 'buy' && F.buyFrom === 'trial' ? `<button class="kz-btn2 kz-resume" data-kzresume>继续刚才那枚「${esc((F.name || '').trim() || '我的章')}」›</button>` : ''}
-    <div class="kz-sec"><span>我刻的章 · ${carved.length}</span><span class="kz-xs">在托盘里跟别的章一样用</span></div>
-    ${carved.length ? `<div class="kz-mine">${mine}</div>` : `<div class="kz-xs kz-empty">还没有，刻一枚试试</div>`}
+    ${F && F.step === 'buy' && F.buyFrom === 'trial' ? `<button class="kz-btn2 kz-resume" data-kzresume>${t('kzResume', { name: esc((F.name || '').trim() || t('kzDefaultName')) })}</button>` : ''}
+    <div class="kz-sec"><span>${t('kzMineHead', { n: carved.length })}</span><span class="kz-xs">${t('kzMineSub')}</span></div>
+    ${carved.length ? `<div class="kz-mine">${mine}</div>` : `<div class="kz-xs kz-empty">${t('kzMineEmpty')}</div>`}
   </div>`;
 }
 
@@ -112,11 +116,11 @@ export function kzSegmentHTML() {
 const MAX_BYTES = 30 * 1024 * 1024, MAX_PIXELS = 50e6, WORK_EDGE = 2048;
 const OK_TYPES = /^image\/(jpeg|jpg|png|webp|heic|heif)$/i;
 function checkFile(f) {
-  const t = (f.type || '').toLowerCase();
-  if (t.startsWith('video/')) return '刻章只能用照片，不能用视频';
-  if (t && !t.startsWith('image/')) return '这不是照片，请选一张照片';
-  if (t && !OK_TYPES.test(t)) return '这种格式刻不了，换一张普通照片（JPG / PNG）';
-  if (f.size > MAX_BYTES) return '这张图太大了，换一张，或者先截个图再用';
+  const ty = (f.type || '').toLowerCase();
+  if (ty.startsWith('video/')) return t('kzErrVideo');
+  if (ty && !ty.startsWith('image/')) return t('kzErrNotImage');
+  if (ty && !OK_TYPES.test(ty)) return t('kzErrFormat');
+  if (f.size > MAX_BYTES) return t('kzErrTooBig');
   return '';   // 没有 type（个别安卓文件管理器）就放行，交给解码去判断
 }
 function shrink(img) {
@@ -144,33 +148,33 @@ export function bindKz(root, rerender, onSaved, pay = null) {
   // 入库后跟普通章一样：不能删、不能改名（9-11 用户拍板）。点一下只报它的来历。
   root.querySelectorAll('[data-kzid]').forEach(b => b.addEventListener('click', () => {
     const s = carved.find(x => x.id === b.dataset.kzid);
-    if (s) { const d = new Date(s.ts); toast(`「${s.name}」· ${d.getMonth() + 1} 月 ${d.getDate()} 日刻的`); }
+    if (s) { const d = new Date(s.ts); toast(t('kzCarvedOn', { name: s.name, m: d.getMonth() + 1, d: d.getDate() })); }
   }));
 }
 
 // ---- 教程页：一组一页，‹ › 翻，底下「拍一张试试 / 从相册选」直接进真流程 ----
 function openTutorial(i, done, onSaved) {
   if (!TUT) return;
-  const t = TUT[(i + TUT.length) % TUT.length]; i = TUT.indexOf(t);
+  const g = TUT[(i + TUT.length) % TUT.length]; i = TUT.indexOf(g); const tut = tutText(g);
   ensureOverlay();
   const ov = document.getElementById('ov-kz');
   ov.classList.add('show');
   ov.innerHTML = `<div class="kz-pane">
-    <div class="kz-top"><button class="kz-link" data-act="prev">‹ 上一组</button><span>什么样的图适合${t.style}</span><button class="kz-link" data-act="close">关闭</button></div>
+    <div class="kz-top"><button class="kz-link" data-act="prev">${t('kzTutPrev')}</button><span>${t('kzTutTitle', { style: tut.style })}</span><button class="kz-link" data-act="close">${t('kzClose')}</button></div>
     <div class="kz-tut-big">
-      <img src="${t.photo}" alt="">
+      <img src="${g.photo}" alt="">
       <span class="kz-tut-arrow">→</span>
-      <span class="kz-tut-bigstamp">${S(t.d, 150)}</span>
+      <span class="kz-tut-bigstamp">${S(g.d, 150)}</span>
     </div>
     <div class="kz-card">
-      <div class="kz-t">${t.style} · 适合${esc(t.fit)}</div>
-      <div class="kz-s">${esc(t.why)}</div>
+      <div class="kz-t">${t('kzTutFit', { style: tut.style, fit: esc(tut.fit) })}</div>
+      <div class="kz-s">${esc(tut.why)}</div>
     </div>
     <div class="kz-entries">
-      <label class="kz-btn">拍一张试试<input type="file" accept="image/*" capture="environment" hidden data-tutfile></label>
-      <label class="kz-btn2">从相册选<input type="file" accept="image/*" hidden data-tutfile></label>
+      <label class="kz-btn">${t('kzTryShoot')}<input type="file" accept="image/*" capture="environment" hidden data-tutfile></label>
+      <label class="kz-btn2">${t('kzAlbum')}<input type="file" accept="image/*" hidden data-tutfile></label>
     </div>
-    <div class="kz-bottom"><button class="kz-btn2" data-act="next">下一组 ›</button></div>
+    <div class="kz-bottom"><button class="kz-btn2" data-act="next">${t('kzTutNext')}</button></div>
   </div>`;
   ov.querySelectorAll('[data-tutfile]').forEach(inp => inp.addEventListener('change', e => {
     const f = e.target.files && e.target.files[0];
@@ -191,7 +195,7 @@ let F = null;   // 当前这一次刻章的全部状态
 function openFlow(src, done, onSaved) {
   const im = new Image();
   im.onload = () => {
-    if (im.naturalWidth * im.naturalHeight > MAX_PIXELS) { toast('这张图太大了，换一张，或者先截个图再用', 2400); return; }
+    if (im.naturalWidth * im.naturalHeight > MAX_PIXELS) { toast(t('kzErrTooBig'), 2400); return; }
     const img = shrink(im);
     if (src.startsWith('blob:')) URL.revokeObjectURL(src);
     F = { img, done, onSaved, hint: sourceHint(img), step: 'crop',
@@ -205,7 +209,7 @@ function openFlow(src, done, onSaved) {
     ensureOverlay();
     render();
   };
-  im.onerror = () => toast('这张图打不开，换一张照片试试', 2400);
+  im.onerror = () => toast(t('kzErrOpen'), 2400);
   im.src = src;
 }
 
@@ -279,13 +283,13 @@ function cropCanvas(max = 1024) {
 }
 function renderCrop(ov) {
   ov.innerHTML = `<div class="kz-dark">
-    <div class="kz-top"><button class="kz-link" data-act="close">取消</button><span>裁一下</span><span></span></div>
-    <div class="kz-hint">拖动、双指缩放；缩到底能看到整张照片</div>
-    <div class="kz-xs kz-center" style="margin-top:6px">东西挤在一起时，裁到只剩你要的那一样，刻出来最清楚</div>
-    ${F.hint ? `<div class="kz-warn">${F.hint}</div>` : ''}
+    <div class="kz-top"><button class="kz-link" data-act="close">${t('kzCancel')}</button><span>${t('kzCropTitle')}</span><span></span></div>
+    <div class="kz-hint">${t('kzCropHint')}</div>
+    <div class="kz-xs kz-center" style="margin-top:6px">${t('kzCropTip')}</div>
+    ${F.hint ? `<div class="kz-warn">${t(F.hint)}</div>` : ''}
     <div class="kz-cropbox" id="kz-cropbox" style="width:${BOX}px;height:${BOX}px"><canvas id="kz-cropc" width="${BOX * 2}" height="${BOX * 2}"></canvas></div>
     <input type="range" class="kz-zoom" id="kz-zoom" min="${zoomMin().toFixed(3)}" max="${ZOOM_MAX}" step=".01" value="${F.crop.zoom}">
-    <div class="kz-bottom"><button class="kz-btn2 dark" data-act="close">重选</button><button class="kz-btn" data-act="next">下一步</button></div>
+    <div class="kz-bottom"><button class="kz-btn2 dark" data-act="close">${t('kzReselect')}</button><button class="kz-btn" data-act="next">${t('kzNext')}</button></div>
   </div>`;
   const cv = ov.querySelector('#kz-cropc'), ctx = cv.getContext('2d');
   const draw = () => {
@@ -331,7 +335,7 @@ function clampCrop() {
 // 细节 1..3 = 去噪/简化力度；粗细 0..3 = 原样/细/中/粗；深浅 = 阈值相对自动值的偏移
 const DETAIL = { 1: { minArea: 40, eps: 2.0 }, 2: { minArea: 12, eps: 1.2 }, 3: { minArea: 4, eps: 0.7 } };
 // 9-11：「去掉背景」（线条版）换成「层次」——用户要尽量像原图，层次（3 层深浅）最接近
-const CANDS = [['line', '线条'], ['tone', '层次'], ['sil', '剪影']];
+const CANDS = [['line', 'kzStyleLine'], ['tone', 'kzStyleTone'], ['sil', 'kzStyleSil']];   // 名字是词典键
 const TONE_DETAIL = { 1: { minArea: 80, eps: 2.0 }, 2: { minArea: 30, eps: 1.3 }, 3: { minArea: 12, eps: 0.9 } };
 // 9-12 用户拍板删掉了「深浅」滑杆：线条已经自动在全局 / 局部阈值里挑，深浅一动就退回单一路，
 // 等于关掉自动挑，留着只添乱。线条永远走 lineStamp。
@@ -406,7 +410,7 @@ function applyTaps() {
   F.P = null; F.autoSel = undefined;                 // 换了底图，下游的 prepare / 自动主体都要重来
   const sel = F.tapSel = tapsMask();
   F.src2 = sel ? cutOut(sel) : null;
-  if (sel && !F.src2) { F.taps.pop(); F.tapSel = tapsMask(); F.src2 = F.tapSel ? cutOut(F.tapSel) : null; toast('这一下没圈出什么，撤掉了', 2200); }
+  if (sel && !F.src2) { F.taps.pop(); F.tapSel = tapsMask(); F.src2 = F.tapSel ? cutOut(F.tapSel) : null; toast(t('kzTapUndone'), 2200); }
 }
 
 // 主体：自动找，不给用户工具（9-12 用户拍板）。
@@ -437,13 +441,13 @@ const firstPick = () => 'line';
 // 说明（9-12 用户：「加了个魔棒又不说怎么用」）。一句话一条，点问号才展开，同时只开一条。
 // ⛔ 别写成"魔棒 / 容差 / 选区"这类词——用户不认，全部说人话。
 const HINTS = {
-  styles: '线条＝把图里的线描出来，纸上画的、线清楚的东西最合适。\n层次＝主体内部按明暗分三层叠印，照片想尽量像原图时用。\n剪影＝主体整个填实，只剩外形——只有轮廓本身就认得出的东西才行（一块布、一只鞋、一朵花），圆的方的、要靠里面的字和细节认的（电池、脸、截图）一律不行。',
-  tolAdj: '你点的每一下，往大调会多选进来一些、往小调会少选一些。',
-  detail: '往少调＝去掉零碎小块，托盘里更干净；往多调＝保留细节，但缩小到托盘里容易糊。',
-  weight: '托盘 26px 下看不清就往粗调。密线稿加粗会把线缝填死，程序会自己退回去，所以有时候调了变化不大。',
+  styles: 'kzHintStyles',
+  tolAdj: 'kzHintTol',
+  detail: 'kzHintDetail',
+  weight: 'kzHintWeight',
 };
-const q = k => `<button class="kz-q" data-hint="${k}" aria-label="说明">?</button>`;
-const hintBox = k => F.hint2 === k ? `<div class="kz-hintbox">${esc(HINTS[k]).replace(/\n/g, '<br>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</div>` : '';
+const q = k => `<button class="kz-q" data-hint="${k}" aria-label="${t('kzHelp')}">?</button>`;
+const hintBox = k => F.hint2 === k ? `<div class="kz-hintbox">${esc(t(HINTS[k])).replace(/\n/g, '<br>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</div>` : '';
 
 let busy = 0;
 function renderAdjust(ov) {
@@ -453,21 +457,21 @@ function renderAdjust(ov) {
   // 照片在下半页，点一下就弹回顶上（9-12 用户反馈）。重画前记下、重画完放回去。
   const scrollY = ov.querySelector('.kz-pane')?.scrollTop || 0;
   ov.innerHTML = `<div class="kz-pane">
-    <div class="kz-top"><button class="kz-link" data-act="back">‹ 重新裁</button><span>挑一个样子${q('styles')}</span><button class="kz-link" data-act="close">取消</button></div>
+    <div class="kz-top"><button class="kz-link" data-act="back">${t('kzBackCrop')}</button><span>${t('kzPickTitle')}${q('styles')}</span><button class="kz-link" data-act="close">${t('kzCancel')}</button></div>
     <div class="kz-result">
-      <div class="kz-stage" id="kz-stage"><div class="kz-xs">正在刻出几个样子…</div></div>
-      <div class="kz-side"><div class="kz-xs">放进托盘里：</div><div class="kz-tray" id="kz-tray"></div><div class="kz-verdict" id="kz-verdict"></div></div>
+      <div class="kz-stage" id="kz-stage"><div class="kz-xs">${t('kzWorking')}</div></div>
+      <div class="kz-side"><div class="kz-xs">${t('kzInTray')}</div><div class="kz-tray" id="kz-tray"></div><div class="kz-verdict" id="kz-verdict"></div></div>
     </div>
     ${hintBox('styles')}
-    <div class="kz-cands" id="kz-cands">${CANDS.map(([k, n]) => `<button class="kz-cand ${F.pick === k ? 'on' : ''}" data-pick="${k}"><span class="kz-cand-p"></span><i>${n}</i></button>`).join('')}</div>
+    <div class="kz-cands" id="kz-cands">${CANDS.map(([k, n]) => `<button class="kz-cand ${F.pick === k ? 'on' : ''}" data-pick="${k}"><span class="kz-cand-p"></span><i>${t(n)}</i></button>`).join('')}</div>
     ${F.picking ? `<div class="kz-photo" id="kz-photo"><canvas id="kz-photoc"></canvas></div>
-      <div class="kz-xs kz-center">${F.erase ? '<b>点不要的部分</b>，把它去掉' : '<b>点你要的部分</b>，亮起来的会刻进去'}</div>
-      <div class="kz-row"><button class="kz-chip ${F.erase ? '' : 'on'}" data-erase="0">加一块</button><button class="kz-chip ${F.erase ? 'on' : ''}" data-erase="1">去掉一块</button><button class="kz-chip" data-act="undo">撤销</button>${F.taps.length ? `<button class="kz-chip" data-act="pickall">整张都要</button>` : ''}<span class="kz-grow"></span><button class="kz-chip" data-act="pickoff">好了</button></div>
-      ${F.taps.length ? `<div class="kz-ctl"><div class="kz-lab">每一下的范围${q('tolAdj')}<span>小一点 · 大一点</span></div><input type="range" min="-16" max="16" step="2" value="${F.tolAdj}" data-k="tolAdj"></div>${hintBox('tolAdj')}` : ''}`
-      : `<button class="kz-link kz-pick" data-act="pickon">${F.taps.length ? '已经自己修过 · 再修修 ›' : '当前图不满意？点这里可以自己修 ›'}</button>`}
-    <div class="kz-ctl"><div class="kz-lab">细节${q('detail')}<span>少 · 多</span></div><input type="range" min="1" max="3" step="1" value="${F.detail}" data-k="detail"></div>${hintBox('detail')}
-    ${F.pick === 'line' ? `<div class="kz-ctl"><div class="kz-lab">粗细${q('weight')}</div><div class="kz-opts">${['原样', '细', '中', '粗'].map((n, i) => `<button data-weight="${i}" class="${F.weight === i ? 'on' : ''}">${n}</button>`).join('')}</div></div>${hintBox('weight')}` : ''}
-    <div class="kz-bottom"><button class="kz-btn" data-act="next" id="kz-next" disabled>下一步</button></div>
+      <div class="kz-xs kz-center">${F.erase ? t('kzTapErase') : t('kzTapAdd')}</div>
+      <div class="kz-row"><button class="kz-chip ${F.erase ? '' : 'on'}" data-erase="0">${t('kzAddPiece')}</button><button class="kz-chip ${F.erase ? 'on' : ''}" data-erase="1">${t('kzErasePiece')}</button><button class="kz-chip" data-act="undo">${t('kzUndo')}</button>${F.taps.length ? `<button class="kz-chip" data-act="pickall">${t('kzPickAll')}</button>` : ''}<span class="kz-grow"></span><button class="kz-chip" data-act="pickoff">${t('kzDone')}</button></div>
+      ${F.taps.length ? `<div class="kz-ctl"><div class="kz-lab">${t('kzTolLab')}${q('tolAdj')}<span>${t('kzTolScale')}</span></div><input type="range" min="-16" max="16" step="2" value="${F.tolAdj}" data-k="tolAdj"></div>${hintBox('tolAdj')}` : ''}`
+      : `<button class="kz-link kz-pick" data-act="pickon">${F.taps.length ? t('kzFixAgain') : t('kzFix')}</button>`}
+    <div class="kz-ctl"><div class="kz-lab">${t('kzDetail')}${q('detail')}<span>${t('kzDetailScale')}</span></div><input type="range" min="1" max="3" step="1" value="${F.detail}" data-k="detail"></div>${hintBox('detail')}
+    ${F.pick === 'line' ? `<div class="kz-ctl"><div class="kz-lab">${t('kzWeight')}${q('weight')}</div><div class="kz-opts">${t('kzWeightOpts').split('|').map((n, i) => `<button data-weight="${i}" class="${F.weight === i ? 'on' : ''}">${n}</button>`).join('')}</div></div>${hintBox('weight')}` : ''}
+    <div class="kz-bottom"><button class="kz-btn" data-act="next" id="kz-next" disabled>${t('kzNext')}</button></div>
   </div>`;
 
   const refresh = () => {
@@ -484,21 +488,21 @@ function renderAdjust(ov) {
       ov.querySelectorAll('[data-pick]').forEach(b => {
         const cr = c[b.dataset.pick], box = b.querySelector('.kz-cand-p');
         b.classList.toggle('on', b.dataset.pick === F.pick);
-        box.innerHTML = cr ? S(cr.out.d, 54, F.ink) : '<span class="kz-xs">没找到主体</span>';
+        box.innerHTML = cr ? S(cr.out.d, 54, F.ink) : `<span class="kz-xs">${t('kzNoSubject')}</span>`;
       });
       const stage = ov.querySelector('#kz-stage'), tray = ov.querySelector('#kz-tray'), v = ov.querySelector('#kz-verdict');
       const j = judge(r.out, r.raw, { solid: F.pick === 'sil' }); F.judge = j;
       stage.innerHTML = S(r.out.d, 188, F.ink);
       tray.innerHTML = ['milktea', 'coffee'].map(id => stampById[id] ? `<span>${stampSVG(stampById[id], { size: 26 })}</span>` : '').join('') + `<span class="me">${S(r.out.d, 26, F.ink)}</span>`;
       v.className = 'kz-verdict ' + lvl[j.level];
-      v.innerHTML = `<b>${j.why}</b>${j.tip ? `<br>${j.tip.replace('改用「点一下主体」', '换成「层次」试试')}` : ''}${j.level === 'red' ? `<br><button class="kz-link" data-act="force">还是想刻这个 ›</button>` : ''}`;
+      v.innerHTML = `<b>${t(j.why)}</b>${j.tip ? `<br>${t(j.tip)}` : ''}${j.level === 'red' ? `<br><button class="kz-link" data-act="force">${t('kzForce')}</button>` : ''}`;
       ov.querySelector('#kz-next').disabled = !r.out.d || j.level === 'red' && !F.forced;
-      const fb = v.querySelector('[data-act="force"]'); if (fb) fb.onclick = () => { F.forced = true; ov.querySelector('#kz-next').disabled = false; toast('好，照这个刻'); };
+      const fb = v.querySelector('[data-act="force"]'); if (fb) fb.onclick = () => { F.forced = true; ov.querySelector('#kz-next').disabled = false; toast(t('kzForced')); };
     }, 30);
   };
 
-  let t = 0;
-  ov.querySelectorAll('[data-k]').forEach(inp => inp.oninput = () => { F[inp.dataset.k] = +inp.value; F.forced = false; clearTimeout(t); t = setTimeout(refresh, 160); });
+  let tm = 0;
+  ov.querySelectorAll('[data-k]').forEach(inp => inp.oninput = () => { F[inp.dataset.k] = +inp.value; F.forced = false; clearTimeout(tm); tm = setTimeout(refresh, 160); });
   ov.querySelectorAll('[data-weight]').forEach(b => b.onclick = () => { F.weight = +b.dataset.weight; ov.querySelectorAll('[data-weight]').forEach(x => x.classList.toggle('on', x === b)); refresh(); });
   ov.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
     const k = b.dataset.pick;
@@ -570,20 +574,20 @@ async function updateDeco(ov) {
 // ---- ③ 起名 + 装饰（边框 / 章上的字 / 日期）+ 默认印泥 ----
 function renderFinish(ov) {
   ov.innerHTML = `<div class="kz-pane">
-    <div class="kz-top"><button class="kz-link" data-act="back">‹ 返回调整</button><span>起名 · 装饰</span><button class="kz-link" data-act="close">取消</button></div>
+    <div class="kz-top"><button class="kz-link" data-act="back">${t('kzBackAdjust')}</button><span>${t('kzDecoTitle')}</span><button class="kz-link" data-act="close">${t('kzCancel')}</button></div>
     <div class="kz-stage big" id="kz-fstage">${S(finalD(), 220, F.ink)}</div>
-    <div class="kz-lab2">名字</div><input class="kz-field" id="kz-name" maxlength="8" placeholder="比如：小狗" value="${esc(F.name)}">
-    <div class="kz-lab2">边框</div><div class="kz-opts">${[['none', '无'], ['circle', '圆'], ['square', '方']].map(([k, n]) => `<button data-frame="${k}" class="${F.frame === k ? 'on' : ''}">${n}</button>`).join('')}</div>
-    <div class="kz-lab2">章上的字（可空）</div><input class="kz-field" id="kz-ring" maxlength="12" placeholder="${F.frame === 'circle' ? '沿着圆圈排，比如：我家小狗' : '写在章下面，比如：我家小狗'}" value="${esc(F.ringText)}">
-    <div class="kz-row"><button class="kz-chip ${F.dateOn ? 'on' : ''}" data-act="date">带上今天的日期 ${today()}</button></div>
-    <div class="kz-lab2">默认印泥</div><div class="kz-row">${Object.entries(TRIAL_INKS).map(([k, n]) => `<button class="kz-chip ${F.ink === k ? 'on' : ''}" data-ink="${k}">${n}</button>`).join('')}</div>
-    <div class="kz-xs" style="margin-top:8px">放进托盘后在「我刻的」那一格</div>
-    <div class="kz-bottom"><button class="kz-btn" data-act="trial">刻好了，试盖一下</button></div>
-    <div class="kz-xs kz-center">试盖不扣次数 · 满意放进托盘时才算用掉 1 次</div>
+    <div class="kz-lab2">${t('kzName')}</div><input class="kz-field" id="kz-name" maxlength="8" placeholder="${t('kzNamePh')}" value="${esc(F.name)}">
+    <div class="kz-lab2">${t('kzFrame')}</div><div class="kz-opts">${[['none', t('kzFrameNone')], ['circle', t('kzFrameCircle')], ['square', t('kzFrameSquare')]].map(([k, n]) => `<button data-frame="${k}" class="${F.frame === k ? 'on' : ''}">${n}</button>`).join('')}</div>
+    <div class="kz-lab2">${t('kzRing')}</div><input class="kz-field" id="kz-ring" maxlength="12" placeholder="${F.frame === 'circle' ? t('kzRingPhCircle') : t('kzRingPhBottom')}" value="${esc(F.ringText)}">
+    <div class="kz-row"><button class="kz-chip ${F.dateOn ? 'on' : ''}" data-act="date">${t('kzDate', { date: today() })}</button></div>
+    <div class="kz-lab2">${t('kzInkDefault')}</div><div class="kz-row">${Object.entries(trialInks()).map(([k, n]) => `<button class="kz-chip ${F.ink === k ? 'on' : ''}" data-ink="${k}">${n}</button>`).join('')}</div>
+    <div class="kz-xs" style="margin-top:8px">${t('kzMineSlot')}</div>
+    <div class="kz-bottom"><button class="kz-btn" data-act="trial">${t('kzToTrial')}</button></div>
+    <div class="kz-xs kz-center">${t('kzTrialFree')}</div>
   </div>`;
   ov.querySelector('#kz-name').oninput = e => { F.name = e.target.value; };
-  let t = 0;
-  ov.querySelector('#kz-ring').oninput = e => { F.ringText = e.target.value; clearTimeout(t); t = setTimeout(() => updateDeco(ov), 350); };
+  let tm = 0;
+  ov.querySelector('#kz-ring').oninput = e => { F.ringText = e.target.value; clearTimeout(tm); tm = setTimeout(() => updateDeco(ov), 350); };
   ov.querySelectorAll('[data-frame]').forEach(b => b.onclick = () => { F.frame = b.dataset.frame; renderFinish(ov); updateDeco(ov); });
   ov.querySelectorAll('[data-ink]').forEach(b => b.onclick = () => { F.ink = b.dataset.ink; renderFinish(ov); });
   bindActs(ov, {
@@ -624,8 +628,8 @@ function carvePlan(dStr) {
   for (const l of loops) l.dur = Math.max(0.03, l.len / total * CARVE_T);
   const sum = loops.reduce((a, l) => a + l.dur, 0);
   if (sum > CARVE_T) for (const l of loops) l.dur *= CARVE_T / sum;
-  let t = 0.15;
-  for (const l of loops) { l.t0 = t; t += l.dur; }
+  let tt = 0.15;
+  for (const l of loops) { l.t0 = tt; tt += l.dur; }
   // 嵌套（9-12 用户反馈：带圆框/方框时内容一开始就在）：圆框是一圈环 = 外圈 + 内圈两条轮廓，
   // 外圈刻完"铺开"时如果把它围住的整块都露出来，圈里的内容就跟着提前露了。
   // 所以每条轮廓铺开时只露「它自己 − 它直接包住的那些洞」（evenodd 拼在一起），
@@ -635,7 +639,7 @@ function carvePlan(dStr) {
     if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi) c = !c; } return c; };
   for (const l of loops) { l.depth = 0; for (const o of loops) if (o !== l && o.len > l.len && inside(l.pts[0], o.pts)) l.depth++; }
   for (const l of loops) l.kids = loops.filter(o => o.depth === l.depth + 1 && o.len < l.len && inside(o.pts[0], l.pts));
-  return { paths, loops, rest, end: t };
+  return { paths, loops, rest, end: tt };
 }
 function carveSVG(dStr, color) {
   const { paths, loops, rest, end } = carvePlan(dStr);
@@ -663,9 +667,9 @@ function carveSVG(dStr, color) {
 function renderCarving(ov) {
   const { svg, end } = carveSVG(finalD(), '#4A463E');
   ov.innerHTML = `<div class="kz-pane kz-carving" data-act="skip">
-    <div class="kz-t kz-center" style="margin-top:auto">正在刻…</div>
+    <div class="kz-t kz-center" style="margin-top:auto">${t('kzCarving')}</div>
     <div class="kz-block"><div class="kz-face">${svg}</div></div>
-    <div class="kz-xs kz-center" style="margin-bottom:auto">点一下跳过</div>
+    <div class="kz-xs kz-center" style="margin-bottom:auto">${t('kzSkip')}</div>
   </div>`;
   let done = false;
   const go = () => { if (done || !F) return; done = true; F.step = 'trial'; render(); };
@@ -676,20 +680,21 @@ function renderCarving(ov) {
 }
 
 // ---- ④ 试盖（9-11 用户拍板）：在草稿纸上随便盖，满意才入库、才扣次数；入库后跟普通章一样，不能删、不能改名 ----
-const TRIAL_INKS = { zhu: '朱砂', mo: '墨', song: '松绿', tao: '桃' };
+// 试盖用的四色：名字跟托盘一样走 nameOf（zh 用 data.js 原名，en/ja 查词典）
+const trialInks = () => Object.fromEntries(['zhu', 'mo', 'song', 'tao'].map(k => [k, nameOf('ink', k, INKS[k] ? INKS[k].name : k)]));
 function renderTrial(ov) {
   const left = freeLeft();
   ov.innerHTML = `<div class="kz-pane">
-    <div class="kz-top"><button class="kz-link" data-act="back">‹ 再调调</button><span>试盖一下</span><button class="kz-link" data-act="drop">不要了</button></div>
-    <div class="kz-paper" id="kz-paper"><div class="kz-xs kz-paper-hint">在纸上点一点，试着盖几下</div></div>
-    <div class="kz-row"><span class="kz-xs">印泥</span>${Object.entries(TRIAL_INKS).map(([k, n]) => `<button class="kz-chip ${F.ink === k ? 'on' : ''}" data-ink="${k}">${n}</button>`).join('')}
-      <span class="kz-grow"></span><button class="kz-chip" data-act="wipe">擦掉</button></div>
-    <div class="kz-row" style="margin-top:10px"><span class="kz-xs">放进托盘里：</span><div class="kz-tray">${['milktea', 'coffee'].map(id => stampById[id] ? `<span>${stampSVG(stampById[id], { size: 26 })}</span>` : '').join('')}<span class="me">${S(finalD(), 26, F.ink)}</span></div></div>
-    <div class="kz-lab2">名字（放进托盘后就不能改了）</div><input class="kz-field" id="kz-name" maxlength="8" placeholder="比如：小狗" value="${esc(F.name)}">
-    <div class="kz-ask">满意吗？放进托盘后，它就跟别的章一样了：<b>不能删，也不能改名</b>。</div>
-    <div class="kz-bottom"><button class="kz-btn2" data-act="back">再调调</button><button class="kz-btn" data-act="save">满意，放进托盘</button></div>
-    <button class="kz-link kz-center kz-again" data-act="again">都不满意？换一张照片 ›</button>
-    <div class="kz-xs kz-center">${kzOwned() ? '已买断，不计次' : left > 0 ? `会用掉 1 次免费（还剩 ${left} 次）` : PAY ? `免费的 ${FREE_N} 枚刻完了，放进托盘前要先买断` : '本地测试版：不限次数'}</div>
+    <div class="kz-top"><button class="kz-link" data-act="back">${t('kzBackTweak')}</button><span>${t('kzTrialTitle')}</span><button class="kz-link" data-act="drop">${t('kzDrop')}</button></div>
+    <div class="kz-paper" id="kz-paper"><div class="kz-xs kz-paper-hint">${t('kzPaperHint')}</div></div>
+    <div class="kz-row"><span class="kz-xs">${t('kzInk')}</span>${Object.entries(trialInks()).map(([k, n]) => `<button class="kz-chip ${F.ink === k ? 'on' : ''}" data-ink="${k}">${n}</button>`).join('')}
+      <span class="kz-grow"></span><button class="kz-chip" data-act="wipe">${t('kzWipe')}</button></div>
+    <div class="kz-row" style="margin-top:10px"><span class="kz-xs">${t('kzInTray')}</span><div class="kz-tray">${['milktea', 'coffee'].map(id => stampById[id] ? `<span>${stampSVG(stampById[id], { size: 26 })}</span>` : '').join('')}<span class="me">${S(finalD(), 26, F.ink)}</span></div></div>
+    <div class="kz-lab2">${t('kzNameLocked')}</div><input class="kz-field" id="kz-name" maxlength="8" placeholder="${t('kzNamePh')}" value="${esc(F.name)}">
+    <div class="kz-ask">${t('kzAsk')}</div>
+    <div class="kz-bottom"><button class="kz-btn2" data-act="back">${t('kzTweak')}</button><button class="kz-btn" data-act="save">${t('kzSave')}</button></div>
+    <button class="kz-link kz-center kz-again" data-act="again">${t('kzAgain')}</button>
+    <div class="kz-xs kz-center">${kzOwned() ? t('kzTrialOwned') : left > 0 ? t('kzTrialLeft', { n: left }) : PAY ? t('kzTrialUsed', { n: FREE_N }) : t('kzTrialLocal')}</div>
   </div>`;
   const paper = ov.querySelector('#kz-paper');
   const drawTrials = () => {
@@ -707,7 +712,7 @@ function renderTrial(ov) {
   ov.querySelectorAll('[data-ink]').forEach(b => b.onclick = () => { F.ink = b.dataset.ink; renderTrial(ov); });
   bindActs(ov, {
     back: () => { F.step = 'adjust'; render(); },
-    drop: () => { if (confirm('不要这枚了？不会扣次数。')) close(); },
+    drop: () => { if (confirm(t('kzDropConfirm'))) close(); },
     // 9-12 用户拍板：三个样子都不满意时，出路是换一张照片，不是继续调参数。
     // 这里顺手把「什么样的照片刻得好」讲一遍 —— 这是整条流程里他最可能听得进去的时刻。
     again: () => { F.step = 'again'; render(); },
@@ -728,22 +733,22 @@ function renderAgain(ov) {
     openFlow(URL.createObjectURL(f), done, onSaved);
   };
   ov.innerHTML = `<div class="kz-pane">
-    <div class="kz-top"><button class="kz-link" data-act="back">‹ 回去</button><span>换一张试试</span><button class="kz-link" data-act="close">取消</button></div>
+    <div class="kz-top"><button class="kz-link" data-act="back">${t('kzBack')}</button><span>${t('kzAgainTitle')}</span><button class="kz-link" data-act="close">${t('kzCancel')}</button></div>
     <div class="kz-card" style="margin-top:14px">
-      <div class="kz-t">这样的照片刻得好</div>
+      <div class="kz-t">${t('kzGoodPhoto')}</div>
       <ul class="kz-tips">
-        <li><b>底色要跟东西差得远</b>：浅色的东西放深色布或黑纸上，深色的东西放白纸上。⛔ 最忌讳反光的台面（大理石、玻璃）——东西和台面一样亮的那一侧，线会整条描不出来。</li>
-        <li><b>只放一个东西</b>，摆在正中间，占画面三分之一到三分之二。</li>
-        <li><b>光要平</b>，别让东西旁边压着一道浓影子。</li>
-        <li><b>侧过来拍</b>，别俯拍——俯拍容易把东西拍成一个圆或一个方。</li>
-        <li><b>东西挤在一起（花和叶子那种）</b>：先在手机相册里<b>长按主体把它拎出来</b>，存成图片，再回来「从相册换一张」选它——比在这儿裁干净得多。</li>
+        <li>${t('kzTip1')}</li>
+        <li>${t('kzTip2')}</li>
+        <li>${t('kzTip3')}</li>
+        <li>${t('kzTip4')}</li>
+        <li>${t('kzTip5')}</li>
       </ul>
     </div>
     <div class="kz-entries">
-      <label class="kz-btn">重新拍一张<input type="file" accept="image/*" capture="environment" hidden data-again></label>
-      <label class="kz-btn2">从相册换一张<input type="file" accept="image/*" hidden data-again></label>
+      <label class="kz-btn">${t('kzReshoot')}<input type="file" accept="image/*" capture="environment" hidden data-again></label>
+      <label class="kz-btn2">${t('kzAlbumAgain')}<input type="file" accept="image/*" hidden data-again></label>
     </div>
-    <div class="kz-bottom"><button class="kz-btn2" data-act="back">还是用刚才那张</button></div>
+    <div class="kz-bottom"><button class="kz-btn2" data-act="back">${t('kzKeep')}</button></div>
   </div>`;
   ov.querySelectorAll('[data-again]').forEach(inp => inp.addEventListener('change', e => {
     const f = e.target.files && e.target.files[0];
@@ -755,11 +760,11 @@ function renderAgain(ov) {
 
 function save() {
   if (!canSave()) { F.step = 'buy'; F.buyFrom = 'trial'; render(); return; }   // 免费 3 枚用完：先买断，买完自动接着放进托盘
-  const name = (F.name || '').trim() || '我的章';
+  const name = (F.name || '').trim() || t('kzDefaultName');
   const s = { id: 'my_' + Date.now().toString(36), name: name.slice(0, 8), cat: 'mine', ink: F.ink, d: finalD(), ts: Date.now(), style: F.pick, frame: F.frame };
-  if (!register(s)) { toast('这枚章的数据不对，没存上'); return; }
+  if (!register(s)) { toast(t('kzErrData')); return; }
   carved.push(s); rebuildStampIndex();
-  if (!saveAll(carved)) { toast('手机存储满了，没存上'); carved.pop(); return; }
+  if (!saveAll(carved)) { toast(t('kzErrFull')); carved.pop(); return; }
   sync.touch('carved', s.id, s);                          // 登录了就同步上去；没登录只记 mtime，登录时 all() 补推
   F.saved = s; F.step = 'saved'; render();
 }
@@ -768,19 +773,20 @@ function save() {
 // 付款 / 恢复 / 协议弹窗 / 标价全是 main.js 的现成流程（PAY），这页只管前后衔接：
 //   · 从试盖来：买成了直接 save()（他本来就在放进托盘那一步）；从入口来：买成了回入口。
 //   · 支付宝那条 buy() 立刻返回 false（到账是回前台后 main.js 查单发的），页面留在这儿，付完回来点「回试盖」再放进托盘即可。
+const BUY_GLYPH = '刻';   // i18n-exempt：买断页那个大字是图标，不是文案，三种语言都用它
 function openBuy(done) { ensureOverlay(); F = { step: 'buy', buyFrom: 'entry', done }; render(); }
 function renderBuy(ov) {
   const fromTrial = F.buyFrom === 'trial';
   const needLogin = !!(PAY.alipay && PAY.alipay() && !sync.isLoggedIn());   // 国内：支付宝那单要记在账号上
   ov.innerHTML = `<div class="kz-pane">
-    <div class="kz-top"><button class="kz-link" data-act="back">‹ ${fromTrial ? '回试盖' : '返回'}</button><span>刻章铺</span><span></span></div>
-    <div style="margin-top:auto" class="kz-center">${fromTrial ? S(finalD(), 120, F.ink) : '<div class="kz-buy-glyph">刻</div>'}</div>
-    <div class="kz-t kz-center" style="margin-top:14px">免费的 ${FREE_N} 枚刻完了</div>
-    <div class="kz-xs kz-center">买断一次，以后想刻多少刻多少。<br>刻好的章跟别的章一样：不能删，也不能改名。</div>
+    <div class="kz-top"><button class="kz-link" data-act="back">${fromTrial ? t('kzBackTrial') : t('kzBackPlain')}</button><span>${t('colSegCarve')}</span><span></span></div>
+    <div style="margin-top:auto" class="kz-center">${fromTrial ? S(finalD(), 120, F.ink) : `<div class="kz-buy-glyph">${BUY_GLYPH}</div>`}</div>
+    <div class="kz-t kz-center" style="margin-top:14px">${t('kzFreeDone', { n: FREE_N })}</div>
+    <div class="kz-xs kz-center">${t('kzBuyDesc')}</div>
     <div class="kz-bottom kz-col" style="margin-bottom:auto">
-      <button class="kz-btn" data-act="pay">买断 · <span data-price="${PRODUCT}">¥18</span></button>
-      ${needLogin ? `<div class="kz-xs kz-center">支付宝付款要先登录。点「买断」会带你去「我的」登录，这枚章先留着，回来接着放进托盘。</div>` : ''}
-      <button class="kz-link kz-center" data-act="restore">恢复购买</button>
+      <button class="kz-btn" data-act="pay">${t('kzBuyBtn')}<span data-price="${PRODUCT}">¥18</span></button>
+      ${needLogin ? `<div class="kz-xs kz-center">${t('kzNeedLogin')}</div>` : ''}
+      <button class="kz-link kz-center" data-act="restore">${t('proRestore')}</button>
       ${PAY.refundNote ? `<div class="kz-xs kz-center kz-refund">${PAY.refundNote()}</div>` : ''}
     </div>
   </div>`;
@@ -802,9 +808,9 @@ function renderSaved(ov) {
   const s = F.saved;
   ov.innerHTML = `<div class="kz-pane">
     <div style="margin-top:auto" class="kz-center">${S(s.d, 150, s.ink)}</div>
-    <div class="kz-t kz-center" style="margin-top:14px">刻好了！</div>
-    <div class="kz-xs kz-center">「${esc(s.name)}」已经放进托盘「我刻的」那一格</div>
-    <div class="kz-bottom kz-col" style="margin-bottom:auto"><button class="kz-btn" data-act="go">现在就去今天盖一下</button><button class="kz-btn2" data-act="stay">回刻章铺</button></div>
+    <div class="kz-t kz-center" style="margin-top:14px">${t('kzDoneTitle')}</div>
+    <div class="kz-xs kz-center">${t('kzDoneSub', { name: esc(s.name) })}</div>
+    <div class="kz-bottom kz-col" style="margin-bottom:auto"><button class="kz-btn" data-act="go">${t('kzGoStamp')}</button><button class="kz-btn2" data-act="stay">${t('kzStay')}</button></div>
   </div>`;
   // main.js 的 onSaved：托盘切到「我刻的」；go = 选中这枚、切到今日页
   const finish = go => { const done = F.done, onSaved = F.onSaved; close(); if (onSaved) onSaved(s, go); if (done && !go) done(); };

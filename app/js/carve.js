@@ -321,29 +321,29 @@ export function thickenBin(r, level = 2) {
  * @returns {{ level:'red'|'yellow'|'green', why:string, tip:string, all:Array, m:object }}
  */
 export function judge(out, raw = out, o = {}) {
-  if (!out.d || !out.bbox) return { level: 'red', why: '什么都没描出来', tip: '换一张背景干净、主体清楚的图', all: [], m: null };
+  if (!out.d || !out.bbox) return { level: 'red', why: 'kzJNone', tip: 'kzJNoneTip', all: [], m: null };   // why/tip 是词典键，界面上 t() 一下
   const s = strokeStats(out.bin, out.w, out.h);
   const line = s.px * 84 / s.span;              // 成品线宽（单位）
   const cover = s.ink / (s.span * s.span);      // 包围方框里墨占多少
   const m = { rawParts: raw.loops, parts: out.loops, line: +line.toFixed(1), cover: +cover.toFixed(2), fill: +s.fill.toFixed(2), kb: +(out.chars / 1024).toFixed(1) };
   const all = [];
   const hit = (level, why, tip) => all.push({ level, why, tip });
-  if (raw.loops > 300) hit('red', '图里东西太杂，描出来碎成一片', '裁得再近一点，只留想刻的东西；照片可以改用「点一下主体」');
-  else if (raw.loops > 200) hit('yellow', '细节偏多，托盘里会有点糊', '裁近一点，或者把「细节」往少调');
+  if (raw.loops > 300) hit('red', 'kzJBusy', 'kzJBusyTip');
+  else if (raw.loops > 200) hit('yellow', 'kzJDetail', 'kzJDetailTip');
   // 剪影专用（9-12）：墨占包围盒 > 0.72 = 外形已经退化成方块 / 圆 / 一坨，轮廓不带信息了。
   // 只对剪影判，⛔ 别对层次判——层次和剪影共用同一个 bin（toneStamp 的 base 是整块 mask），
   // 拿这条去卡层次会把池塘、山水这些层次做得挺好的图一起误杀。
   // 阈值来自 9-12 的 33 张回归（剪影改走线条管线之后重测）：好的落在 0.46~0.73，一坨的 0.76 起。
-  if (o.solid && s.fill > 0.75) hit('red', '剪影退化成一整块了，看不出是什么', '这张图的轮廓不带信息，换「线条」或「层次」；要用剪影得让主体侧过来、背景换成纯色');
-  if (cover > 0.8) hit('red', '变成了一整块，看不出形状', '裁近一点重新点主体，或者改用线稿');
-  else if (cover > 0.55 && out.loops > 3) hit('yellow', '太满了，托盘里看不出细节', '把「粗细」调细一档，或者裁近一点');
-  if (cover < 0.12 && out.loops >= 8) hit('red', '东西太散，拼不成一个图案', '裁到只剩一个主体');
-  if (line < 1.6 && cover < 0.5) hit('red', '线太细，托盘里几乎看不见', '把「粗细」调到中或粗');
-  else if (line < 2.4 && cover < 0.5) hit('yellow', '线条偏细', '把「粗细」调到中');
-  if (out.loops > 45) hit('yellow', '小块偏多，托盘里会有点糊', '把「细节」往少调一点');
-  if (out.chars > 30 * 1024) hit('yellow', '图形太复杂', '把「细节」往少调一点，或者裁近一点');
+  if (o.solid && s.fill > 0.75) hit('red', 'kzJSilBlob', 'kzJSilBlobTip');
+  if (cover > 0.8) hit('red', 'kzJBlock', 'kzJBlockTip');
+  else if (cover > 0.55 && out.loops > 3) hit('yellow', 'kzJFull', 'kzJFullTip');
+  if (cover < 0.12 && out.loops >= 8) hit('red', 'kzJScatter', 'kzJScatterTip');
+  if (line < 1.6 && cover < 0.5) hit('red', 'kzJThin', 'kzJThinTip');
+  else if (line < 2.4 && cover < 0.5) hit('yellow', 'kzJThinish', 'kzJThinishTip');
+  if (out.loops > 45) hit('yellow', 'kzJPieces', 'kzJPiecesTip');
+  if (out.chars > 30 * 1024) hit('yellow', 'kzJComplex', 'kzJComplexTip');
   const worst = all.find(x => x.level === 'red') || all.find(x => x.level === 'yellow');
-  if (!worst) return { level: 'green', why: '托盘里看得清', tip: '', all, m };
+  if (!worst) return { level: 'green', why: 'kzJGood', tip: '', all, m };
   return { level: worst.level, why: worst.why, tip: worst.tip, all, m };
 }
 
@@ -701,6 +701,6 @@ export function looksLikeDrawing(src) {
 export function sourceHint(src) {
   const w = src.naturalWidth || src.width, h = src.naturalHeight || src.height;
   const ratio = Math.max(w, h) / Math.min(w, h);
-  if (ratio >= 1.9) return '这像是一张手机截图，先把想刻的那一块裁出来';
+  if (ratio >= 1.9) return 'kzHintScreenshot';   // 词典键
   return '';
 }

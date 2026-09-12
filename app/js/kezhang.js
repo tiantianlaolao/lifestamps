@@ -6,7 +6,6 @@
 // ============================================================
 import { STAMPS, INIT_STAMPS, rebuildStampIndex, stampById } from './data.js';
 import { stampSVG } from './stamp.js';
-import { imageToStamp } from './trace.js';
 import { prepare, magicWand, refineMask, thickenBin, judge, sourceHint, decorate, autoSubject, toneStamp, silhouette, lineStamp } from './carve.js';
 import { toast, thump } from './ui.js';
 
@@ -116,7 +115,7 @@ function openFlow(src, done, onSaved) {
       // 9-12 用户拍板：一进来先看到**整张照片**（zoom 拉到下限），要多近自己往里推。
       // 原来默认 1 = 短边方框，竖着拍的照片一上来上下就被切掉，用户以为东西丢了。
       crop: { cx: .5, cy: .5, zoom: Math.min(1, Math.min(img.width, img.height) / Math.max(img.width, img.height)) },
-      pick: null, more: false, hint2: null, thr: 0, detail: 2, weight: 2,
+      pick: null, hint2: null, detail: 2, weight: 2,
       taps: [], tolAdj: 0, erase: false, picking: false, src2: null, Ptap: null, tapSel: null, autoTap: undefined,
       name: '', cat: 'mine', ink: 'zhu', frame: 'none', ringText: '', dateOn: false, decoD: null };
     ensureOverlay();
@@ -234,14 +233,9 @@ const DETAIL = { 1: { minArea: 40, eps: 2.0 }, 2: { minArea: 12, eps: 1.2 }, 3: 
 // 9-11：「去掉背景」（线条版）换成「层次」——用户要尽量像原图，层次（3 层深浅）最接近
 const CANDS = [['line', '线条'], ['tone', '层次'], ['sil', '剪影']];
 const TONE_DETAIL = { 1: { minArea: 80, eps: 2.0 }, 2: { minArea: 30, eps: 1.3 }, 3: { minArea: 12, eps: 0.9 } };
+// 9-12 用户拍板删掉了「深浅」滑杆：线条已经自动在全局 / 局部阈值里挑，深浅一动就退回单一路，
+// 等于关掉自动挑，留着只添乱。线条永远走 lineStamp。
 function traceLine(src) {
-  // 「深浅」只对全局阈值那条路有意义（局部阈值没有一个全局的 thr 可调），
-  // 所以一动深浅就退回全局阈值那条；不动的时候走 lineStamp 自动二选一。
-  if (F.thr) {
-    const base = imageToStamp(src, { ...DETAIL[F.detail] });
-    const raw = imageToStamp(src, { ...DETAIL[F.detail], thr: Math.min(250, Math.max(5, base.thr + F.thr)) });
-    return { raw, out: thickenBin(raw, F.weight) };
-  }
   return lineStamp(src, { ...DETAIL[F.detail] }, F.weight);
 }
 // ---- 点选主体（9-12 用户拍板：要能微调）----
@@ -344,10 +338,9 @@ const firstPick = () => 'line';
 // ⛔ 别写成"魔棒 / 容差 / 选区"这类词——用户不认，全部说人话。
 const HINTS = {
   styles: '线条＝把图里的线描出来，纸上画的、线清楚的东西最合适。\n层次＝主体内部按明暗分三层叠印，照片想尽量像原图时用。\n剪影＝主体整个填实，只剩外形——只有轮廓本身就认得出的东西才行（一块布、一只鞋、一朵花），圆的方的、要靠里面的字和细节认的（电池、脸、截图）一律不行。',
-  tolAdj: '刚才点的每一下，往大调会多圈进来一些、往小调会少圈一些。',
+  tolAdj: '你点的每一下，往大调会多选进来一些、往小调会少选一些。',
   detail: '往少调＝去掉零碎小块，托盘里更干净；往多调＝保留细节，但缩小到托盘里容易糊。',
   weight: '托盘 26px 下看不清就往粗调。密线稿加粗会把线缝填死，程序会自己退回去，所以有时候调了变化不大。',
-  thr: '描出来的东西太少就往深调，太脏太花就往浅调。',
 };
 const q = k => `<button class="kz-q" data-hint="${k}" aria-label="说明">?</button>`;
 const hintBox = k => F.hint2 === k ? `<div class="kz-hintbox">${esc(HINTS[k]).replace(/\n/g, '<br>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</div>` : '';
@@ -356,6 +349,9 @@ let busy = 0;
 function renderAdjust(ov) {
   const lvl = { green: 'g', yellow: 'y', red: 'r' };
   const usesSel = F.pick === 'tone' || F.pick === 'sil';
+  // 这一页每个动作都是整页重画（innerHTML），滚动容器 .kz-pane 被销毁重建、滚动归零 ——
+  // 照片在下半页，点一下就弹回顶上（9-12 用户反馈）。重画前记下、重画完放回去。
+  const scrollY = ov.querySelector('.kz-pane')?.scrollTop || 0;
   ov.innerHTML = `<div class="kz-pane">
     <div class="kz-top"><button class="kz-link" data-act="back">‹ 重新裁</button><span>挑一个样子${q('styles')}</span><button class="kz-link" data-act="close">取消</button></div>
     <div class="kz-result">
@@ -365,17 +361,12 @@ function renderAdjust(ov) {
     ${hintBox('styles')}
     <div class="kz-cands" id="kz-cands">${CANDS.map(([k, n]) => `<button class="kz-cand ${F.pick === k ? 'on' : ''}" data-pick="${k}"><span class="kz-cand-p"></span><i>${n}</i></button>`).join('')}</div>
     ${F.picking ? `<div class="kz-photo" id="kz-photo"><canvas id="kz-photoc"></canvas></div>
-      <div class="kz-xs kz-center">${F.erase ? '点一下多圈进来的地方，把它去掉' : '点一下你要刻的东西，亮着的就是选中的；一下不够就多点几下'}</div>
-      <div class="kz-row"><button class="kz-chip ${F.erase ? '' : 'on'}" data-erase="0">加一块</button><button class="kz-chip ${F.erase ? 'on' : ''}" data-erase="1">去掉一块</button><button class="kz-chip" data-act="undo">撤销</button>${F.taps.length ? `<button class="kz-chip" data-act="pickall">整张都要</button>` : ''}<span class="kz-grow"></span><button class="kz-chip" data-act="pickoff">好了</button></div>`
-      : `<button class="kz-link kz-pick" data-act="pickon">${F.taps.length ? `只刻了你选的那块（点了 ${F.taps.length} 下）· 再调调 ›` : '这张里东西有点多？点一下你要的那个 ›'}</button>`}
+      <div class="kz-xs kz-center">${F.erase ? '<b>点不要的部分</b>，把它去掉' : '<b>点你要的部分</b>，亮起来的会刻进去'}</div>
+      <div class="kz-row"><button class="kz-chip ${F.erase ? '' : 'on'}" data-erase="0">加一块</button><button class="kz-chip ${F.erase ? 'on' : ''}" data-erase="1">去掉一块</button><button class="kz-chip" data-act="undo">撤销</button>${F.taps.length ? `<button class="kz-chip" data-act="pickall">整张都要</button>` : ''}<span class="kz-grow"></span><button class="kz-chip" data-act="pickoff">好了</button></div>
+      ${F.taps.length ? `<div class="kz-ctl"><div class="kz-lab">每一下的范围${q('tolAdj')}<span>小一点 · 大一点</span></div><input type="range" min="-16" max="16" step="2" value="${F.tolAdj}" data-k="tolAdj"></div>${hintBox('tolAdj')}` : ''}`
+      : `<button class="kz-link kz-pick" data-act="pickon">${F.taps.length ? '已经自己修过 · 再修修 ›' : '当前图不满意？点这里可以自己修 ›'}</button>`}
     <div class="kz-ctl"><div class="kz-lab">细节${q('detail')}<span>少 · 多</span></div><input type="range" min="1" max="3" step="1" value="${F.detail}" data-k="detail"></div>${hintBox('detail')}
     ${F.pick === 'line' ? `<div class="kz-ctl"><div class="kz-lab">粗细${q('weight')}</div><div class="kz-opts">${['原样', '细', '中', '粗'].map((n, i) => `<button data-weight="${i}" class="${F.weight === i ? 'on' : ''}">${n}</button>`).join('')}</div></div>${hintBox('weight')}` : ''}
-    <button class="kz-link kz-more" data-act="more">${F.more ? '收起 ‹' : '更多调整 ›'}</button>
-    ${F.more ? `<div class="kz-morebox">
-      ${F.pick === 'line' ? `<div class="kz-ctl"><div class="kz-lab">深浅${q('thr')}<span>浅一点 · 深一点</span></div><input type="range" min="-60" max="60" step="2" value="${F.thr}" data-k="thr"></div>${hintBox('thr')}` : ''}
-      ${F.taps.length ? `<div class="kz-ctl"><div class="kz-lab">点选的范围${q('tolAdj')}<span>小一点 · 大一点</span></div><input type="range" min="-16" max="16" step="2" value="${F.tolAdj}" data-k="tolAdj"></div>${hintBox('tolAdj')}` : ''}
-      ${F.pick !== 'line' && !F.taps.length ? '<div class="kz-xs">这个样子没有更多可调的了</div>' : ''}
-    </div>` : ''}
     <div class="kz-bottom"><button class="kz-btn" data-act="next" id="kz-next" disabled>下一步</button></div>
   </div>`;
 
@@ -426,7 +417,6 @@ function renderAdjust(ov) {
     pickoff: () => { F.picking = false; renderAdjust(ov); },
     pickall: () => { F.taps = []; F.autoTap = undefined; applyTaps(); F.forced = false; renderAdjust(ov); },
     undo: () => { if (!F.taps.length) return; F.taps.pop(); applyTaps(); F.forced = false; renderAdjust(ov); },
-    more: () => { F.more = !F.more; renderAdjust(ov); },
     next: () => { if (F.result && F.result.out.d) { F.step = 'finish'; F.decoD = null; render(); } },
   });
   if (F.picking) {
@@ -455,6 +445,8 @@ function renderAdjust(ov) {
       renderAdjust(ov);
     }, { once: true });
   }
+  // 放这儿而不是 innerHTML 刚赋完：那时照片 canvas 还没摆进去、页面不够高，scrollTop 会被夹回 0
+  if (scrollY) ov.querySelector('.kz-pane').scrollTop = scrollY;
   refresh();
 }
 

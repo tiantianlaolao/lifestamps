@@ -572,7 +572,7 @@ function carvePlan(dStr) {
     const pts = []; for (let i = 0; i + 1 < nums.length; i += 2) pts.push([+nums[i], +nums[i + 1]]);
     let len = 0; for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
     len += Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]);
-    loops.push({ d: seg, len, x0: pts[0][0], y0: pts[0][1] });
+    loops.push({ d: seg, len, pts, x0: pts[0][0], y0: pts[0][1] });
   }
   // 条数上限：密线稿能有上千条，每条两个 SMIL 动画手机上扛不住。只给最长的 CARVE_MAX 条单独起刀，
   // 剩下的碎条最后一起露出来（rest）。
@@ -587,13 +587,22 @@ function carvePlan(dStr) {
   if (sum > CARVE_T) for (const l of loops) l.dur *= CARVE_T / sum;
   let t = 0.15;
   for (const l of loops) { l.t0 = t; t += l.dur; }
+  // 嵌套（9-12 用户反馈：带圆框/方框时内容一开始就在）：圆框是一圈环 = 外圈 + 内圈两条轮廓，
+  // 外圈刻完"铺开"时如果把它围住的整块都露出来，圈里的内容就跟着提前露了。
+  // 所以每条轮廓铺开时只露「它自己 − 它直接包住的那些洞」（evenodd 拼在一起），
+  // 洞里的东西等刀刻到它们自己再露。谁包谁 = 拿第一个顶点做射线法，只在起刀的这 ≤200 条里算。
+  const inside = (pt, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi) c = !c; } return c; };
+  for (const l of loops) { l.depth = 0; for (const o of loops) if (o !== l && o.len > l.len && inside(l.pts[0], o.pts)) l.depth++; }
+  for (const l of loops) l.kids = loops.filter(o => o.depth === l.depth + 1 && o.len < l.len && inside(o.pts[0], l.pts));
   return { paths, loops, rest, end: t };
 }
 function carveSVG(dStr, color) {
   const { paths, loops, rest, end } = carvePlan(dStr);
   const f = n => n.toFixed(3);
   // 一条刻完，这一块 0.35 秒铺开（像铲底），不是"啪"一下整块跳出来
-  const mask = loops.map(l => `<path d="${l.d}" fill="#fff" opacity="0"><animate attributeName="opacity" from="0" to="1" begin="${f(l.t0 + l.dur)}s" dur=".35s" fill="freeze"/></path>
+  const mask = loops.map(l => `<path d="${l.d}${l.kids.map(k => k.d).join('')}" fill="#fff" fill-rule="evenodd" opacity="0"><animate attributeName="opacity" from="0" to="1" begin="${f(l.t0 + l.dur)}s" dur=".35s" fill="freeze"/></path>
     <path d="${l.d}" fill="none" stroke="#fff" stroke-width="2.6" stroke-linejoin="round" stroke-dasharray="${f(l.len)}" stroke-dashoffset="${f(l.len)}"><animate attributeName="stroke-dashoffset" to="0" begin="${f(l.t0)}s" dur="${f(l.dur)}s" fill="freeze"/></path>`).join('');
   const restMask = rest.length ? `<path d="${rest.map(l => l.d).join('')}" fill="#fff" opacity="0"><animate attributeName="opacity" from="0" to="1" begin="${f(end)}s" dur=".4s" fill="freeze"/></path>` : '';
   const art = paths.map(p => `<path d="${p.d}"${p.attrs.replace('fill="CC"', `fill="${color}"`)}/>`).join('');

@@ -299,7 +299,7 @@ export function buildMonthCard(y, m) {
     top.forEach(([sid, n], i) => {
       const def = stampById[sid]; if (!def) return;
       const ix = startX + i * itemW + itemW / 2;
-      statsRow += placedStamp(def, { x: ix - 33, y: cursor + 56, size: 66, rot: rots[i * 3] - 1 });
+      statsRow += mark && isMineId(sid) ? mineMark(ix - 33, cursor + 56, 66) : placedStamp(def, { x: ix - 33, y: cursor + 56, size: 66, rot: rots[i * 3] - 1 });
       statsRow += `<text x="${ix}" y="${cursor + 156}" text-anchor="middle" font-size="22"
         fill="${INK_C}" font-family="${HAND_CN}">${xesc(nameOf('stamp', sid, def.name))}</text>
       <text x="${ix}" y="${cursor + 186}" text-anchor="middle" font-size="19"
@@ -392,7 +392,18 @@ export async function openShare(y, m) {
 // ============================================================
 // 今日手账卡（V1.1 #7）：日期 + 星期 + 天气 + 当日印章按真实落点还原
 // ============================================================
-export function buildDayCard(dk, weather, qr = null) {
+// 自刻章（9-12 用户拍板，平台责任）：id 以 my_ 开头的章是用户自己刻的。
+//   转发版（走 App 分享出去的）画**虚线框 + 「自己刻的」**，不带图案——经我们平台流出去的东西里不能有用户图案；
+//   保存版（保存到相册）画真章，但**不带二维码**——它就是用户手机里的一张图，不是平台的分享卡。
+//   主线上永远没有 my_ 的 id，这里的分支不会被走到。
+const isMineId = id => typeof id === 'string' && id.startsWith('my_');
+function mineMark(x, y, size) {
+  return `<g transform="translate(${x},${y})"><rect x="3" y="3" width="${size - 6}" height="${size - 6}" rx="10" fill="none"
+    stroke="${SUB}" stroke-width="3" stroke-dasharray="10 8" opacity=".7"/>
+    <text x="${size / 2}" y="${size / 2 + 8}" text-anchor="middle" font-size="${Math.round(size * 0.2)}" fill="${SUB}" font-family="${HAND_CN}">${COPY.mineMark}</text></g>`;
+}
+export function buildDayCard(dk, weather, qr = null, opt = {}) {
+  const mark = opt.carvedAs === 'mark';
   const recs = store.recordsOf(dk);
   const d = new Date(dk + 'T12:00:00');
 
@@ -434,7 +445,7 @@ export function buildDayCard(dk, weather, qr = null) {
     const rowW = cols * size + (cols - 1) * gapX;
     const x = 540 - rowW / 2 + inRow * (size + gapX);
     const y = top + row * (size + gapY);
-    art += placedStamp(def, {
+    art += mark && isMineId(r.stampId) ? mineMark(x, y, size) : placedStamp(def, {
       x, y, size, ink: r.ink, mat: r.mat,
       rot: r.rot ?? rotSeq[i % 10], opacity: r.op ?? 0.92,
     });
@@ -469,7 +480,7 @@ export function buildDayCard(dk, weather, qr = null) {
   ${span}
   ${N ? '' : `<text x="540" y="740" text-anchor="middle" font-size="34" fill="${FAINT}"
       font-family="${heroFont()}">${COPY.emptyPast}</text>`}
-  ${cornerMark(140, qr)}
+  ${opt.noQr ? '' : cornerMark(140, qr)}
 </svg>`;
 }
 
@@ -550,8 +561,12 @@ export async function openShareDay(dk) {
         store.dayNoteOf(dk) || '') || rec; } catch (_) { /* 留着原来那个 rec */ }
     }
     // 这一天章全擦光了：旧分享上还挂着擦掉前的纸（服务端不收空的一天），卡上别再指向它
-    const svg = buildDayCard(dk, weather, store.recordsOf(dk).length && rec ? rec.qr : null);
+    const qrNow = store.recordsOf(dk).length && rec ? rec.qr : null;
+    const hasMine = store.recordsOf(dk).some(r => isMineId(r.stampId));
+    // 有自刻章：转发版（占位 + 二维码）给预览和分享；保存版（真章、无二维码）只给「保存图片」
+    const svg = buildDayCard(dk, weather, qrNow, { carvedAs: hasMine ? 'mark' : 'real' });
     const dataUrl = await rasterize(svg, 1080, 1440, 1.5);
+    const saveUrl = hasMine ? await rasterize(buildDayCard(dk, weather, null, { carvedAs: 'real', noQr: true }), 1080, 1440, 1.5) : dataUrl;
     const wRow = ['sun','cloud','rain','storm','snow','night'].map(w =>
       `<button class="wbtn ${weather === w ? 'sel' : ''}" data-w="${w}">${weatherSVG(w, 26, weather === w ? '#C94B3C' : '#8C8880')}</button>`).join('');
     ov.innerHTML = `
@@ -562,6 +577,7 @@ export async function openShareDay(dk) {
                placeholder="${COPY.shNotePh}">
       </div>
       ${actionRowHTML()}
+      ${hasMine ? `<div class="share-hint">${COPY.mineShareHint}</div>` : ''}
       ${/* 🔴 这一句是 A 分享的动力所在，别删。抽屉里那句「只能由朋友送给你」
              要翻到抽屉才看得见，而 A 决定发不发是在这一屏。 */''}
       <div class="share-hint">${COPY.shareGiftHint}</div>
@@ -581,7 +597,7 @@ export async function openShareDay(dk) {
       store.setDayNote(dk, v);
       draw();
     };
-    bindSaveBtn(document.getElementById('sh-save'), dataUrl, COPY.dayFileName.replace('{dk}', dk));
+    bindSaveBtn(document.getElementById('sh-save'), saveUrl, COPY.dayFileName.replace('{dk}', dk));
     bindShareBtn(document.getElementById('sh-share2'), dataUrl, COPY.dayFileName.replace('{dk}', dk));
     bindLinkBtn(dk);
     document.getElementById('sh-close').onclick = () => ov.classList.remove('show');

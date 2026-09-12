@@ -57,6 +57,12 @@ const SESSION_TTL_MS = 400 * 24 * 60 * 60 * 1000;   // 滑动 400 天：App 常�
 const SYNC_BODY_LIMIT = 512 * 1024;                  // 一次推送上限（一年的记录也就几百 KB）
 const MAX_CHANGES = 500;                             // 单次推送条数上限，客户端分批
 const MAX_ITEM_BYTES = 8 * 1024;                     // 单条 data 上限
+// 按 kind 放宽的单条上限（9-12，刻章铺自刻章）：一枚章的 path 最多 30KB，8K 装不下，只放宽这一种。
+const KIND_MAX_BYTES = { carved: 32 * 1024 };
+// 跟 app/js/kezhang.js 的 SAFE_D **同一条**：只许 M/L/Z + 数字，1~4 条 path，透明度只许三档。
+// 服务端本来不解析 data（哑仓库），但这一种要被用户的另一台设备当 SVG 画出来，多一道不亏。
+// ⚠️ 两边改要一起改。
+const CARVED_SAFE_D = /^(<path d="[MLZ0-9.,\s-]*" fill="CC" fill-rule="evenodd"( fill-opacity="(\.3|\.55|1)")?\/>){1,4}$/;
 const MAX_ROWS_PER_USER = 50000;                     // 灌数据的兜底（十几年的记录也到不了）
 const PULL_LIMIT = 500;
 
@@ -293,8 +299,14 @@ function mount({ db, send, readBody }) {
         || typeof c.id !== 'string' || !c.id.length || c.id.length > 64
         || !Number.isFinite(c.mtime)) return send(res, 400, { error: 'bad change' });
       if (c.data !== null && c.data !== undefined) {
-        if (typeof c.data !== 'string' || Buffer.byteLength(c.data) > MAX_ITEM_BYTES) {
+        if (typeof c.data !== 'string' || Buffer.byteLength(c.data) > (KIND_MAX_BYTES[c.kind] || MAX_ITEM_BYTES)) {
           return send(res, 400, { error: 'bad data' });
+        }
+        if (c.kind === 'carved') {                       // 自刻章：id 要对得上，d 要过 SAFE_D
+          let o = null; try { o = JSON.parse(c.data); } catch (_) { /* 下面统一拒 */ }
+          if (!o || typeof o !== 'object' || o.id !== c.id || typeof o.d !== 'string' || !CARVED_SAFE_D.test(o.d)) {
+            return send(res, 400, { error: 'bad carved' });
+          }
         }
       }
     }

@@ -48,6 +48,11 @@ export const sync = {
   meta: load('meta', {}),              // `${kind}|${id}` -> 本地已知 mtime（LWW 判据）
   lastSyncAt: load('lastSyncAt', 0),
   onApplied: null,                     // 拉到远端变更并应用后叫一声（main.js 拿去重渲染）
+  // 外挂 kind（9-12，刻章铺的 carved 用）：主程序不认识的 kind 交给注册过的处理器，
+  //   ext[kind] = { apply(id, data), all() → [[id, data, mtime], …] }
+  //   apply = 拉到远端变更时叫；all = 登录那一刻 fullPush 用。没注册的 kind 照旧安静跳过。
+  //   ⛔ 主程序自己的 kind 别往这儿放，这是给分支功能留的缝，让它们不用改 sync.js。
+  ext: {},
   _timer: null,
   _busy: false,
 
@@ -181,6 +186,7 @@ export const sync = {
     for (const [m, t] of Object.entries(store.titles)) put('title', m, t);
     put('settings', 'settings', store.settings);
     put('pro', 'pro', { pro: !!store.pro });
+    for (const [kind, e] of Object.entries(this.ext)) for (const [id, data, ts] of (e.all ? e.all() : [])) put(kind, id, data, ts);
   },
 
   // 「清空所有记录」在登录状态下也要清云端：给云上每个已知条目发墓碑。
@@ -190,7 +196,7 @@ export const sync = {
     const now = Date.now();
     for (const key of Object.keys(this.meta)) {
       const [kind, id] = [key.slice(0, key.indexOf('|')), key.slice(key.indexOf('|') + 1)];
-      if (kind === 'settings' || kind === 'pro') continue;
+      if (kind === 'settings' || kind === 'pro' || this.ext[kind]) continue;   // 外挂 kind（自刻章）不是记录，不清
       this.meta[key] = now;
       this.queue[key] = { kind, id, data: null, mtime: now };
     }
@@ -298,6 +304,7 @@ export const sync = {
         if (data != null && data.pro) store.pro = true;   // 只往有利方向合，真授权归 IAP
         break;
       default:
+        if (this.ext[c.kind]) { try { this.ext[c.kind].apply(c.id, data); } catch (_) { /* 外挂自己负责，别炸引擎 */ } }
         break;                                       // 未来版本的新 kind：安静跳过，别炸老客户端
     }
     // 🔴 直接落盘但**不触发 onChange**（applyRemote 不该再入队，那是回声循环）。

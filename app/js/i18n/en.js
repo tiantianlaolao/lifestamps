@@ -96,6 +96,11 @@ export const EN = {
   mkPassBuy: 'Get the Pass',
   mkSeries: 'Series', mkLimited: 'Limited', mkNotInPass: 'not in the Pass',
   mkBoxCount: '{n} stamps', mkPassHas: 'In your Pass', mkHave: 'Owned', mkPriceSoon: 'price soon',
+  // 自刻章（9-12，刻章铺 M4）：转发版占位 / 分享面板提示 / 链接页占位与说明
+  mineMark: 'My own',
+  mineShareHint: 'Stamps you carved yourself only appear in the image you save; forwarded images and the link show a dashed box instead',
+  frMine: 'a stamp they carved',
+  frMineNote: 'Some stamps this day were carved by the sender and are not shown here',
   mkBoxNote: 'Boxes bought on their own are not refunded if you later get the Pass.',
   mkThanks: 'Done — the stamps are in your tray.', mkRestored: 'Restored.',
   mkInkDesc2: 'Does not include any stamps.', mkInkBuy: 'Get the ink pads',

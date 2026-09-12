@@ -96,6 +96,11 @@ export const JA = {
   mkPassBuy: 'パスを開く',
   mkSeries: 'シリーズ', mkLimited: '限定', mkNotInPass: 'パス対象外',
   mkBoxCount: '{n}個', mkPassHas: 'パスに含む', mkHave: '所有済み', mkPriceSoon: '価格は後ほど',
+  // 自刻章（9-12，刻章铺 M4）：转发版占位 / 分享面板提示 / 链接页占位与说明
+  mineMark: '自作',
+  mineShareHint: '自分で彫ったはんこは自分で保存した画像にだけ表示されます。転送した画像やリンクでは枠だけになります',
+  frMine: '自作のはんこ',
+  frMineNote: 'この日には送り主が自分で彫ったはんこがあり、ここでは表示されません',
   mkBoxNote: '単品で買った箱は、あとでパスを買っても差額は戻りません。',
   mkThanks: '買えました。はんこはトレイにあります。', mkRestored: '復元しました。',
   mkInkDesc2: 'はんこは含みません。', mkInkBuy: 'インク台を開く',

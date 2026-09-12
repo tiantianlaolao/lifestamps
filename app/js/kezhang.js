@@ -8,6 +8,7 @@ import { STAMPS, INIT_STAMPS, rebuildStampIndex, stampById } from './data.js';
 import { stampSVG } from './stamp.js';
 import { prepare, magicWand, refineMask, thickenBin, judge, sourceHint, decorate, autoSubject, toneStamp, silhouette, lineStamp } from './carve.js';
 import { toast, thump } from './ui.js';
+import { sync } from './sync.js';
 
 // ---- 自刻章的存放（M1：localStorage；一枚 ≤ 30KB，几十枚没问题；M4 换 IndexedDB + 账号同步）----
 const K = 'lifestamps_carved';
@@ -34,6 +35,19 @@ function register(s) {
 }
 for (const s of carved) register(s);
 rebuildStampIndex();
+
+// ---- 同步（M4，9-12）：走 sync.js 的外挂缝，不改主程序的 kind 表 ----
+// 入库时 touch('carved')；登录那一刻 all() 把本机的全量入队；另一台拉到就 apply。
+// apply 走同一个 register()：SAFE_D 在那儿把关，坏数据进不了章库。入库后不能删（用户拍板），所以没有墓碑。
+sync.ext.carved = {
+  apply(id, data) {
+    if (!data || typeof data !== 'object' || data.id !== id) return;
+    if (carved.some(x => x.id === id)) return;           // 自己推上去的会原样拉回来
+    if (!register(data)) return;                          // SAFE_D 没过 = 不要
+    carved.push(data); rebuildStampIndex(); saveAll(carved);
+  },
+  all() { return carved.map(s => [s.id, s, s.ts]); },
+};
 
 export const freeLeft = () => Math.max(0, FREE_N - carved.length);
 
@@ -720,6 +734,7 @@ function save() {
   if (!register(s)) { toast('这枚章的数据不对，没存上'); return; }
   carved.push(s); rebuildStampIndex();
   if (!saveAll(carved)) { toast('手机存储满了，没存上'); carved.pop(); return; }
+  sync.touch('carved', s.id, s);                          // 登录了就同步上去；没登录只记 mtime，登录时 all() 补推
   F.saved = s; F.step = 'saved'; render();
 }
 

@@ -46,6 +46,11 @@
   .f-chip{position:absolute; transform:translate(-50%,-50%); display:flex;
         flex-direction:column; align-items:center; pointer-events:none}
   .f-chip .f-tm{font-size:8px; color:var(--sub,#6B655C); opacity:.75; margin-top:-3px}
+  /* 9-12 刻章铺：A 自己刻的章不从平台转出去 —— 链接页只画一个虚线框 + 「自己刻的章」 */
+  .f-chip.f-mine .f-mine-box{width:50px; height:50px; border:1.5px dashed rgba(107,101,92,.55); border-radius:6px;
+        display:flex; align-items:center; justify-content:center; text-align:center;
+        font-size:9px; line-height:1.2; color:var(--sub,#6B655C); padding:4px; box-sizing:border-box}
+  .f-minenote{font-size:11.5px; color:var(--sub,#6B655C); opacity:.8; text-align:center; margin:8px 0 0}
   .f-chip .f-nt{font-family:var(--f-hand,"LXGW WenKai",serif); font-size:11px;
             max-width:120px; text-align:center; line-height:1.5; margin-top:1px}
   /* 落下来的封蜡：B 送完就贴在纸上，让"送到了"这件事看得见 */
@@ -189,7 +194,13 @@ function render() {
   const already = data.mine || sentSeal();
 
   // 纸：把 A 那天的章按原位摆回去
+  let hasMine = false;
   const chips = data.stamps.map(s => {
+    // 自刻章（my_ 开头）：不是平台的章，也没随分享传过来 —— 画个虚线框占位就好
+    if (typeof s.id === 'string' && s.id.startsWith('my_')) {
+      hasMine = true;
+      return `<div class="f-chip f-mine" style="left:${s.x}%;top:${s.y}%"><div class="f-mine-box">${esc(t('frMine'))}</div></div>`;
+    }
     const def = stampById[s.id];
     if (!def) return '';
     // 快照里也可能有封蜡（A 收到后重新分享这一天）：ts 是编的，不标时间
@@ -220,6 +231,7 @@ function render() {
       <div class="f-dt">${esc(monthDay(d))} · ${esc(weekName(d))} · ${esc(t('frStampsN', { n: data.stamps.length }))}</div>
     </div>
     <div class="f-paper" id="paper">${chips}${waxes}</div>
+    ${hasMine ? `<div class="f-minenote">${esc(t('frMineNote'))}</div>` : ''}
     ${verdict ? `<div class="f-verdict">${esc(verdict)}</div>` : ''}
     ${data.note ? `<div class="f-verdict" style="opacity:.75;font-size:13.5px">${t('frQuote').replace('{t}', esc(data.note))}</div>` : ''}
 

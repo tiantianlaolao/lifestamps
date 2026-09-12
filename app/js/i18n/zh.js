@@ -106,6 +106,11 @@ export const ZH = {
   mkPassBuy: '打开通行证',
   mkSeries: '系列', mkLimited: '限量', mkNotInPass: '不含在通行证内',
   mkBoxCount: '{n} 枚', mkPassHas: '通行证已含', mkHave: '已拥有', mkPriceSoon: '价格稍后',
+  // 自刻章（9-12，刻章铺 M4）：转发版占位 / 分享面板提示 / 链接页占位与说明
+  mineMark: '自己刻的',
+  mineShareHint: '自己刻的章只会在你自己保存的图里显示；转发出去和链接里都是虚线框',
+  frMine: '自己刻的章',
+  frMineNote: '这天有 TA 自己刻的章，这里不显示图案',
   mkBoxNote: '已单独购买的盒子，之后买通行证不退差价。',
   mkThanks: '买好了，章已经在托盘里。', mkRestored: '已经恢复。',
   mkInkDesc2: '不含任何章。', mkInkBuy: '打开印泥盒',

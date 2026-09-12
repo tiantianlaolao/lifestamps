@@ -574,6 +574,26 @@ function client() {
   }, L1.body.token);
   ok(badc.status === 400, '不合法的 kind 被 400 拒掉：' + badc.status);
 
+  console.log('\n== 同步：自刻章 carved（9-12，刻章铺 M4）==');
+  const carvedD = n => '<path d="' + 'M1,1L2,2L1,3Z'.repeat(n) + '" fill="CC" fill-rule="evenodd"/>';
+  const carvedItem = (id, d) => ({ kind: 'carved', id, data: JSON.stringify({ id, name: '苹果', cat: 'mine', ink: 'zhu', d, ts: 1 }), mtime: 5000 });
+  const cvBig = carvedItem('my_a', carvedD(1200));                      // ≈ 16KB：超 8K，但在 32K 之内
+  ok(Buffer.byteLength(cvBig.data) > 8 * 1024, '测试用的章确实超过了 8K（' + Buffer.byteLength(cvBig.data) + ' 字节）');
+  const cv1 = await ja('POST', '/api/sync', { cursor: 0, changes: [cvBig] }, L1.body.token);
+  ok(cv1.status === 200, 'carved 单条放宽到 32K：16K 的章能同步上去（' + cv1.status + '）');
+  const cv2 = await ja('POST', '/api/sync', { cursor: 0, changes: [carvedItem('my_b', carvedD(2600))] }, L1.body.token);
+  ok(cv2.status === 400, '超过 32K 的 carved 仍被拒：' + cv2.status);
+  const cv3 = await ja('POST', '/api/sync', { cursor: 0, changes: [{ kind: 'record', id: 'r9', data: '"' + 'x'.repeat(9000) + '"', mtime: 1 }] }, L1.body.token);
+  ok(cv3.status === 400, '放宽只对 carved：别的 kind 9K 照样 400（' + cv3.status + '）');
+  const cvEvil = carvedItem('my_c', '<path d="M0,0L1,1Z" fill="CC" fill-rule="evenodd" onload="alert(1)"/>');
+  const cv4 = await ja('POST', '/api/sync', { cursor: 0, changes: [cvEvil] }, L1.body.token);
+  ok(cv4.status === 400 && cv4.body.error === 'bad carved', 'carved 的 d 不过 SAFE_D（带 onload）→ 400 bad carved');
+  const cvWrongId = { ...carvedItem('my_d', carvedD(2)), id: 'my_other' };
+  const cv5 = await ja('POST', '/api/sync', { cursor: 0, changes: [cvWrongId] }, L1.body.token);
+  ok(cv5.status === 400, 'carved 里的 id 跟条目 id 对不上 → 400');
+  const cvPull = await ja('POST', '/api/sync', { cursor: 0, changes: [] }, L1.body.token);
+  ok(cvPull.status === 200 && cvPull.body.changes.some(x => x.kind === 'carved' && x.id === 'my_a'), '拉下来能看到那枚 carved');
+
   // 登出后同步失效
   await ja('POST', '/api/auth/logout', null, L2.body.token);
   const afterOut = await ja('GET', '/api/auth/me', null, L2.body.token);

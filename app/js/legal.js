@@ -14,6 +14,8 @@ import { getLang } from './i18n.js';
 import { openExternal } from './native.js';
 
 export const LEGAL_VER = '2026-09-10';   // 跟 terms/ privacy/ 页首的「生效日期」保持一致
+// TODO（刻章铺 M4，9-12）：隐私政策 §3 和服务协议 §5 已加「你自己刻的章」，出带刻章铺的那个包时
+//   把这里和两页页首的生效日期一起改成发版当天。⛔ 分支上别提前改：会让全体老用户重新弹一次同意。
 export const legalOk = () => store.settings.legalOk === LEGAL_VER;
 export function acceptLegal() {
   if (legalOk()) return;

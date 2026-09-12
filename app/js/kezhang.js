@@ -117,7 +117,7 @@ function openFlow(src, done, onSaved) {
       // 原来默认 1 = 短边方框，竖着拍的照片一上来上下就被切掉，用户以为东西丢了。
       crop: { cx: .5, cy: .5, zoom: Math.min(1, Math.min(img.width, img.height) / Math.max(img.width, img.height)) },
       pick: null, more: false, hint2: null, thr: 0, detail: 2, weight: 2,
-      tap: null, picking: false, src2: null, Ptap: null, tapSel: null,
+      taps: [], tolAdj: 0, erase: false, picking: false, src2: null, Ptap: null, tapSel: null, autoTap: undefined,
       name: '', cat: 'mine', ink: 'zhu', frame: 'none', ringText: '', dateOn: false, decoD: null };
     ensureOverlay();
     render();
@@ -244,19 +244,40 @@ function traceLine(src) {
   }
   return lineStamp(src, { ...DETAIL[F.detail] }, F.weight);
 }
-// ---- 「点一下你要的那个」（9-12 用户拍板）----
-// A（裁切）解决不了花和叶子交叠的情况。给一个**一次点击**的选择：点中哪样东西，
-// 就把它以外的地方涂白、裁到它的框，然后三个样子全部跑在这张上——
-// 所以点完之后线条 / 层次 / 剪影会一起变，不会出现「我点了花、线条还是整张」。
-// ⛔ 只有"点一下"这一个动作：点不准就再点别处（每次重算，不叠加），
-//    不做加一块 / 去掉一块 / 撤销 / 范围。那套 9-12 上午加过，当天就拆了。
-const TAP_WORK = 1024;                 // 点选这条路单独用大尺寸，边缘才不糊（9-12 用户反馈）
+// ---- 点选主体（9-12 用户拍板：要能微调）----
+// 用户要的是「能自己加一块、去掉一块」的那套，不是一次点击就定死。
+// 一次点击在花和叶子这种图上等于抽奖（同一朵花点六个位置，抠到的面积 0.9%~27%），
+// 所以恢复成：点几下都行，加选 / 减选 / 撤销 / 范围滑杆。
+//
+// 跟 9-11 那版的两处不同：
+//   ① 工作尺寸 512 → 1024（TAP_WORK）。蒙版算完要放大回原图，512 那档是 2 倍放大，
+//      边缘糊成块状（用户反馈"边缘细节粗糙"）。
+//   ② 选完不只喂给层次和剪影：把选区以外涂白、裁到它的框，**三个样子全部跑在这张上**，
+//      所以线条也跟着只剩你选的那块。
+const TAP_WORK = 1024;
 const workSrc = () => F.src2 || F.src;
-function applyTap() {
-  F.P = null; F.autoSel = undefined;                 // 换了底图，选区和 prepare 都要重来
-  if (!F.tap) { F.src2 = null; F.tapSel = null; return; }
+
+/** 几下点选并起来的选区（减选从里面扣）。没点过返回 null */
+function tapsMask() {
+  if (!F.taps.length) return null;
   if (!F.Ptap) F.Ptap = prepare(F.src, TAP_WORK);
-  const sel = F.tapSel = refineMask(magicWand(F.Ptap, F.tap.x, F.tap.y), F.Ptap);
+  const { w, h } = F.Ptap, m = new Uint8Array(w * h);
+  // 第一下就是减选时，从自动找到的主体上扣
+  if (F.taps[0].sub) {
+    if (F.autoTap === undefined) F.autoTap = autoSubject(F.Ptap);
+    if (F.autoTap) for (let i = 0; i < w * h; i++) m[i] = F.autoTap.mask[i];
+  }
+  for (const t of F.taps) {
+    // 自动容差每个点只算一次（要试十来档，最费时）；「范围」在它上面加减
+    if (t.auto == null) t.auto = magicWand(F.Ptap, t.x, t.y).tol;
+    const s = magicWand(F.Ptap, t.x, t.y, Math.max(4, t.auto + F.tolAdj));
+    for (let i = 0; i < w * h; i++) if (s.mask[i]) m[i] = t.sub ? 0 : 1;
+  }
+  return refineMask({ w, h, mask: m }, F.Ptap);
+}
+
+/** 选区 → 涂白外面 + 裁到它的框（+6% 边距），三个样子都跑在这张上 */
+function cutOut(sel) {
   const { w, h, mask } = sel;
   let x0 = w, y0 = h, x1 = -1, y1 = -1, area = 0;
   for (let i = 0; i < w * h; i++) {
@@ -264,8 +285,7 @@ function applyTap() {
     area++; const x = i % w, y = (i - x) / w;
     if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
   }
-  if (x1 < 0 || area < w * h * 0.01) { F.src2 = null; F.tap = null; F.tapSel = null; toast('这儿没圈出什么，换个地方点', 2200); return; }
-  // 选区（512 那档）→ 带透明的蒙版 → 按原图尺寸放大扣图 → 白底 → 裁到框 + 6% 边距
+  if (x1 < 0 || area < w * h * 0.004) return null;
   const mc = document.createElement('canvas'); mc.width = w; mc.height = h;
   const mx = mc.getContext('2d'), id = mx.createImageData(w, h);
   for (let i = 0; i < w * h; i++) { id.data[i * 4] = id.data[i * 4 + 1] = id.data[i * 4 + 2] = 255; id.data[i * 4 + 3] = mask[i] ? 255 : 0; }
@@ -284,7 +304,15 @@ function applyTap() {
   const ox = out.getContext('2d');
   ox.fillStyle = '#fff'; ox.fillRect(0, 0, bw, bh);
   ox.drawImage(cut, bx, by, bw, bh, 0, 0, bw, bh);
-  F.src2 = out;
+  return out;
+}
+
+/** 点选变了就重算底图；没点过 = 整张 */
+function applyTaps() {
+  F.P = null; F.autoSel = undefined;                 // 换了底图，下游的 prepare / 自动主体都要重来
+  const sel = F.tapSel = tapsMask();
+  F.src2 = sel ? cutOut(sel) : null;
+  if (sel && !F.src2) { F.taps.pop(); F.tapSel = tapsMask(); F.src2 = F.tapSel ? cutOut(F.tapSel) : null; toast('这一下没圈出什么，撤掉了', 2200); }
 }
 
 // 主体：自动找，不给用户工具（9-12 用户拍板）。
@@ -316,6 +344,7 @@ const firstPick = () => 'line';
 // ⛔ 别写成"魔棒 / 容差 / 选区"这类词——用户不认，全部说人话。
 const HINTS = {
   styles: '线条＝把图里的线描出来，纸上画的、线清楚的东西最合适。\n层次＝主体内部按明暗分三层叠印，照片想尽量像原图时用。\n剪影＝主体整个填实，只剩外形——只有轮廓本身就认得出的东西才行（一块布、一只鞋、一朵花），圆的方的、要靠里面的字和细节认的（电池、脸、截图）一律不行。',
+  tolAdj: '刚才点的每一下，往大调会多圈进来一些、往小调会少圈一些。',
   detail: '往少调＝去掉零碎小块，托盘里更干净；往多调＝保留细节，但缩小到托盘里容易糊。',
   weight: '托盘 26px 下看不清就往粗调。密线稿加粗会把线缝填死，程序会自己退回去，所以有时候调了变化不大。',
   thr: '描出来的东西太少就往深调，太脏太花就往浅调。',
@@ -336,16 +365,16 @@ function renderAdjust(ov) {
     ${hintBox('styles')}
     <div class="kz-cands" id="kz-cands">${CANDS.map(([k, n]) => `<button class="kz-cand ${F.pick === k ? 'on' : ''}" data-pick="${k}"><span class="kz-cand-p"></span><i>${n}</i></button>`).join('')}</div>
     ${F.picking ? `<div class="kz-photo" id="kz-photo"><canvas id="kz-photoc"></canvas></div>
-      <div class="kz-xs kz-center">${F.tap ? '刻的是亮着的那块 · 不对就再点别处' : '点一下你要刻的那个东西'}</div>
-      <div class="kz-row">${F.tap ? `<button class="kz-chip" data-act="pickall">整张都要</button>` : ''}<span class="kz-grow"></span><button class="kz-chip" data-act="pickoff">好了</button></div>`
-      : `<button class="kz-link kz-pick" data-act="pickon">${F.tap ? '只刻了你点的那块 · 换一个 ›' : '这张里东西有点多？点一下你要的那个 ›'}</button>
-         ${F.tap ? `<button class="kz-link kz-pick" data-act="pickall">整张都要 ›</button>` : ''}`}
+      <div class="kz-xs kz-center">${F.erase ? '点一下多圈进来的地方，把它去掉' : '点一下你要刻的东西，亮着的就是选中的；一下不够就多点几下'}</div>
+      <div class="kz-row"><button class="kz-chip ${F.erase ? '' : 'on'}" data-erase="0">加一块</button><button class="kz-chip ${F.erase ? 'on' : ''}" data-erase="1">去掉一块</button><button class="kz-chip" data-act="undo">撤销</button>${F.taps.length ? `<button class="kz-chip" data-act="pickall">整张都要</button>` : ''}<span class="kz-grow"></span><button class="kz-chip" data-act="pickoff">好了</button></div>`
+      : `<button class="kz-link kz-pick" data-act="pickon">${F.taps.length ? `只刻了你选的那块（点了 ${F.taps.length} 下）· 再调调 ›` : '这张里东西有点多？点一下你要的那个 ›'}</button>`}
     <div class="kz-ctl"><div class="kz-lab">细节${q('detail')}<span>少 · 多</span></div><input type="range" min="1" max="3" step="1" value="${F.detail}" data-k="detail"></div>${hintBox('detail')}
     ${F.pick === 'line' ? `<div class="kz-ctl"><div class="kz-lab">粗细${q('weight')}</div><div class="kz-opts">${['原样', '细', '中', '粗'].map((n, i) => `<button data-weight="${i}" class="${F.weight === i ? 'on' : ''}">${n}</button>`).join('')}</div></div>${hintBox('weight')}` : ''}
     <button class="kz-link kz-more" data-act="more">${F.more ? '收起 ‹' : '更多调整 ›'}</button>
     ${F.more ? `<div class="kz-morebox">
       ${F.pick === 'line' ? `<div class="kz-ctl"><div class="kz-lab">深浅${q('thr')}<span>浅一点 · 深一点</span></div><input type="range" min="-60" max="60" step="2" value="${F.thr}" data-k="thr"></div>${hintBox('thr')}` : ''}
-      ${F.pick !== 'line' ? '<div class="kz-xs">这个样子没有更多可调的了</div>' : ''}
+      ${F.taps.length ? `<div class="kz-ctl"><div class="kz-lab">点选的范围${q('tolAdj')}<span>小一点 · 大一点</span></div><input type="range" min="-16" max="16" step="2" value="${F.tolAdj}" data-k="tolAdj"></div>${hintBox('tolAdj')}` : ''}
+      ${F.pick !== 'line' && !F.taps.length ? '<div class="kz-xs">这个样子没有更多可调的了</div>' : ''}
     </div>` : ''}
     <div class="kz-bottom"><button class="kz-btn" data-act="next" id="kz-next" disabled>下一步</button></div>
   </div>`;
@@ -385,16 +414,18 @@ function renderAdjust(ov) {
     F.pick = k; F.forced = false; renderAdjust(ov);
   });
   // 问号：同时只开一条，再点一下收起。走整页重画，别的状态都在 F 里，不会丢
+  ov.querySelectorAll('[data-erase]').forEach(b => b.onclick = () => { F.erase = b.dataset.erase === '1'; renderAdjust(ov); });
   ov.querySelectorAll('[data-hint]').forEach(b => b.onclick = e => {
     e.stopPropagation();
     F.hint2 = F.hint2 === b.dataset.hint ? null : b.dataset.hint;
     renderAdjust(ov);
   });
   bindActs(ov, {
-    back: () => { F.step = 'crop'; F.autoSel = undefined; F.P = null; F.Ptap = null; F.pick = null; F.tap = null; F.src2 = null; F.tapSel = null; F.picking = false; render(); }, close,
+    back: () => { F.step = 'crop'; F.autoSel = undefined; F.P = null; F.Ptap = null; F.pick = null; F.taps = []; F.autoTap = undefined; F.src2 = null; F.tapSel = null; F.picking = false; render(); }, close,
     pickon: () => { F.picking = true; renderAdjust(ov); },
     pickoff: () => { F.picking = false; renderAdjust(ov); },
-    pickall: () => { F.tap = null; applyTap(); F.forced = false; renderAdjust(ov); },
+    pickall: () => { F.taps = []; F.autoTap = undefined; applyTaps(); F.forced = false; renderAdjust(ov); },
+    undo: () => { if (!F.taps.length) return; F.taps.pop(); applyTaps(); F.forced = false; renderAdjust(ov); },
     more: () => { F.more = !F.more; renderAdjust(ov); },
     next: () => { if (F.result && F.result.out.d) { F.step = 'finish'; F.decoD = null; render(); } },
   });
@@ -403,16 +434,24 @@ function renderAdjust(ov) {
     if (!F.Ptap) F.Ptap = prepare(F.src, TAP_WORK);
     const { w, h } = F.Ptap; cv.width = w; cv.height = h;
     const ctx = cv.getContext('2d'); ctx.drawImage(F.src, 0, 0, w, h);
-    if (F.tap && F.tapSel) {                         // 已经点过：把没选中的压暗，让他看清刻的是哪块
-      const sel = F.tapSel, d = ctx.getImageData(0, 0, w, h);
-      for (let i = 0; i < w * h; i++) if (!sel.mask[i]) { d.data[i * 4] *= .4; d.data[i * 4 + 1] *= .4; d.data[i * 4 + 2] *= .4; }
+    if (F.tapSel) {                                  // 已经点过：把没选中的压暗，让他看清刻的是哪块
+      const d = ctx.getImageData(0, 0, w, h), m = F.tapSel.mask;
+      for (let i = 0; i < w * h; i++) {
+        if (!m[i]) { d.data[i * 4] *= .38; d.data[i * 4 + 1] *= .38; d.data[i * 4 + 2] *= .38; }
+        else if (i % w === 0 || !m[i - 1] || !m[i + 1] || !m[i - w] || !m[i + w]) { d.data[i * 4] = d.data[i * 4 + 1] = d.data[i * 4 + 2] = 255; }
+      }
       ctx.putImageData(d, 0, 0);
+    }
+    for (const t of F.taps) {                        // 点过的地方留个记号：加选白点、减选黑点
+      ctx.beginPath(); ctx.arc(t.x * w, t.y * h, Math.max(5, w * 0.012), 0, 7);
+      ctx.fillStyle = t.sub ? '#333' : '#fff'; ctx.strokeStyle = t.sub ? '#fff' : '#222';
+      ctx.lineWidth = Math.max(2, w * 0.004); ctx.fill(); ctx.stroke();
     }
     photo.addEventListener('click', e => {
       const r = photo.getBoundingClientRect();
-      F.tap = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
-      applyTap();
-      F.forced = false; F.picking = !!F.tap;         // 点空了（applyTap 会清掉）就留在选择态
+      F.taps.push({ x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, sub: F.erase });
+      applyTaps();
+      F.forced = false;
       renderAdjust(ov);
     }, { once: true });
   }

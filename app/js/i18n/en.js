@@ -302,6 +302,7 @@ export const EN = {
   shDayEmpty: 'This day is still empty.',
   linkBusy: 'Making a link…',
   shLinkBtn: 'Send a link to a friend',
+  shTooMany: 'Over {n} stamps this day. The link carries the earliest {n}; the card shows them all.',
   shLinkFail: 'Couldn’t make one — check your connection.',
   shareMsg: 'My day, stamped {url}',
   shCopy: 'Copy link',

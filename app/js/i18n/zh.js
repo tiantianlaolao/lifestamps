@@ -351,6 +351,7 @@ export const ZH = {
   shDayEmpty: '这一天还是空的。',
   linkBusy: '正在生成…',
   shLinkBtn: '发个链接给朋友',
+  shTooMany: '这天超过 {n} 枚，链接里只带最早的 {n} 枚，卡片上是全的。',
   shLinkFail: '没能生成，检查一下网络再试。',
   shareMsg: '我今天的样子 {url}',
   shCopy: '复制链接',

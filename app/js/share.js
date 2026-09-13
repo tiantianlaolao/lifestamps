@@ -17,6 +17,8 @@ const heroFont = () => (getLang() === 'en' ? HAND : HAND_CN);
 import { isNative, shareImage, shareText, saveToAlbum } from './native.js';
 import { createShare, shareURL, codeForDay, IS_OVERSEAS } from './net.js';
 import { legalOk, requireLegal } from './legal.js';
+// 一条分享最多带几枚章 —— 跟 server.js 的 'too many stamps'（60）对齐，改一边要改另一边
+const SHARE_MAX = 60;
 
 // 「保存」和「分享」8-30 拆成两颗键（用户拍板：存图的人不该多走一层分享面板）。
 // 原生：保存 = 直接进相册（add-only 轻量授权）；分享 = 系统分享面板（sh-share2，模板按 isNative 渲染）。
@@ -408,18 +410,28 @@ export function buildDayCard(dk, weather, qr = null) {
   //    纸占了卡的三分之二全是空白，看着像一张没做完的作业，所以从来没人发。
   //    现在纸不画了：章横排、放大到能看清笔触和印泥的斑驳，那才是这产品好看的地方。
   const N = recs.length;
-  const perRow = N <= 4 ? N : (N <= 8 ? Math.ceil(N / 2) : Math.ceil(N / 3));
-  const rows = N ? Math.ceil(N / perRow) : 0;
-  const size = N <= 3 ? 200 : N <= 6 ? 168 : 132;
-  const gapX = size * 0.34, gapY = size * 0.62;
-  const stampsH = N ? rows * size + (rows - 1) * gapY + 34 : 0;   // +34 给章脚下的时刻
+  // 🔴 9-13：原来 N>8 一律"每行 N/3 枚、132 大"，19 枚起一行就比卡宽（30 枚时最左那枚在卡外 256px）。
+  //    章多了就收小一档，每行几枚按卡宽算出来（左右各留 30），永远不出卡。≤18 枚的版式跟原来一个像素不差。
+  //    整块（判词 + 章 + 时间跨度）必须落在日付印底下（y≈224）和右下角二维码顶上（y≈1216）之间，
+  //    放不下就再收一档，直到放得下（60 枚实测：80 大的最后一排压到二维码，收到 64 才行）。
+  const HERO_H = 120, SPAN_H = N >= 2 ? 90 : 0;
+  const BLOCK_MAX = 950;                                   // y 250 ~ 1200
+  const SIZES = [N <= 3 ? 200 : N <= 6 ? 168 : 132, 100, 80, 64, 52];
+  let size, gapX, gapY, perRow, rows, stampsH, totalH;
+  for (const s of SIZES) {
+    size = s; gapX = size * 0.34; gapY = size * 0.62;
+    const perRowFit = Math.max(1, Math.floor((1080 - 60 + gapX) / (size + gapX)));
+    perRow = N <= 4 ? N : (N <= 8 ? Math.ceil(N / 2) : Math.min(perRowFit, Math.ceil(N / 3)));
+    rows = N ? Math.ceil(N / perRow) : 0;
+    stampsH = N ? rows * size + (rows - 1) * gapY + 34 : 0;   // +34 给章脚下的时刻
+    totalH = (hero ? HERO_H : 0) + stampsH + SPAN_H;
+    if (totalH <= BLOCK_MAX) break;
+  }
   // 🔴 把判词、章、时间跨度当**一整块**垂直居中，别各自为政 ——
   //    第一版判词钉在 y=430、章居中在 760、落款在底，三块之间距离不匀，
   //    1~3 枚的卡下半张几乎全空，看着还是"没做完"。
-  const HERO_H = 120, SPAN_H = N >= 2 ? 90 : 0;
-  const totalH = (hero ? HERO_H : 0) + stampsH + SPAN_H;
-  // 居中线取 740：比卡的正中(720)略低一点，给顶上的日付印让位
-  const blockTop = 740 - totalH / 2;
+  // 居中线取 740：比卡的正中(720)略低一点，给顶上的日付印让位。
+  const blockTop = Math.max(250, 740 - totalH / 2);
   const heroY = blockTop + (hero ? 78 : 0);
   const top = blockTop + (hero ? HERO_H : 0);
   const blockH = rows * size + (rows - 1) * gapY;
@@ -545,8 +557,12 @@ export async function openShareDay(dk) {
     ov.innerHTML = `<div class="gen">${COPY.genBusy}</div>`;
     ov.classList.add('show');
     // 9-10：没同意协议就不上传 —— 卡照样画，二维码回落成下载中转页（跟没网同一条路）
+    // 🔴 9-13：服务端一天最多收 60 枚（server.js 'too many stamps'），超了原来是静默 400 —— 卡照出、
+    //    二维码却悄悄回落成下载页，用户不知道朋友扫不到这一天。现在：链接只带最早的 60 枚（卡上照样全画），
+    //    并在卡下面明说。60 跟服务端那条对齐，改一边要改另一边。
+    const tooMany = store.recordsOf(dk).length > SHARE_MAX;
     if (legalOk() && store.recordsOf(dk).length) {
-      try { rec = await createShare(dk, store.recordsOf(dk), verdictOf(store.recordsOf(dk)),
+      try { rec = await createShare(dk, store.recordsOf(dk).slice(0, SHARE_MAX), verdictOf(store.recordsOf(dk)),
         store.dayNoteOf(dk) || '') || rec; } catch (_) { /* 留着原来那个 rec */ }
     }
     // 这一天章全擦光了：旧分享上还挂着擦掉前的纸（服务端不收空的一天），卡上别再指向它
@@ -556,6 +572,7 @@ export async function openShareDay(dk) {
       `<button class="wbtn ${weather === w ? 'sel' : ''}" data-w="${w}">${weatherSVG(w, 26, weather === w ? '#C94B3C' : '#8C8880')}</button>`).join('');
     ov.innerHTML = `
       <img src="${dataUrl}" alt="${COPY.dayCardAlt}">
+      ${tooMany ? `<div class="share-hint">${COPY.shTooMany.replace('{n}', SHARE_MAX)}</div>` : ''}
       <div class="weather-row"><span style="font-size:11px;color:var(--sub);letter-spacing:.1em">${COPY.weatherToday}</span>${wRow}</div>
       <div class="share-note">
         <input id="sh-note" maxlength="24" value="${xesc(store.dayNoteOf(dk) || '')}"

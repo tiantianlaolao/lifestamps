@@ -1317,7 +1317,10 @@ function bindStampCell(el) {
     panL = document.getElementById('deck-strip')?.scrollLeft || 0;
     if (deckOpen) {
       dropLongPress();
-      lpTimer = setTimeout(() => { lpTimer = null; if (pid !== null) { lift(lx, ly); haptic(); } }, LP_MS);
+      // ⚠️ el.isConnected：格子在 450ms 内被整页重渲染拆掉（上一枚落章后 760ms 那次最常见）而手指已在别处抬起，
+      //    这个格子再也收不到 pointerup、pid 清不掉 —— 定时器到期照样 lift()，document 的滚动拦截就漏在那儿
+      //    （下一次 renderToday 的 releaseDeckDrag 才救得回来）。拆掉的格子不拎，用户重按一次就是。
+      lpTimer = setTimeout(() => { lpTimer = null; if (pid !== null && el.isConnected) { lift(lx, ly); haptic(); } }, LP_MS);
     }
   });
   el.addEventListener('pointermove', e => {
@@ -1450,7 +1453,9 @@ function bindHoldPreview(cv) {
     if (!h.live) return;                         // 影子还没出来就抬手 = 轻点，交给 click
     ghost.style.display = 'none';
     window.__lastLongPress = Date.now();         // 紧跟着的 click 不许再盖一枚
-    if (place && cv.querySelector('.chip.ghost')) placeStamp(h.x, h.y - h.lift, cv, pendingPose);
+    // ⚠️ 影子要在**现在的**纸上找：纸在手势中途被整页重建过的话，闭包里的 cv 是拆下来的旧纸
+    const cvNow = $('#today-canvas') || cv;
+    if (place && cvNow.querySelector('.chip.ghost')) placeStamp(h.x, h.y - h.lift, cvNow, pendingPose);
     else { clearPreview(); pendingPose = null; }
   };
   cv.addEventListener('pointerdown', e => {
@@ -1459,8 +1464,15 @@ function bindHoldPreview(cv) {
     if (e.target.closest('button, .note-pop, .daynote-pop, .note-hint')) return;
     if (holdGesture) finish(holdGesture, false);
     const h = { pid: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, lift: liftOf(e), live: false, timer: null, bail: null };
-    // 纸在手势中途被整页重渲染拆掉的话，元素上的 pointerup 永远不会响——document 上兜底
+    // 纸在手势中途被整页重渲染拆掉的话，元素上的 pointerup 永远不会响——document 上兜底。
+    // 🔴 9-13 病根（用户报：偶发整页滚不动、只有杀 App 能救）：这两个兜底原来在影子出来那一刻才挂。
+    //    按下 → 180ms 内纸被整页重建（最常见 = 上一枚落章后 760ms 那次）→ 手指在纸外抬起：
+    //    抬手那一下谁都没接到，定时器照样到期、把 document 的 touchmove 拦截挂上，之后永远摘不掉。
+    //    所以兜底必须**按下就挂**：抬手无论落在哪、纸换没换，都走 finish 把状态清干净
+    //    （影子没出来时 finish 只清状态不盖章，轻点的节奏一个字不动）。复现脚本见 9-13 记忆。
     h.bail = ev => { if (ev.pointerId === h.pid) finish(h, ev.type === 'pointerup'); };
+    document.addEventListener('pointerup', h.bail);
+    document.addEventListener('pointercancel', h.bail);
     h.timer = setTimeout(() => {
       h.timer = null;
       if (holdGesture !== h) return;
@@ -1474,8 +1486,6 @@ function bindHoldPreview(cv) {
       showPreview(selStamp, h.x, h.y - h.lift);
       haptic();
       document.addEventListener('touchmove', blockScroll, { passive: false });
-      document.addEventListener('pointerup', h.bail);
-      document.addEventListener('pointercancel', h.bail);
       try { cv.setPointerCapture(h.pid); } catch { /* 抓不到就算了 */ }
     }, HOLD_MS);
     holdGesture = h;
@@ -1484,7 +1494,7 @@ function bindHoldPreview(cv) {
     const h = holdGesture; if (!h || e.pointerId !== h.pid) return;
     h.x = e.clientX; h.y = e.clientY;
     if (!h.live) {
-      if (Math.hypot(h.x - h.x0, h.y - h.y0) > HOLD_SLOP) { clearTimeout(h.timer); holdGesture = null; }
+      if (Math.hypot(h.x - h.x0, h.y - h.y0) > HOLD_SLOP) finish(h, false);   // 走 finish：连 document 上的兜底一起摘
       return;
     }
     ghost.style.left = h.x + 'px'; ghost.style.top = (h.y - h.lift - BODY_ABOVE) + 'px';

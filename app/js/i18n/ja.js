@@ -302,6 +302,7 @@ export const JA = {
   shDayEmpty: 'この日はまだ空っぽです。',
   linkBusy: 'リンクを作成中…',
   shLinkBtn: '友だちにリンクを送る',
+  shTooMany: 'この日は{n}個を超えています。リンクには早い順に{n}個だけ入ります（カードには全部）。',
   shLinkFail: '作れませんでした。通信を確かめて。',
   shareMsg: 'きょうのわたし {url}',
   shCopy: 'リンクをコピー',

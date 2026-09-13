@@ -572,7 +572,7 @@ export async function openShareDay(dk) {
       `<button class="wbtn ${weather === w ? 'sel' : ''}" data-w="${w}">${weatherSVG(w, 26, weather === w ? '#C94B3C' : '#8C8880')}</button>`).join('');
     ov.innerHTML = `
       <img src="${dataUrl}" alt="${COPY.dayCardAlt}">
-      ${tooMany ? `<div class="share-hint">${COPY.shTooMany.replace('{n}', SHARE_MAX)}</div>` : ''}
+      ${tooMany ? `<div class="share-hint">${COPY.shTooMany.replace(/\{n\}/g, SHARE_MAX)}</div>` : ''}
       <div class="weather-row"><span style="font-size:11px;color:var(--sub);letter-spacing:.1em">${COPY.weatherToday}</span>${wRow}</div>
       <div class="share-note">
         <input id="sh-note" maxlength="24" value="${xesc(store.dayNoteOf(dk) || '')}"

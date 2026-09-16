@@ -31,7 +31,11 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      # 9-16：v3 默认 packages 是「tools platform-tools」，老包 tools 已从 Google 仓库下架 → sdkmanager 退 1 整条线挂。
+      #       显式只装 platform-tools（SDK 其余部分 runner 镜像自带，缺的 AGP 会自己拉）。
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - uses: gradle/actions/setup-gradle@v4
 

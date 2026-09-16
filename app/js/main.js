@@ -923,10 +923,11 @@ function renderDeck() {
   // 一枚都没解锁时整个分类不出现 —— 空分类读起来像坏了，还剧透了"有这么一类"。
   // ⚠️ 封蜡不进来：它只能被朋友送，自己能盖就不稀罕了（同日拍板）。
   const secretGot = HIDDEN.filter(h => store.hidden[h.id]);
+  // 9-14 用户：「字」用得不多，挪到分类栏最后（藏品那栏同步挪，两边保持一致）
   const cats = `<button data-cat="all" class="${deckCat === 'all' ? 'sel' : ''}">${COPY.catAll}</button>`
-    + `<button data-cat="glyph" class="glyph-chip ${deckCat === 'glyph' ? 'sel' : ''}">${COPY.catGlyph}</button>`
     + (secretGot.length ? `<button data-cat="secret" class="${deckCat === 'secret' ? 'sel' : ''}">${COPY.catSecret}</button>` : '')
-    + CATEGORIES.map(c => `<button data-cat="${c.id}" class="${deckCat === c.id ? 'sel' : ''}">${nameOf('cat', c.id, c.name)}</button>`).join('');
+    + CATEGORIES.map(c => `<button data-cat="${c.id}" class="${deckCat === c.id ? 'sel' : ''}">${nameOf('cat', c.id, c.name)}</button>`).join('')
+    + `<button data-cat="glyph" class="glyph-chip ${deckCat === 'glyph' ? 'sel' : ''}">${COPY.catGlyph}</button>`;
 
   // 印泥铁盒：盒里那坨墨的直径 = 这盒还剩多少（12px 空 → 26px 满），全 App 不写次数
   const tin = (inner, cls, extra = '') => `<div class="dk-ink ${cls}" ${extra}><span class="can">${inner}</span></div>`;
@@ -2136,9 +2137,10 @@ function drawerStamps(used, cnt) {
 
   // 「字」跟托盘的分类栏保持一致——之前只有托盘有，抽屉里它只能待在最底下那一折，
   // 用户直接问了"为什么不在上方"（8-27）。两边不一致就是不一致，没有别的理由。
+  //    9-14：两边一起把「字」挪到最后（用户：用得不多）。
   const cats = `<button data-dcat="all" class="${drawerCat === 'all' ? 'sel' : ''}">${COPY.catAll}</button>`
-    + `<button data-dcat="glyph" class="glyph-chip ${drawerCat === 'glyph' ? 'sel' : ''}">${COPY.catGlyph}</button>`
-    + CATEGORIES.map(c => `<button data-dcat="${c.id}" class="${drawerCat === c.id ? 'sel' : ''}">${nameOf('cat', c.id, c.name)}</button>`).join('');
+    + CATEGORIES.map(c => `<button data-dcat="${c.id}" class="${drawerCat === c.id ? 'sel' : ''}">${nameOf('cat', c.id, c.name)}</button>`).join('')
+    + `<button data-dcat="glyph" class="glyph-chip ${drawerCat === 'glyph' ? 'sel' : ''}">${COPY.catGlyph}</button>`;
 
   // 🔴 8-27 用户：「我盖过的」默认只露**最常盖的 6 枚**，其余折起来。
   //    章一多这一段就长得没边，而绝大多数时候你只想看看常用的那几枚。

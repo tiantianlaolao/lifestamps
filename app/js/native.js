@@ -107,13 +107,16 @@ export const iapIdOf = product => IAP_PREFIX + product;
 const shortIdOf = pid => (typeof pid === 'string' && pid.startsWith(IAP_PREFIX)) ? pid.slice(IAP_PREFIX.length) : pid;
 
 /** 一批商品的本地化价格 {短id: "¥6.00"/"$0.99"}。没有原生桥返回 null；拿不到的商品就不在结果里。 */
+// 🔴 9-14：插件的 Product 里商品 id 字段叫 `identifier`（Transaction 里才叫 productIdentifier）——
+//    8-30 接入时两处都写成 productIdentifier，价格从来没对上过 key，三端集市一直「价格稍后」；
+//    购买 / 恢复走的是 productIdentifier，所以一直能买、只是不显示价。用户 9-14 在 Play 版发现。
 export async function iapPrices(products) {
   const p = P();
   if (!p || !p.NativePurchases) return null;
   try {
     const { products: got } = await p.NativePurchases.getProducts({ productIdentifiers: products.map(iapIdOf) });
     const out = {};
-    for (const x of got || []) if (x && x.priceString) out[shortIdOf(x.productIdentifier)] = x.priceString;
+    for (const x of got || []) if (x && x.priceString) out[shortIdOf(x.identifier || x.productIdentifier)] = x.priceString;
     return out;
   } catch (_) { return null; }
 }
